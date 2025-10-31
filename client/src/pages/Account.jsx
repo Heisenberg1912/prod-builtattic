@@ -1,178 +1,369 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ShoppingBag,
-  Repeat,
-  Heart,
+  CalendarRange,
   Crown,
-  ShieldCheck,
-  MapPin,
-  CreditCard,
   Gift,
-  Settings2,
   Headphones,
+  Heart,
+  MapPin,
   MessageSquare,
+  PackageCheck,
+  Repeat,
+  Settings2,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Star,
+  Ticket,
+  TrendingUp,
   UserCog,
   Wallet,
-  Ticket,
 } from "lucide-react";
+
+import { fetchOrders } from "../services/orders.js";
+import { useCart } from "../context/CartContext";
+
+const CARD_BASE = "rounded-3xl border border-white/10 bg-white/5 backdrop-blur transition shadow-lg hover:shadow-xl hover:border-white/20";
+const CTA_BUTTON = "inline-flex items-center justify-center rounded-full border border-white/20 px-4 py-1.5 text-xs font-semibold text-white/90 hover:bg-white/10 transition";
 
 const quickAccessTiles = [
   {
     title: "Your Orders",
-    description: "Track, return or buy again in one place.",
+    description: "Track shipments, approvals, and delivery milestones.",
     icon: ShoppingBag,
     to: "/orders",
   },
   {
     title: "Buy it Again",
-    description: "Reorder your frequently purchased designs.",
+    description: "Reorder your most trusted studios and materials.",
     icon: Repeat,
     to: "/orders",
   },
   {
     title: "Wishlist",
-    description: "Review saved studios and specifications.",
+    description: "Curate the ideas you want to act on next.",
     icon: Heart,
     to: "/wishlist",
   },
+  {
+    title: "Prime Concierge",
+    description: "Jump on a call with a project strategist in minutes.",
+    icon: Headphones,
+    to: "/support",
+  },
 ];
 
-const accountManagementTiles = [
+const accountTiles = [
   {
     title: "Login & Security",
-    description: "Update password, multi-factor and contact details.",
+    description: "Passwords, MFA, connected devices, and alerts.",
     icon: ShieldCheck,
     to: "/settings",
     cta: "Manage",
   },
   {
-    title: "Your Addresses",
-    description: "Add delivery locations for studios & materials.",
+    title: "Delivery Addresses",
+    description: "Warehouses, sites, and fabrication partners in one place.",
     icon: MapPin,
     to: "/settings",
     cta: "Edit",
   },
   {
     title: "Payment Options",
-    description: "Manage cards, UPI IDs, and escrow preferences.",
-    icon: CreditCard,
+    description: "Escrow preferences, cards, and UPI mandates.",
+    icon: Wallet,
     to: "/cart",
     cta: "Review",
   },
   {
-    title: "Gift Cards & Vouchers",
-    description: "Redeem codes and monitor Builtattic credits.",
+    title: "Gift Cards & Credits",
+    description: "Redeem promo codes and monitor Builtattic balance.",
     icon: Gift,
     to: "/account",
     cta: "Redeem",
   },
   {
-    title: "Communication Preferences",
-    description: "Choose what product and partner updates you receive.",
+    title: "Communication Settings",
+    description: "Choose the design drops and partner updates you receive.",
     icon: MessageSquare,
     to: "/settings",
     cta: "Update",
   },
   {
-    title: "Digital Wallet",
-    description: "Track escrow balances and refunds in one view.",
-    icon: Wallet,
-    to: "/cart",
-    cta: "Open Wallet",
+    title: "Invite Collaborators",
+    description: "Grant access to clients, vendors, and project teams.",
+    icon: UserCog,
+    to: "/associates",
+    cta: "Invite",
   },
 ];
 
 const supportTiles = [
   {
-    title: "Prime Design Support",
-    description: "Chat with a concierge architect for premium plans.",
-    icon: Headphones,
+    title: "Priority Studio Support",
+    description: "Concierge architects on standby for premium plans.",
+    icon: Crown,
     to: null,
     cta: "Contact",
   },
   {
-    title: "Account Settings",
-    description: "Fine-tune regional, privacy, and personalization controls.",
+    title: "Account Preferences",
+    description: "Regional, privacy, and personalization controls.",
     icon: Settings2,
     to: "/settings",
-    cta: "Go to settings",
+    cta: "Adjust",
   },
   {
     title: "Professional Services",
-    description: "Invite project stakeholders, vendors, and clients.",
-    icon: UserCog,
+    description: "Tap the associate network for bespoke engagements.",
+    icon: PackageCheck,
     to: "/associates",
     cta: "Explore",
   },
   {
-    title: "Coupons & Deals",
-    description: "Apply Builtattic promo codes to your next engagements.",
+    title: "Coupons & Events",
+    description: "Unlock launch deals across studios and materials.",
     icon: Ticket,
     to: "/studio",
-    cta: "View deals",
+    cta: "View",
   },
 ];
 
-const cardBaseClasses =
-  "rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition hover:-translate-y-0.5";
+const readProfileSnapshot = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    return JSON.parse(localStorage.getItem("builtattic_profile"));
+  } catch {
+    return null;
+  }
+};
 
-const tileButtonClasses =
-  "inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition";
+const readWishlistCount = () => {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = localStorage.getItem("wishlist");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+};
 
-const renderTile = (tile) => {
-  const Icon = tile.icon;
-  return (
-    <div key={tile.title} className={`${cardBaseClasses} p-5 flex flex-col gap-3`}>
-      <div className="flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white">
-          <Icon size={20} />
-        </span>
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">{tile.title}</h3>
-          <p className="text-sm text-slate-600 leading-relaxed">{tile.description}</p>
-        </div>
-      </div>
-      {tile.cta && (
-        tile.to ? (
-          <Link to={tile.to} className={tileButtonClasses}>
-            {tile.cta}
-          </Link>
-        ) : (
-          <button type="button" className={tileButtonClasses}>
-            {tile.cta}
-          </button>
-        )
-      )}
-    </div>
-  );
+const formatCurrency = (value, currency = "INR") => {
+  if (!Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value);
+};
+
+const initialsFrom = (nameOrEmail) => {
+  if (!nameOrEmail) return "BT";
+  const source = nameOrEmail.trim();
+  if (!source) return "BT";
+  const namePart = source.includes("@") ? source.split("@")[0] : source;
+  const tokens = namePart.split(/[\s._-]+/).filter(Boolean);
+  if (!tokens.length) return source.slice(0, 2).toUpperCase();
+  const first = tokens[0][0] || "";
+  const last = tokens.length > 1 ? tokens[tokens.length - 1][0] : tokens[0][1] || "";
+  return `${first}${last}`.toUpperCase();
 };
 
 const Account = () => {
+  const { cartItems } = useCart();
+  const [profile, setProfile] = useState(() => readProfileSnapshot() || {});
+  const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [ordersError, setOrdersError] = useState(null);
+  const [wishlistCount, setWishlistCount] = useState(() => readWishlistCount());
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.key === "builtattic_profile") {
+        setProfile(readProfileSnapshot() || {});
+      }
+      if (event.key === "wishlist") {
+        setWishlistCount(readWishlistCount());
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadOrders = async () => {
+      setLoadingOrders(true);
+      setOrdersError(null);
+      try {
+        const remote = await fetchOrders();
+        if (!active) return;
+        if (Array.isArray(remote) && remote.length) {
+          setOrders(remote);
+        }
+      } catch (error) {
+        if (!active) return;
+        setOrdersError(error?.message || "Unable to sync your orders right now.");
+      } finally {
+        if (active) setLoadingOrders(false);
+      }
+    };
+    loadOrders();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const orderStats = useMemo(() => {
+    if (!orders.length) return { total: 0, spend: 0 }; 
+    const spend = orders.reduce((sum, order) => {
+      const grand = Number(order?.amounts?.grand ?? order?.amounts?.subtotal ?? 0);
+      return sum + (Number.isFinite(grand) ? grand : 0);
+    }, 0);
+    return {
+      total: orders.length,
+      spend,
+    };
+  }, [orders]);
+
+  const recentOrders = useMemo(() => {
+    if (!orders.length) return [];
+    return orders
+      .slice(0, 3)
+      .map((order) => {
+        const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
+        const item = order?.items?.[0] || {};
+        const currency = item?.currency || order?.amounts?.currency || "INR";
+        const total = Number(order?.amounts?.grand ?? order?.amounts?.subtotal ?? 0);
+        return {
+          id: order?._id || order?.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2, 8),
+          title: item?.title || item?.name || "Marketplace order",
+          status: (order?.status || "created").replace(/_/g, " "),
+          amount: formatCurrency(total, currency),
+          placedOn: createdAt ? createdAt.toLocaleDateString() : "—",
+        };
+      });
+  }, [orders]);
+
+  const cartCount = Array.isArray(cartItems) ? cartItems.length : 0;
+  const stats = [
+    {
+      label: "Orders placed",
+      value: orderStats.total,
+      icon: PackageCheck,
+      subLabel: orderStats.total ? "Across studios, materials, and associates" : "No orders yet",
+    },
+    {
+      label: "Lifetime spend",
+      value: orderStats.spend ? formatCurrency(orderStats.spend) : "—",
+      icon: TrendingUp,
+      subLabel: "Reflects captured invoices and escrow releases",
+    },
+    {
+      label: "Wishlist",
+      value: wishlistCount,
+      icon: Star,
+      subLabel: wishlistCount ? "Saved for later" : "Add ideas to revisit",
+    },
+    {
+      label: "Cart",
+      value: cartCount,
+      icon: CalendarRange,
+      subLabel: cartCount ? "Ready for checkout" : "No items in cart",
+    },
+  ];
+
+  const fullName = profile?.name || "Guest";
+  const email = profile?.email || "guest@builtattic.com";
+  const membership = profile?.membership || "Prime Access";
+  const initials = initialsFrom(fullName || email);
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <main className="max-w-6xl mx-auto px-4 py-10 space-y-8">
-        <header className="flex flex-col gap-3">
-          <p className="uppercase tracking-[0.35em] text-xs text-slate-400">Account</p>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Your Builtattic profile</h1>
-              <p className="text-sm text-slate-600 max-w-2xl">
-                Manage orders, subscriptions, and professional services.
-              </p>
+    <div className="relative min-h-screen bg-slate-950 text-white">
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-32 h-96 w-96 rounded-full bg-violet-600/30 blur-[120px]" />
+        <div className="absolute top-32 right-[-6rem] h-[28rem] w-[28rem] rounded-full bg-sky-500/20 blur-[140px]" />
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 h-72 w-[36rem] rounded-full bg-emerald-500/10 blur-[140px]" />
+      </div>
+
+      <main className="relative mx-auto flex max-w-6xl flex-col gap-12 px-6 pb-20 pt-16">
+        <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)] items-start">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-white/10 p-8 shadow-2xl">
+            <div className="flex flex-wrap items-start justify-between gap-6">
+              <div className="flex items-center gap-5">
+                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-2xl font-semibold text-white shadow-inner shadow-white/20">
+                  {initials}
+                </span>
+                <div className="space-y-1">
+                  <p className="text-sm uppercase tracking-[0.35em] text-white/60">Account</p>
+                  <h1 className="text-3xl font-semibold tracking-tight text-white">{fullName}</h1>
+                  <p className="text-sm text-white/70">{email}</p>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm text-white/80 shadow">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-white/60">
+                  <Sparkles size={14} /> Membership
+                </div>
+                <p className="mt-2 text-base font-semibold text-white">{membership}</p>
+                <p className="text-xs text-white/70">Priority support & curated drops unlocked</p>
+              </div>
+            </div>
+
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {stats.map((stat) => {
+                const Icon = stat.icon;
+                return (
+                  <div
+                    key={stat.label}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-inner shadow-white/10 hover:border-white/20"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs uppercase tracking-[0.3em] text-white/60">{stat.label}</p>
+                      <span className="rounded-full bg-white/10 p-2 text-white">
+                        <Icon size={16} />
+                      </span>
+                    </div>
+                    <p className="mt-3 text-2xl font-semibold text-white">
+                      {typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}
+                    </p>
+                    <p className="text-xs text-white/65">{stat.subLabel}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-emerald-200/40 bg-gradient-to-br from-emerald-500/20 via-emerald-300/20 to-emerald-500/10 p-6 shadow-lg">
+            <div className="flex items-center gap-4">
+              <span className="rounded-full bg-white/20 p-3 text-white">
+                <Star size={20} />
+              </span>
+              <div>
+                <p className="text-sm uppercase tracking-[0.3em] text-white/70">Refer & earn</p>
+                <h2 className="text-xl font-semibold text-white">Bring your collaborators</h2>
+                <p className="text-sm text-white/80">
+                  Unlock ₹7,500 in credits for every studio or associate your network books through Builtattic.
+                </p>
+              </div>
             </div>
             <Link
-              to="/settings"
-              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800 transition"
+              to="/associates"
+              className="mt-6 inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow hover:bg-white"
             >
-              <Settings2 size={16} />
-              Account settings
+              Invite from CRM
             </Link>
           </div>
-        </header>
+        </section>
 
-        <section>
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Quick access</h2>
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-white">Quick access</h2>
+            {loadingOrders && (
+              <span className="text-xs text-white/60">Syncing latest activity…</span>
+            )}
+          </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {quickAccessTiles.map((tile) => {
               const Icon = tile.icon;
@@ -180,15 +371,15 @@ const Account = () => {
                 <Link
                   key={tile.title}
                   to={tile.to}
-                  className={`${cardBaseClasses} p-5 hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300`}
+                  className={`${CARD_BASE} p-5 hover:-translate-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white">
                       <Icon size={20} />
                     </span>
                     <div>
-                      <h3 className="text-base font-semibold text-slate-900">{tile.title}</h3>
-                      <p className="text-sm text-slate-600 leading-relaxed">{tile.description}</p>
+                      <h3 className="text-base font-semibold text-white">{tile.title}</h3>
+                      <p className="text-sm text-white/70 leading-relaxed">{tile.description}</p>
                     </div>
                   </div>
                 </Link>
@@ -197,19 +388,101 @@ const Account = () => {
           </div>
         </section>
 
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h2 className="text-lg font-semibold text-slate-900">Account management</h2>
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-white">Recent activity</h2>
+            <Link to="/orders" className="text-xs font-semibold text-white/80 hover:text-white">View all orders</Link>
           </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {recentOrders.length ? (
+              recentOrders.map((order) => (
+                <div key={order.id} className={`${CARD_BASE} p-5`}
+                >
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/60">{order.placedOn}</p>
+                  <h3 className="mt-3 text-base font-semibold text-white line-clamp-2">{order.title}</h3>
+                  <p className="text-sm text-white/70">Status: {order.status}</p>
+                  <p className="mt-3 text-lg font-semibold text-white">{order.amount}</p>
+                  <Link to="/orders" className="mt-4 inline-flex items-center text-xs font-semibold text-white/80 hover:text-white">
+                    Track order →
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <div className={`${CARD_BASE} p-6 lg:col-span-3 text-center text-white/70`}>
+                No orders yet. Explore studios, materials, and associate engagements to get started.
+              </div>
+            )}
+          </div>
+          {ordersError && (
+            <div className="rounded-2xl border border-amber-200/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+              {ordersError}
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-white">Account management</h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {accountManagementTiles.map((tile) => renderTile(tile))}
+            {accountTiles.map((tile) => {
+              const Icon = tile.icon;
+              return (
+                <div key={tile.title} className={`${CARD_BASE} p-5 flex flex-col gap-4`}>
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white">
+                      <Icon size={20} />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold text-white">{tile.title}</h3>
+                      <p className="text-sm text-white/70 leading-relaxed">{tile.description}</p>
+                    </div>
+                  </div>
+                  {tile.cta && (
+                    tile.to ? (
+                      <Link to={tile.to} className={CTA_BUTTON}>
+                        {tile.cta}
+                      </Link>
+                    ) : (
+                      <button type="button" className={CTA_BUTTON}>
+                        {tile.cta}
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
 
-        <section>
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Support & concierge</h2>
+        <section className="space-y-4 pb-10">
+          <h2 className="text-lg font-semibold text-white">Support & concierge</h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {supportTiles.map((tile) => renderTile(tile))}
+            {supportTiles.map((tile) => {
+              const Icon = tile.icon;
+              return (
+                <div key={tile.title} className={`${CARD_BASE} p-5 flex flex-col gap-3`}>
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white">
+                      <Icon size={20} />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold text-white">{tile.title}</h3>
+                      <p className="text-sm text-white/70 leading-relaxed">{tile.description}</p>
+                    </div>
+                  </div>
+                  {tile.cta && (
+                    tile.to ? (
+                      <Link to={tile.to} className={CTA_BUTTON}>
+                        {tile.cta}
+                      </Link>
+                    ) : (
+                      <button type="button" className={CTA_BUTTON}>
+                        {tile.cta}
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       </main>
