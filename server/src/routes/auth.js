@@ -7,6 +7,8 @@ import { requireAuth } from '../rbac/guards.js';
 import { validateEmailDeliverability } from '../utils/emailValidation.js';
 import { signInWithGoogle } from '../services/googleAuth.js';
 
+import { sendSignupCredentialsEmail } from '../services/email/emailService.js';
+import logger from '../utils/logger.js';
 const r = Router();
 const credsSchema = z.object({
   email: z.string().email().transform((s)=>s.trim().toLowerCase()),
@@ -41,6 +43,19 @@ async function handleSignup(req, res) {
     rolesGlobal,
     isClient: resolvedRole === 'client'
   });
+
+  try {
+    await sendSignupCredentialsEmail({
+      to: email,
+      password,
+      role: resolvedRole,
+    });
+  } catch (error) {
+    logger.warn('Failed to send signup credentials email', {
+      email,
+      error: error.message,
+    });
+  }
 
   const token = signAccess(u);
   res.json({

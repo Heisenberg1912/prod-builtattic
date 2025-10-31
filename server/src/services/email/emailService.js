@@ -144,6 +144,55 @@ export const sendWelcomeEmail = async (email, name) => {
   }
 };
 
+
+export const sendSignupCredentialsEmail = async ({ to, password, loginUrl, role }) => {
+  if (!to) {
+    throw new Error('signup credential email requires a recipient');
+  }
+  const transporter = createTransporter();
+  const targetUrl =
+    loginUrl ||
+    process.env.CLIENT_LOGIN_URL ||
+    process.env.APP_BASE_URL ||
+    'https://builtattic.com/login';
+  const safeRole = role ? String(role).replace(/[^a-zA-Z0-9\s-]+/g, '') : 'Builtattic member';
+  const subject = 'Welcome to Builtattic – your login is ready';
+  const html = `
+    <div style="font-family: 'Montserrat', Arial, sans-serif; max-width:600px; margin:0 auto; padding:32px; background:#0f172a; color:#e2e8f0;">
+      <div style="text-align:center; margin-bottom:28px;">
+        <h2 style="color:#e2e8f0; margin:0 0 6px;">Welcome to Builtattic</h2>
+        <p style="color:#94a3b8; margin:0;">Your workspace credentials are below</p>
+      </div>
+      <div style="background:#1e293b; border:1px solid #334155; border-radius:16px; padding:24px; margin-bottom:28px;">
+        <p style="margin:0 0 16px; color:#cbd5f5;">You can sign in with</p>
+        <table style="width:100%; border-collapse:collapse;">
+          <tr>
+            <td style="padding:8px 0; color:#94a3b8;">Email</td>
+            <td style="padding:8px 0; color:#e2e8f0; font-weight:600;">${to}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; color:#94a3b8;">Temporary password</td>
+            <td style="padding:8px 0;">
+              <span style="display:inline-block; padding:12px 18px; background:#0ea5e9; color:#0f172a; border-radius:10px; font-weight:700; letter-spacing:1px;">${password}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; color:#94a3b8;">Role</td>
+            <td style="padding:8px 0; color:#e2e8f0; font-weight:600; text-transform:capitalize;">${safeRole}</td>
+          </tr>
+        </table>
+        <p style="color:#94a3b8; font-size:13px; margin-top:20px;">For security, please update your password after signing in.</p>
+      </div>
+      <div style="text-align:center; margin-bottom:28px;">
+        <a href="${targetUrl}" style="display:inline-block; padding:14px 26px; background:#38bdf8; color:#0f172a; border-radius:999px; font-weight:600; text-decoration:none;">Open Builtattic</a>
+      </div>
+      <p style="color:#64748b; font-size:12px; text-align:center;">If you did not request this account, please ignore this email or contact support.</p>
+    </div>
+  `;
+  const fromAddress = process.env.EMAIL_FROM || `Builtattic <${process.env.EMAIL_USER}>`;
+  await transporter.sendMail({ from: fromAddress, to, subject, html });
+};
+
 export const sendSupportEmailNotification = async ({
   supportEmail,
   threadId,

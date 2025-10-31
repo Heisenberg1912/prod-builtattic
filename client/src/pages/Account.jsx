@@ -30,25 +30,25 @@ const CTA_BUTTON = "inline-flex items-center justify-center rounded-full border 
 const quickAccessTiles = [
   {
     title: "Your Orders",
-    description: "Track shipments, approvals, and delivery milestones.",
+    description: "Check status and history.",
     icon: ShoppingBag,
     to: "/orders",
   },
   {
     title: "Buy it Again",
-    description: "Reorder your most trusted studios and materials.",
+    description: "Repeat past purchases fast.",
     icon: Repeat,
     to: "/orders",
   },
   {
     title: "Wishlist",
-    description: "Curate the ideas you want to act on next.",
+    description: "Save ideas for later.",
     icon: Heart,
     to: "/wishlist",
   },
   {
     title: "Prime Concierge",
-    description: "Jump on a call with a project strategist in minutes.",
+    description: "Ping the support desk.",
     icon: Headphones,
     to: "/support",
   },
@@ -57,42 +57,42 @@ const quickAccessTiles = [
 const accountTiles = [
   {
     title: "Login & Security",
-    description: "Passwords, MFA, connected devices, and alerts.",
+    description: "Password, MFA, devices.",
     icon: ShieldCheck,
     to: "/settings",
     cta: "Manage",
   },
   {
     title: "Delivery Addresses",
-    description: "Warehouses, sites, and fabrication partners in one place.",
+    description: "Keep site details current.",
     icon: MapPin,
     to: "/settings",
     cta: "Edit",
   },
   {
     title: "Payment Options",
-    description: "Escrow preferences, cards, and UPI mandates.",
+    description: "Cards, UPI, escrow rules.",
     icon: Wallet,
     to: "/cart",
     cta: "Review",
   },
   {
     title: "Gift Cards & Credits",
-    description: "Redeem promo codes and monitor Builtattic balance.",
+    description: "Apply codes in one place.",
     icon: Gift,
     to: "/account",
     cta: "Redeem",
   },
   {
     title: "Communication Settings",
-    description: "Choose the design drops and partner updates you receive.",
+    description: "Pick the updates you want.",
     icon: MessageSquare,
     to: "/settings",
     cta: "Update",
   },
   {
     title: "Invite Collaborators",
-    description: "Grant access to clients, vendors, and project teams.",
+    description: "Add clients and partners.",
     icon: UserCog,
     to: "/associates",
     cta: "Invite",
@@ -102,21 +102,21 @@ const accountTiles = [
 const supportTiles = [
   {
     title: "Priority Studio Support",
-    description: "Concierge architects on standby for premium plans.",
+    description: "Concierge help on demand.",
     icon: Crown,
     to: null,
     cta: "Contact",
   },
   {
     title: "Account Preferences",
-    description: "Regional, privacy, and personalization controls.",
+    description: "Tune privacy and region quickly.",
     icon: Settings2,
     to: "/settings",
     cta: "Adjust",
   },
   {
     title: "Professional Services",
-    description: "Tap the associate network for bespoke engagements.",
+    description: "Browse vetted experts fast.",
     icon: PackageCheck,
     to: "/associates",
     cta: "Explore",
@@ -307,7 +307,7 @@ const Account = () => {
                   <Sparkles size={14} /> Membership
                 </div>
                 <p className="mt-2 text-base font-semibold text-white">{membership}</p>
-                <p className="text-xs text-white/70">Priority support & curated drops unlocked</p>
+                <p className="text-xs text-white/70">Enjoy priority support.</p>
               </div>
             </div>
 
@@ -409,7 +409,7 @@ const Account = () => {
               ))
             ) : (
               <div className={`${CARD_BASE} p-6 lg:col-span-3 text-center text-white/70`}>
-                No orders yet. Explore studios, materials, and associate engagements to get started.
+                No orders yet. Explore the marketplace to get started.
               </div>
             )}
           </div>
