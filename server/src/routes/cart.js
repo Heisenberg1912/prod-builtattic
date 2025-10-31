@@ -1,0 +1,8 @@
+import { Router } from 'express'; import Cart from '../models/Cart.js'; import Product from '../models/Product.js'; import { requireAuth } from '../rbac/guards.js';
+const r=Router();
+async function ensureCart(userId){ let cart=await Cart.findOne({user:userId}); if(!cart) cart=await Cart.create({user:userId,items:[]}); return cart; }
+r.get('/cart', requireAuth, async (req,res)=>{ const cart=await ensureCart(req.user._id); res.json({ok:true,cart}); });
+r.post('/cart/items', requireAuth, async (req,res)=>{ const {productId,qty=1}=req.body||{}; const prod=await Product.findById(productId); if(!prod||prod.status!=='published') return res.status(404).json({ok:false,error:'product not found'}); const cart=await ensureCart(req.user._id); const existing=cart.items.find(i=>String(i.product)===String(productId)); if(existing) existing.qty+=qty; else cart.items.push({product:productId,qty}); cart.updatedAt=new Date(); await cart.save(); res.json({ok:true,cart}); });
+r.patch('/cart/items/:id', requireAuth, async (req,res)=>{ const {qty}=req.body||{}; const cart=await ensureCart(req.user._id); const it=cart.items.id(req.params.id); if(!it) return res.status(404).json({ok:false,error:'item not found'}); it.qty=qty; cart.updatedAt=new Date(); await cart.save(); res.json({ok:true,cart}); });
+r.delete('/cart/items/:id', requireAuth, async (req,res)=>{ const cart=await ensureCart(req.user._id); const it=cart.items.id(req.params.id); if(!it) return res.status(404).json({ok:false,error:'item not found'}); it.remove(); cart.updatedAt=new Date(); await cart.save(); res.json({ok:true,cart}); });
+export default r;

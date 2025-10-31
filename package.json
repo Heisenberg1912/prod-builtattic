@@ -1,0 +1,22 @@
+{
+  "name": "builtattic-dashboard-monorepo",
+  "private": true,
+  "engines": { "node": "20.x" },
+  "scripts": {
+    "postinstall": "node scripts/install-subprojects.js",
+    "client": "npm --prefix client run dev",
+    "server": "npm --prefix server run dev || npm --prefix server start",
+    "dev": "concurrently -n client,server -c auto \"npm:client\" \"npm:server\"",
+    "build": "npm --prefix client run build",
+    "seed:marketplace": "npm --prefix server run seed:marketplace",
+    "seed:users": "npm --prefix server run seed:users",
+    "seed:superadmin": "npm --prefix server run seed:superadmin"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  },
+  "dependencies": {
+    "fuse": "^0.12.1",
+    "mongodb": "^6.20.0"
+  }
+}

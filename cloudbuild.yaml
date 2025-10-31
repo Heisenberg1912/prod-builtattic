@@ -1,0 +1,83 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: ALLOW_LOOSE
+
+substitutions:
+  _REGION: us-central1
+  _ARTIFACT_REGION: us
+  _SERVICE: builtattic-api
+  _REPOSITORY: builtattic
+  _VERSION: latest
+  _CPU: '1'
+  _MEMORY: 1Gi
+  _MIN_INSTANCES: '0'
+  _MAX_INSTANCES: '3'
+  _CONCURRENCY: '80'
+  _VPC_CONNECTOR: ''
+  _VPC_EGRESS: ''
+  _ENV_VARS: ''
+  _SECRET_ENV: ''
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-f',
+        'Dockerfile',
+        '-t',
+        '$_ARTIFACT_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_SERVICE:$_VERSION',
+        '.',
+      ]
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'push',
+        '$_ARTIFACT_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_SERVICE:$_VERSION',
+      ]
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: Deploy to Cloud Run
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        set -euo pipefail
+        IMAGE="$_ARTIFACT_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_SERVICE:$_VERSION"
+        DEPLOY_CMD=(
+          gcloud run deploy "$_SERVICE"
+          --image "$$IMAGE"
+          --region "$_REGION"
+          --platform managed
+          --allow-unauthenticated
+          --port 8080
+          --cpu "$_CPU"
+          --memory "$_MEMORY"
+          --concurrency "$_CONCURRENCY"
+          --min-instances "$_MIN_INSTANCES"
+          --max-instances "$_MAX_INSTANCES"
+        )
+
+        env_payload="$_ENV_VARS"
+        if [[ -n "$env_payload" ]]; then
+          env_string=${env_payload//;/,}
+          DEPLOY_CMD+=(--set-env-vars "$env_string")
+        fi
+
+        secret_payload="$_SECRET_ENV"
+        if [[ -n "$secret_payload" ]]; then
+          secret_string=${secret_payload//;/,}
+          DEPLOY_CMD+=(--set-secrets "$secret_string")
+        fi
+
+
+        if [[ -n "${_VPC_CONNECTOR}" ]]; then
+          DEPLOY_CMD+=(--vpc-connector "${_VPC_CONNECTOR}")
+          if [[ -n "${_VPC_EGRESS}" ]]; then
+            DEPLOY_CMD+=(--vpc-egress "${_VPC_EGRESS}")
+          fi
+        fi
+
+        "${DEPLOY_CMD[@]}"
+
+images:
+  - $_ARTIFACT_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_SERVICE:$_VERSION

@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "framework": "vite",
+  "installCommand": "npm install && (npm ci --prefix server || npm install --prefix server)",
+  "buildCommand": "npm run build",
+  "outputDirectory": "client/dist",
+  "env": {
+    "SERVE_CLIENT_FROM_API": "false"
+  },
+  "functions": {
+    "api/index.mjs": {
+      "includeFiles": "server/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.mjs" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

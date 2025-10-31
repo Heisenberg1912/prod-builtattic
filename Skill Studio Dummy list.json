@@ -1,0 +1,114 @@
+[
+ {
+   "Firm Name": "Gable Design Studio",
+   "Location (HQ)": "Willow Creek, OR, USA",
+   "Year Est.": 2011,
+   "Principal Architect(s)": "Sarah Gable",
+   "Primary Categories": "Residential, Agricultural",
+   "Primary Style": "Modern Farmhouse",
+   "Project 1 (Category)": "The Gilded Acorn (Residential)",
+   "Project 2 (Category)": "The Whispering Barn (Agricultural)",
+   "Avg. Cost (USD": {
+      "sq. ft)": "$450 - $700"
+   },
+   "License No.": "OR-ARK-88231",
+   "Address": "14 Sparrow Lane, Willow Creek, OR 97003, USA",
+   "Contact No.": "+1 (503) 555-0101"
+},
+ {
+   "Firm Name": "Thorne & Partners",
+   "Location (HQ)": "Neo-Kyoto, JP",
+   "Year Est.": 2007,
+   "Principal Architect(s)": "Dr. Aris Thorne",
+   "Primary Categories": "Commercial, Mixed-Use",
+   "Primary Style": "Cyber-Modern",
+   "Project 1 (Category)": "The Apex Plaza (Commercial)",
+   "Project 2 (Category)": "Dynamo Tower (Mixed-Use)",
+   "Avg. Cost (USD": {
+      "sq. ft)": "$800 - $1300"
+   },
+   "License No.": "JP-ARK-7209A",
+   "Address": "77-3-1 Gen-Matrix Bldg, Neo-Kyoto 604-8121, JP",
+   "Contact No.": "+81 75 555-0202"
+},
+ {
+   "Firm Name": "Paloma Ruiz Urbanists",
+   "Location (HQ)": "Barcelona, ES",
+   "Year Est.": 2002,
+   "Principal Architect(s)": "Paloma Ruiz",
+   "Primary Categories": "Mixed-Use, Recreational",
+   "Primary Style": "Adaptive Reuse",
+   "Project 1 (Category)": "The Mosaic Market (Mixed-Use)",
+   "Project 2 (Category)": "Plaza de la Risa (Recreational)",
+   "Avg. Cost (USD": {
+      "sq. ft)": "$550 - $900"
+   },
+   "License No.": "ESP-COAM-4567B",
+   "Address": "Carrer de la Brúixola, 18, 08003 Barcelona, ES",
+   "Contact No.": "+34 93 555-0303"
+},
+ {
+   "Firm Name": "McKenzie Architecture",
+   "Location (HQ)": "Queenstown, NZ",
+   "Year Est.": 2015,
+   "Principal Architect(s)": "Kauri McKenzie",
+   "Primary Categories": "Recreational, Residential",
+   "Primary Style": "Kinetic Architecture",
+   "Project 1 (Category)": "The Sky-View Luge (Recreational)",
+   "Project 2 (Category)": "The Cliffhanger Cabins (Residential)",
+   "Avg. Cost (USD": {
+      "sq. ft)": "$700 - $1250"
+   },
+   "License No.": "NZ-ARB-9011-M",
+   "Address": "5 Peakview Rise, Queenstown 9300, NZ",
+   "Contact No.": "+64 3 555-0404"
+},
+ {
+   "Firm Name": "Stahl Industrial Design",
+   "Location (HQ)": "Ruhr Valley, DE",
+   "Year Est.": 1998,
+   "Principal Architect(s)": "Bastian Stahl",
+   "Primary Categories": "Industrial, Institutional",
+   "Primary Style": "Industrial Minimalism",
+   "Project 1 (Category)": "\"Helios\" Geothermal Plant (Industrial)",
+   "Project 2 (Category)": "\"Titan\" Logistics Hub (Industrial)",
+   "Avg. Cost (USD": {
+      "sq. ft)": "$300 - $600"
+   },
+   "License No.": "DE-AKNW-58204",
+   "Address": "12 Schornsteinweg, 45127 Essen, DE",
+   "Contact No.": "+49 201 555-0505"
+},
+ {
+   "Firm Name": "Finch Heritage Architects",
+   "Location (HQ)": "Cambridge, UK",
+   "Year Est.": 1985,
+   "Principal Architect(s)": "Prof. Elara Finch",
+   "Primary Categories": "Institutional",
+   "Primary Style": "Collegiate Gothic Revival",
+   "Project 1 (Category)": "The Astrolabe Library (Institutional)",
+   "Project 2 (Category)": "The Alchemist's Hall (Institutional)",
+   "Avg. Cost (USD": {
+      "sq. ft)": "$650 - $1150"
+   },
+   "License No.": "UK-ARC-23309",
+   "Address": "7 Quill & Compass Yard, Cambridge, CB2 1TN, UK",
+   "Contact No.": "+44 1223 555-0606"
+},
+ {
+   "Firm Name": "Viento Arquitectos",
+   "Location (HQ)": "Mendoza, AR",
+   "Year Est.": 2009,
+   "Principal Architect(s)": "Santiago Viento",
+   "Primary Categories": "Agricultural, Residential",
+   "Primary Style": "Vernacular, Rammed Earth",
+   "Project 1 (Category)": "Bodega del Sol (Agricultural)",
+   "Project 2 (Category)": "Finca de la Luna (Agricultural)",
+   "Avg. Cost (USD": {
+      "sq. ft)": "$250 - $500"
+   },
+   "License No.": "AR-CPAU-11987",
+   "Address": "400 Ruta del Vino, Luján de Cuyo, Mendoza 5507, AR",
+   "Contact No.": "+54 261 555-0707"
+}
+]
