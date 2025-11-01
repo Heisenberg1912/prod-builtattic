@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import { Toaster, toast } from "react-hot-toast";
@@ -67,12 +67,17 @@ const LOI_ROLE_OPTIONS = [
   "Builder / Real Estate Agency",
 ];
 
+const CODE_LENGTH = 8;
+
+const createEmptyCode = () => Array(CODE_LENGTH).fill("");
+
 const App = () => {
   const [hasAccess, setHasAccess] = useState(false);
   const [codeAccepted, setCodeAccepted] = useState(false);
   const [acceptedCode, setAcceptedCode] = useState('');
-  const [codeInput, setCodeInput] = useState("");
+  const [codeChars, setCodeChars] = useState(() => createEmptyCode());
   const [codeError, setCodeError] = useState("");
+  const inviteCodeErrorId = "invite-code-error";
 
   // REMOVED: loginMode and radio selector
 
@@ -89,14 +94,101 @@ const App = () => {
   const [fieldErrors, setFieldErrors] = useState({});
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
 
+  const codeInputsRef = useRef([]);
+
+  const sanitizeCodeValue = (value = "") =>
+    value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+
+  const focusCodeIndex = (index) => {
+    const node = codeInputsRef.current[index];
+    if (node && typeof node.focus === "function") {
+      node.focus();
+      if (typeof node.select === "function") {
+        node.select();
+      }
+    }
+  };
+
+  const handleCodeCharChange = (index) => (event) => {
+    const nextValue = sanitizeCodeValue(event.target.value).slice(-1);
+    setCodeChars((prev) => {
+      const next = [...prev];
+      next[index] = nextValue;
+      return next;
+    });
+    if (codeError) setCodeError("");
+    if (nextValue && index < CODE_LENGTH - 1) {
+      focusCodeIndex(index + 1);
+    }
+  };
+
+  const handleCodeKeyDown = (index) => (event) => {
+    if (event.key === "Backspace" && !codeChars[index] && index > 0) {
+      event.preventDefault();
+      setCodeChars((prev) => {
+        const next = [...prev];
+        next[index - 1] = "";
+        return next;
+      });
+      focusCodeIndex(index - 1);
+      return;
+    }
+    if (event.key === "ArrowLeft" && index > 0) {
+      event.preventDefault();
+      focusCodeIndex(index - 1);
+      return;
+    }
+    if (event.key === "ArrowRight" && index < CODE_LENGTH - 1) {
+      event.preventDefault();
+      focusCodeIndex(index + 1);
+    }
+  };
+
+  const handleCodePaste = (index) => (event) => {
+    const clipboardData = event.clipboardData || window.clipboardData;
+    const pasted = clipboardData
+      ? sanitizeCodeValue(clipboardData.getData("text"))
+      : "";
+    if (!pasted) {
+      return;
+    }
+    event.preventDefault();
+    setCodeChars((prev) => {
+      const next = [...prev];
+      let cursor = index;
+      for (const char of pasted) {
+        if (cursor >= CODE_LENGTH) break;
+        next[cursor] = char;
+        cursor += 1;
+      }
+      for (let i = cursor; i < CODE_LENGTH; i += 1) {
+        next[i] = "";
+      }
+      return next;
+    });
+    if (codeError) setCodeError("");
+    const nextFocus = Math.min(index + pasted.length, CODE_LENGTH - 1);
+    focusCodeIndex(nextFocus);
+  };
+
   const handleSecretSubmit = (event) => {
     event.preventDefault();
-    const candidate = codeInput.trim();
+    const candidate = codeChars.join("");
+    if (candidate.length !== CODE_LENGTH) {
+      setCodeError(`Please enter all ${CODE_LENGTH} characters of the code.`);
+      const firstEmptyIndex = codeChars.findIndex((char) => !char);
+      if (firstEmptyIndex >= 0) {
+        focusCodeIndex(firstEmptyIndex);
+      } else {
+        focusCodeIndex(CODE_LENGTH - 1);
+      }
+      return;
+    }
     if (isValidSecretCode(candidate)) {
       setAcceptedCode(candidate);
       // Always go to LOI/profile form
       setCodeAccepted(true);
-      setCodeInput("");
+      setCodeChars(() => createEmptyCode());
       setCodeError("");
       setProfileError("");
       setProfileForm(createEmptyProfile());
@@ -134,7 +226,7 @@ const App = () => {
     setProfileForm(createEmptyProfile());
     setProfileError("");
     setFieldErrors({});
-    setCodeInput("");
+    setCodeChars(() => createEmptyCode());
     setCodeError("");
   };
 
@@ -348,18 +440,39 @@ const App = () => {
 
           {!showProfileForm ? (
             <form onSubmit={handleSecretSubmit} className="secret-gate__form">
-              <input
-                type="text"
-                value={codeInput}
-                onChange={(event) => {
-                  setCodeInput(event.target.value);
-                  if (codeError) setCodeError("");
-                }}
-                placeholder="Enter invitation code"
-                className="secret-gate__input secret-gate__input--code"
-                autoFocus
-              />
-              {codeError && <p className="secret-gate__error">{codeError}</p>}
+              <div
+                className="secret-gate__code-grid"
+                role="group"
+                aria-label="Invitation code"
+                aria-describedby={codeError ? inviteCodeErrorId : undefined}
+              >
+                {codeChars.map((char, index) => (
+                  <input
+                    key={index}
+                    ref={(element) => {
+                      codeInputsRef.current[index] = element;
+                    }}
+                    type="text"
+                    inputMode="text"
+                    maxLength={1}
+                    autoComplete="one-time-code"
+                    value={char}
+                    onChange={handleCodeCharChange(index)}
+                    onKeyDown={handleCodeKeyDown(index)}
+                    onPaste={handleCodePaste(index)}
+                    className="secret-gate__input secret-gate__code-input"
+                    autoFocus={index === 0}
+                    aria-label={`Character ${index + 1}`}
+                    aria-invalid={Boolean(codeError)}
+                    aria-describedby={codeError ? inviteCodeErrorId : undefined}
+                  />
+                ))}
+              </div>
+              {codeError && (
+                <p id={inviteCodeErrorId} className="secret-gate__error">
+                  {codeError}
+                </p>
+              )}
               <button type="submit" className="secret-gate__button">
                 Continue
               </button>

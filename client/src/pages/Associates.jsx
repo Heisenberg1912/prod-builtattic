@@ -408,6 +408,11 @@ const Associates = () => {
     return chipFiltersActive || numericFiltersActive;
   }, [filters, numericFiltersActive]);
 
+  const listingContainerClass = useMemo(
+    () => (filtersOpen ? 'mx-auto w-full max-w-5xl' : 'mx-auto w-full max-w-6xl'),
+    [filtersOpen]
+  );
+
   const DualRange = ({ id, label, domain, value, onChange, format = (n) => n, step = 1 }) => {
     const [min, max] = domain;
     const [lo, hi] = value;
@@ -647,43 +652,7 @@ const Associates = () => {
               </div>
             )}
 
-            {!loading && web3Meta && (
-
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-900/90 px-6 py-5 text-emerald-100 shadow-sm">
-
-                <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-300">
-
-                  Blockchain confidence
-
-                </p>
-
-                <div className="mt-2 flex flex-wrap items-center gap-4">
-
-                  <h2 className="text-xl font-semibold">
-
-                    {web3Meta.total ?? 0} verifications anchored on {web3Meta.chain ?? "Polygon"}
-
-                  </h2>
-
-                  {Array.isArray(web3Meta.anchors) && web3Meta.anchors.length > 0 ? (
-
-                    <p className="text-xs text-emerald-200">
-
-                      Latest anchors: {web3Meta.anchors.slice(0, 3).join(" · ")}
-
-                    </p>
-
-                  ) : null}
-
-                </div>
-
-              </div>
-
-            )}
-
-
-
-            <section className="flex flex-col md:flex-row gap-3 md:items-center">
+            <section className={`${listingContainerClass} flex flex-col md:flex-row gap-3 md:items-center`}>
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -703,19 +672,37 @@ const Associates = () => {
               </select>
             </section>
 
+            {!loading && web3Meta && (
+              <div className={`${listingContainerClass} rounded-2xl border border-emerald-200 bg-emerald-900/90 px-6 py-5 text-emerald-100 shadow-sm`}>
+                <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-300">
+                  Blockchain confidence
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-4">
+                  <h2 className="text-xl font-semibold">
+                    {web3Meta.total ?? 0} verifications anchored on {web3Meta.chain ?? "Polygon"}
+                  </h2>
+                  {Array.isArray(web3Meta.anchors) && web3Meta.anchors.length > 0 ? (
+                    <p className="text-xs text-emerald-200">
+                      Latest anchors: {web3Meta.anchors.slice(0, 3).join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
             {error && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm">
+              <div className={`${listingContainerClass} bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm`}>
                 {error}
               </div>
             )}
 
             {loading && (
-              <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">
+              <div className={`${listingContainerClass} bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500`}>
                 Loading associates.
               </div>
             )}
 
-            <section className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            <section className={`${listingContainerClass} grid gap-6 sm:grid-cols-2 xl:grid-cols-3`}>
               {!loading &&
                 filteredAssociates.map((associate) => {
                   const hourlyRate = extractRate(associate);
@@ -921,7 +908,7 @@ const Associates = () => {
             </section>
 
             {!loading && filteredAssociates.length === 0 && (
-              <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">
+              <div className={`${listingContainerClass} bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500`}>
                 No associates found. Try a different role or keyword.
               </div>
             )}

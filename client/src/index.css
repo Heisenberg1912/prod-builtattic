@@ -309,6 +309,29 @@ body.anti-screenshot canvas {
   letter-spacing: 0.14em;
 }
 
+.secret-gate__code-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(44px, 1fr));
+  gap: 12px;
+  justify-items: center;
+}
+
+.secret-gate__code-input {
+  padding: 14px 0;
+  width: 100%;
+  min-width: 48px;
+  text-align: center;
+  font-size: 1.1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 540px) {
+  .secret-gate__code-grid {
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+    gap: 10px;
+  }
+}
 
 .secret-gate__document {
   display: flex;

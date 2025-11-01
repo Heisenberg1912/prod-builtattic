@@ -775,8 +775,13 @@ const Studio = () => {
   const listingsGridClass = useMemo(
     () =>
       filtersOpen
-        ? "mx-auto grid w-full auto-rows-fr gap-5 xs:grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl"
-        : "mx-auto grid w-full auto-rows-fr gap-5 xs:grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-6xl",
+        ? "grid w-full auto-rows-fr gap-5 xs:grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        : "grid w-full auto-rows-fr gap-5 xs:grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+    [filtersOpen]
+  );
+
+  const listingsContainerClass = useMemo(
+    () => (filtersOpen ? "mx-auto w-full max-w-5xl" : "mx-auto w-full max-w-6xl"),
     [filtersOpen]
   );
 
@@ -1141,13 +1146,13 @@ const Studio = () => {
 
             {/* Skeletons */}
             {loading && (
-              <section className={listingsGridClass}>
+              <section className={`${listingsContainerClass} ${listingsGridClass}`}>
                 {Array.from({ length: PAGE_SIZE }).map((_, i) => <SkeletonCard key={i} />)}
               </section>
             )}
 
             {!loading && web3Meta && (
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-900/95 px-6 py-5 text-indigo-100 shadow-sm">
+              <div className={`${listingsContainerClass} rounded-2xl border border-indigo-200 bg-indigo-900/95 px-6 py-5 text-indigo-100 shadow-sm`}>
                 <p className="text-[11px] uppercase tracking-[0.35em] text-indigo-300">
                   On-chain studio proofs
                 </p>
@@ -1157,7 +1162,7 @@ const Studio = () => {
                   </h2>
                   {Array.isArray(web3Meta.anchors) && web3Meta.anchors.length > 0 ? (
                     <p className="text-xs text-indigo-200">
-                      Latest anchors: {web3Meta.anchors.slice(0, 3).join(" · ")}
+                      Latest anchors: {web3Meta.anchors.slice(0, 3).join(" | ")}
                     </p>
                   ) : null}
                 </div>
@@ -1166,7 +1171,7 @@ const Studio = () => {
 
             {/* Responsive, dynamic grid */}
             {!loading && (
-              <section className={listingsGridClass}>
+              <section className={`${listingsContainerClass} ${listingsGridClass}`}>
                 {displayStudios.slice(0, visibleCount).map((studio) => {
                   const href = studio.slug
                     ? `/studio/${studio.slug}`
@@ -1326,7 +1331,7 @@ const Studio = () => {
                               className="inline-flex items-center gap-2 text-xs font-medium text-indigo-500 hover:text-indigo-400"
                             >
                               <span className="h-2 w-2 rounded-full bg-indigo-400" />
-                              Verified on-chain · {studio.web3Proof.anchor}
+                              Verified on-chain | {studio.web3Proof.anchor}
                             </a>
                           )}
                         </div>
