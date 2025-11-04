@@ -79,20 +79,17 @@ const ACCESS_STORAGE_KEY = "builtattic_demo_access_v1";
 const loadStoredAccess = () => {
   if (typeof window === "undefined") return false;
   try {
-    return localStorage.getItem(ACCESS_STORAGE_KEY) === "true";
+    localStorage.removeItem(ACCESS_STORAGE_KEY);
   } catch {
-    return false;
+    // ignore storage errors
   }
+  return false;
 };
 
-const persistAccess = (granted) => {
+const persistAccess = () => {
   if (typeof window === "undefined") return;
   try {
-    if (granted) {
-      localStorage.setItem(ACCESS_STORAGE_KEY, "true");
-    } else {
-      localStorage.removeItem(ACCESS_STORAGE_KEY);
-    }
+    localStorage.removeItem(ACCESS_STORAGE_KEY);
   } catch {
     // ignore storage errors
   }
