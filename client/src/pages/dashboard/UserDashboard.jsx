@@ -1,365 +1,572 @@
-import { useState, useEffect } from "react";
-import {
-  ShoppingBag,
-  User,
-  Bell,
-  Wallet,
-  Brush,
-  Plus,
-  Trash2,
-  ArrowRight,
-  Menu,
-  X,
-} from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { fallbackStudios } from "../../data/marketplace.js";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
 
-// Helpers to read user info from storage/JWT
-const safeJSON = (k) => {
-  try { return JSON.parse(localStorage.getItem(k) || "null"); } catch { return null; }
+import { loadUserProfile, saveUserProfile } from '../../services/userProfile.js';
+import { getSettings } from '../../services/settings.js';
+import { fetchOrders } from '../../services/orders.js';
+import { useWishlist } from '../../context/WishlistContext.jsx';
+
+const EMPTY_PROFILE = {
+  fullName: '',
+  email: '',
+  phone: '',
+  location: '',
+  company: '',
+  bio: '',
 };
-const decodeJwtPayload = (t) => {
+
+const PROFILE_FIELDS = Object.keys(EMPTY_PROFILE);
+
+const STATUS_LABELS = {
+  created: 'Pending',
+  paid: 'Paid',
+  fulfilled: 'Fulfilled',
+  delivered: 'Delivered',
+  processing: 'Processing',
+  refunded: 'Refunded',
+  cancelled: 'Cancelled',
+};
+
+const STATUS_STYLES = {
+  pending: 'bg-amber-100 text-amber-700',
+  created: 'bg-amber-100 text-amber-700',
+  paid: 'bg-emerald-100 text-emerald-700',
+  fulfilled: 'bg-emerald-100 text-emerald-700',
+  delivered: 'bg-emerald-100 text-emerald-700',
+  processing: 'bg-indigo-100 text-indigo-700',
+  refunded: 'bg-rose-100 text-rose-700',
+  cancelled: 'bg-rose-100 text-rose-700',
+};
+
+const toCurrency = (value, currency = 'USD') => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return `${currency} 0`;
   try {
-    const [, p] = t.split(".");
-    return JSON.parse(atob(p.replace(/-/g, "+").replace(/_/g, "/")));
-  } catch { return null; }
-};
-const loadUserFromStorage = () => {
-  const direct =
-    safeJSON("user") ||
-    safeJSON("auth_user") ||
-    safeJSON("profile");
-  if (direct) return direct;
-  const tok = localStorage.getItem("auth_token") || localStorage.getItem("token");
-  const payload = tok ? decodeJwtPayload(tok) : null;
-  if (payload) {
-    return {
-      id: payload.sub || payload.id,
-      name: payload.name || payload.fullName || payload.username || "User",
-      email: payload.email || "",
-      role: payload.role || "",
-      phone: payload.phone || payload.phoneNumber,
-      avatar: payload.picture || payload.avatar || payload.avatarUrl,
-    };
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(numeric);
+  } catch {
+    return `${currency} ${numeric.toFixed(0)}`;
   }
-  return { name: "User", email: "", role: "" };
 };
 
-const sidebarItems = [
-  { id: "profile", label: "Profile", icon: <User size={18} /> },
-  { id: "designs", label: "My Designs", icon: <Brush size={18} /> },
-  { id: "purchased", label: "Designs Purchased", icon: <ShoppingBag size={18} /> },
-  { id: "wallet", label: "Wallet", icon: <Wallet size={18} /> },
-  { id: "notifications", label: "Notifications", icon: <Bell size={18} /> },
-];
+const toDate = (value) => {
+  if (!value) return '—';
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+};
+
+const timeAgo = (value) => {
+  if (!value) return null;
+  try {
+    const now = Date.now();
+    const past = new Date(value).getTime();
+    if (!Number.isFinite(past)) return null;
+    const delta = Math.floor((past - now) / 1000);
+    const abs = Math.abs(delta);
+    const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+    if (abs < 60) return formatter.format(Math.round(delta), 'second');
+    if (abs < 3600) return formatter.format(Math.round(delta / 60), 'minute');
+    if (abs < 86400) return formatter.format(Math.round(delta / 3600), 'hour');
+    if (abs < 604800) return formatter.format(Math.round(delta / 86400), 'day');
+    if (abs < 2629800) return formatter.format(Math.round(delta / 604800), 'week');
+    if (abs < 31557600) return formatter.format(Math.round(delta / 2629800), 'month');
+    return formatter.format(Math.round(delta / 31557600), 'year');
+  } catch {
+    return null;
+  }
+};
+
+const normalizeProfileForForm = (profile = {}) => ({
+  fullName: profile.fullName || profile.name || EMPTY_PROFILE.fullName,
+  email: profile.email || EMPTY_PROFILE.email,
+  phone: profile.phone || EMPTY_PROFILE.phone,
+  location: profile.location || EMPTY_PROFILE.location,
+  company: profile.company || EMPTY_PROFILE.company,
+  bio: profile.bio || EMPTY_PROFILE.bio,
+});
+
+const profilePayloadFromForm = (form = {}) => ({
+  name: form.fullName || '',
+  fullName: form.fullName || '',
+  email: form.email || '',
+  phone: form.phone || '',
+  location: form.location || '',
+  company: form.company || '',
+  bio: form.bio || '',
+});
+
+const profilesEqual = (a, b) =>
+  PROFILE_FIELDS.every((key) => (a?.[key] || '') === (b?.[key] || ''));
+
+const normalizeOrder = (order) => {
+  if (!order) return null;
+  const items = Array.isArray(order.items) ? order.items : [];
+  const fallbackTotal = items.reduce((sum, item) => {
+    const unit = Number(item?.lineTotal ?? item?.unitPrice ?? 0);
+    const qty = Number(item?.qty ?? 1);
+    return sum + unit * (Number.isFinite(qty) ? qty : 1);
+  }, 0);
+  const total = Number(
+    order?.amounts?.grand ?? order?.amounts?.total ?? order?.total ?? fallbackTotal ?? 0,
+  );
+  const currency =
+    order?.amounts?.currency ||
+    items.find((item) => item?.currency)?.currency ||
+    order?.currency ||
+    'USD';
+  const reference =
+    order?.metadata?.reference ||
+    order?.orderNumber ||
+    order?.code ||
+    (order?._id ? `BA-${String(order._id).slice(-6).toUpperCase()}` : order?.id || 'Order');
+  return {
+    id: order?._id || order?.id || reference,
+    reference,
+    status: order?.status || 'created',
+    placedAt: order?.createdAt || order?.updatedAt || null,
+    total,
+    currency,
+    itemCount: items.length,
+  };
+};
+
+const statusLabel = (status) => STATUS_LABELS[status] || status?.charAt(0).toUpperCase() + status?.slice(1) || 'Pending';
+
+const statusTone = (status) => STATUS_STYLES[status] || STATUS_STYLES.pending;
 
 export default function UserDashboard() {
-  const [activeView, setActiveView] = useState("profile");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [purchasedDesigns, setPurchasedDesigns] = useState([
-    { id: 1, name: "Modern Suburban Villa", style: "Modern", img: "https://placehold.co/300x200?text=Villa" },
-    { id: 2, name: "Minimalist City Loft", style: "Minimalist", img: "https://placehold.co/300x200?text=Loft" },
-    { id: 3, name: "Cozy Country Home", style: "Rustic", img: "https://placehold.co/300x200?text=Home" },
-  ]);
-  const navigate = useNavigate();
+  const [profileForm, setProfileForm] = useState(EMPTY_PROFILE);
+  const [initialProfile, setInitialProfile] = useState(EMPTY_PROFILE);
+  const [profileMeta, setProfileMeta] = useState({ loading: true, saving: false, error: null, lastSync: null });
+  const [settingsSnapshot, setSettingsSnapshot] = useState(null);
 
-  // Load real user from storage/JWT
-  const [user, setUser] = useState(() => loadUserFromStorage());
-  useEffect(() => {
-    const update = () => setUser(loadUserFromStorage());
-    window.addEventListener("storage", update);
-    window.addEventListener("auth:login", update);
-    window.addEventListener("profile:updated", update);
-    return () => {
-      window.removeEventListener("storage", update);
-      window.removeEventListener("auth:login", update);
-      window.removeEventListener("profile:updated", update);
-    };
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState(null);
+
+  const { wishlistItems, fetchWishlist } = useWishlist();
+
+  const profileRequestRef = useRef(0);
+  const ordersRequestRef = useRef(0);
+
+  const refreshProfile = useCallback(async (options = {}) => {
+    const requestId = ++profileRequestRef.current;
+    const { silent = false } = options;
+
+    if (!silent) {
+      setProfileMeta((prev) => ({ ...prev, loading: true, error: null }));
+    }
+
+    try {
+      const local = await loadUserProfile({ forceLocal: true, preferRemote: false });
+      if (profileRequestRef.current !== requestId) return;
+      const normalizedLocal = normalizeProfileForForm(local);
+      setProfileForm(normalizedLocal);
+      setInitialProfile(normalizedLocal);
+      setProfileMeta((prev) => ({ ...prev, lastSync: local?.updatedAt || prev.lastSync }));
+    } catch (error) {
+      if (profileRequestRef.current !== requestId) return;
+      console.warn('dashboard_profile_local_error', error);
+    }
+
+    try {
+      const remoteSettings = await getSettings();
+      if (profileRequestRef.current !== requestId) return;
+      setSettingsSnapshot(remoteSettings);
+      const remoteProfile = normalizeProfileForForm(remoteSettings.profile);
+      setProfileForm(remoteProfile);
+      setInitialProfile(remoteProfile);
+      setProfileMeta((prev) => ({ ...prev, loading: false, lastSync: new Date().toISOString(), error: null }));
+      if (!silent) toast.success('Profile synced');
+    } catch (error) {
+      if (profileRequestRef.current !== requestId) return;
+      if (error?.fallback) {
+        setSettingsSnapshot(error.fallback);
+        const fallbackProfile = normalizeProfileForForm(error.fallback.profile);
+        setProfileForm(fallbackProfile);
+        setInitialProfile(fallbackProfile);
+        setProfileMeta((prev) => ({ ...prev, loading: false, lastSync: new Date().toISOString(), error: null }));
+        if (!silent) toast('Using local profile snapshot', { icon: '🗂️' });
+        return;
+      }
+      console.warn('dashboard_profile_remote_error', error);
+      setProfileMeta((prev) => ({ ...prev, loading: false, error: error?.message || 'Unable to load your profile' }));
+      if (!silent) toast.error(error?.message || 'Unable to load your profile');
+    }
   }, []);
 
-  const removeFromPurchased = (id) => {
-    setPurchasedDesigns(purchasedDesigns.filter((item) => item.id !== id));
-  };
+  const refreshOrders = useCallback(async (options = {}) => {
+    const requestId = ++ordersRequestRef.current;
+    const { silent = false } = options;
 
-  const handleLogout = () => {
+    if (!silent) {
+      setOrdersLoading(true);
+      setOrdersError(null);
+    }
+
     try {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("token");
-      localStorage.removeItem("role");
-      // optionally clear any other auth-related keys here
-    } catch {}
-    // notify listeners if needed
-    try { window.dispatchEvent(new CustomEvent("auth:logout")); } catch {}
-    navigate("/login", { replace: true });
-  };
+      const payload = await fetchOrders({}, { allowDemo: true });
+      if (ordersRequestRef.current !== requestId) return;
+      const normalized = (Array.isArray(payload) ? payload : [])
+        .map(normalizeOrder)
+        .filter(Boolean);
+      setOrders(normalized);
+      setOrdersLoading(false);
+      setOrdersError(null);
+      if (!silent) {
+        toast.success('Orders updated');
+      }
+    } catch (error) {
+      if (ordersRequestRef.current !== requestId) return;
+      console.warn('dashboard_orders_error', error);
+      setOrdersError(error?.message || 'Unable to load orders');
+      setOrdersLoading(false);
+      if (!silent) {
+        toast.error(error?.message || 'Unable to load orders');
+      }
+    }
+  }, []);
 
-  const renderContent = () => {
-    switch (activeView) {
-      case "profile": return <ProfileView user={user} purchasedDesignsCount={purchasedDesigns.length} />;
-      case "designs": return <MyDesignsView />;
-      case "purchased": return <PurchasedDesignsView purchasedDesigns={purchasedDesigns} onRemove={removeFromPurchased} />;
-      case "wallet": return <WalletView />;
-      case "notifications": return <NotificationsView />;
-      default: return <ProfileView user={user} purchasedDesignsCount={purchasedDesigns.length} />;
+  const fetchWishlistRef = useRef(fetchWishlist);
+
+  useEffect(() => {
+    fetchWishlistRef.current = fetchWishlist;
+  }, [fetchWishlist]);
+
+  useEffect(() => {
+    refreshProfile({ silent: true });
+    refreshOrders({ silent: true });
+    fetchWishlistRef.current?.();
+  }, [refreshProfile, refreshOrders]);
+
+
+  const handleField = useCallback((field) => (event) => {
+    const value = event.target.value;
+    setProfileForm((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  const hasUnsavedChanges = useMemo(() => !profilesEqual(profileForm, initialProfile), [profileForm, initialProfile]);
+
+  const ordersStats = useMemo(() => {
+    if (!orders.length) {
+      return { total: 0, open: 0, lifetimeValue: 0, currency: 'USD', lastOrder: null };
+    }
+    const openStatuses = new Set(['created', 'pending', 'processing']);
+    const total = orders.length;
+    const open = orders.filter((order) => openStatuses.has(order.status)).length;
+    const lifetimeValue = orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+    const currency = orders.find((order) => order.currency)?.currency || 'USD';
+    const lastOrder = orders[0]?.placedAt || null;
+    return { total, open, lifetimeValue, currency, lastOrder };
+  }, [orders]);
+
+  const savedStudios = useMemo(() => (wishlistItems || []).slice(0, 4), [wishlistItems]);
+
+  const handleSave = async () => {
+    setProfileMeta((prev) => ({ ...prev, saving: true, error: null }));
+    try {
+      const payload = profilePayloadFromForm(profileForm);
+      const options = settingsSnapshot ? { currentSettings: settingsSnapshot } : {};
+      const snapshot = await saveUserProfile(payload, options);
+      const normalized = normalizeProfileForForm(snapshot);
+      setInitialProfile(normalized);
+      setProfileForm(normalized);
+      setProfileMeta((prev) => ({ ...prev, saving: false, lastSync: snapshot?.updatedAt || new Date().toISOString() }));
+      setSettingsSnapshot((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          profile: {
+            ...(prev.profile || {}),
+            ...payload,
+          },
+        };
+      });
+      toast.success('Profile saved');
+    } catch (error) {
+      console.error('dashboard_profile_save_error', error);
+      setProfileMeta((prev) => ({ ...prev, saving: false, error: error?.message || 'Unable to save profile' }));
+      toast.error(error?.message || 'Unable to save profile');
     }
   };
 
+  const handleRefreshAll = () => {
+    refreshProfile();
+    refreshOrders();
+    fetchWishlistRef.current?.();
+  };
+
+  const lastSyncedLabel = profileMeta.lastSync ? timeAgo(profileMeta.lastSync) : null;
+
   return (
-    <div className="flex min-h-screen bg-[#1b1f24] text-gray-100">
-      {/* Overlay for mobile */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 z-20 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`fixed md:static z-30 w-64 bg-[#1f232c] border-r border-[#2d3340] p-4 text-gray-100 flex-col transform transition-transform duration-300
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-semibold">My Dashboard</h1>
-          <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
-            <X size={20} />
-          </button>
-        </div>
-        <nav className="space-y-1">
-          {sidebarItems.map((item) => (
-            <SidebarButton
-              key={item.id}
-              icon={item.icon}
-              label={item.label}
-              isActive={activeView === item.id}
-              onClick={() => {
-                setActiveView(item.id);
-                setSidebarOpen(false);
-              }}
-            />
-          ))}
-        </nav>
-      </aside>
-
-      {/* Main */}
-      <main className="flex-1 flex flex-col max-w-full bg-[#141820]">
-        {/* Topbar */}
-        <header className="flex items-center justify-between p-4 md:p-6 border-b border-[#2d3340] bg-[#1d222b]">
-          <div className="flex items-center gap-3">
-            <button
-              className="md:hidden p-2 rounded-lg hover:bg-[#262c37]"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu size={20} />
-            </button>
-            <h2 className="text-lg font-semibold capitalize">{activeView}</h2>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Dashboard</p>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900">
+              Welcome back {profileForm.fullName || 'guest'} <span className="inline-block align-middle">👋</span>
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {profileMeta.loading
+                ? 'Syncing your information…'
+                : lastSyncedLabel
+                ? `Last synced ${lastSyncedLabel}`
+                : 'Keeping your profile in sync.'}
+            </p>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Optional small identity display */}
-            <div className="hidden sm:block text-right">
-              <div className="text-sm font-medium text-gray-100">{user?.name || "User"}</div>
-              {user?.email ? <div className="text-xs text-gray-400">{user.email}</div> : null}
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={handleLogout}
-              className="px-3 py-2 text-sm border border-[#2d3340] rounded-lg hover:bg-[#232937]"
+              onClick={handleRefreshAll}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
             >
-              Logout
+              Refresh data
             </button>
-            <img
-              src={user?.avatar || "https://placehold.co/40x40"}
-              alt={user?.name || "Profile"}
-              className="w-10 h-10 rounded-full border border-[#2d3340]"
-            />
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">{renderContent()}</div>
+      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[2fr_1fr]">
+        <section className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Account snapshot</h2>
+                <p className="text-sm text-slate-500">A quick overview of your activity across Builtattic.</p>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600">
+                  {ordersLoading ? 'Orders syncing…' : `${ordersStats.total} orders tracked`}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600">
+                  {wishlistItems?.length || 0} saved studios
+                </span>
+              </div>
+            </div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <SnapshotCard label="Total orders" value={ordersStats.total} trend={ordersStats.lastOrder ? `Last on ${toDate(ordersStats.lastOrder)}` : 'No orders yet'} />
+              <SnapshotCard label="Open orders" value={ordersStats.open} highlight={ordersStats.open > 0} trend={ordersStats.open > 0 ? 'We will notify you on status changes.' : 'All caught up!'} />
+              <SnapshotCard label="Lifetime spend" value={toCurrency(ordersStats.lifetimeValue, ordersStats.currency)} trend={ordersStats.lifetimeValue ? 'Across completed orders' : 'Place an order to get started'} />
+              <SnapshotCard label="Saved studios" value={wishlistItems?.length || 0} trend={wishlistItems?.length ? 'Pinned for quick access' : 'Explore studios to save favourites'} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Profile</h2>
+                <p className="text-sm text-slate-500">Manage the details we use across quotes, orders, and communications.</p>
+              </div>
+              {profileMeta.saving && (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
+                  Saving…
+                </span>
+              )}
+            </div>
+
+            {profileMeta.error && <ErrorBanner message={profileMeta.error} />}
+
+            <div className="mt-4 space-y-4">
+              <Field label="Full name" value={profileForm.fullName} onChange={handleField('fullName')} placeholder="Alex Johnson" autoComplete="name" />
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Email" type="email" value={profileForm.email} onChange={handleField('email')} placeholder="you@example.com" autoComplete="email" />
+                <Field label="Phone" type="tel" value={profileForm.phone} onChange={handleField('phone')} placeholder="+1 555 010 2024" autoComplete="tel" />
+              </div>
+              <Field label="Company" value={profileForm.company} onChange={handleField('company')} placeholder="Builtattic Ltd" autoComplete="organization" />
+              <Field label="Location" value={profileForm.location} onChange={handleField('location')} placeholder="San Francisco, CA" autoComplete="address-level2" />
+              <Field label="Bio" multiline value={profileForm.bio} onChange={handleField('bio')} placeholder="Tell us the kind of work you are focusing on." />
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={profileMeta.saving || profileMeta.loading || !hasUnsavedChanges}
+                  className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Save profile
+                </button>
+                {!profileMeta.loading && !profileMeta.saving && !hasUnsavedChanges && (
+                  <p className="text-sm text-slate-500">All changes saved.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Recent orders</h2>
+                <p className="text-sm text-slate-500">Track fulfilment progress and revisit order details.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshOrders()}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-sm">
+              {ordersLoading && (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((key) => (
+                    <div key={key} className="animate-pulse rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="h-4 w-24 rounded bg-slate-200" />
+                      <div className="mt-2 h-3 w-40 rounded bg-slate-200" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!ordersLoading && ordersError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {ordersError}
+                </div>
+              )}
+
+              {!ordersLoading && !ordersError && orders.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  No orders yet. Explore the marketplace to place your first order.
+                </div>
+              )}
+
+              {!ordersLoading && !ordersError && orders.length > 0 && (
+                <div className="space-y-3">
+                  {orders.slice(0, 5).map((order) => (
+                    <div key={order.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{order.reference}</p>
+                        <p className="text-xs text-slate-500">Placed {toDate(order.placedAt)}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone(order.status)}`}>
+                        {statusLabel(order.status)}
+                      </span>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-slate-900">{toCurrency(order.total, order.currency)}</p>
+                        <p className="text-xs text-slate-500">{order.itemCount} item{order.itemCount === 1 ? '' : 's'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <aside className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">Saved studios</h2>
+              <Link
+                to="/marketplace/studios"
+                className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400 hover:text-slate-500"
+              >
+                Browse
+              </Link>
+            </div>
+            <div className="mt-4 space-y-3 text-sm">
+              {savedStudios.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-slate-500">
+                  Nothing saved yet. Pin studios to see them here.
+                </div>
+              ) : (
+                savedStudios.map((studio) => (
+                  <div key={studio.productId} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="font-semibold text-slate-900">{studio.title}</p>
+                    <p className="text-xs text-slate-500">{studio.source}</p>
+                    {Number.isFinite(studio.price) && studio.price > 0 && (
+                      <p className="mt-2 text-xs font-semibold text-slate-600">{toCurrency(studio.price)}</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Quick actions</h2>
+            <p className="mt-1 text-sm text-slate-500">Jump straight into the workflows you use most often.</p>
+            <div className="mt-4 space-y-2">
+              <Link
+                to="/marketplace/materials"
+                className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                Explore materials
+                <span className="text-xs text-slate-400">→</span>
+              </Link>
+              <Link
+                to="/orders"
+                className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                View all orders
+                <span className="text-xs text-slate-400">→</span>
+              </Link>
+              <Link
+                to="/support"
+                className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                Contact support
+                <span className="text-xs text-slate-400">→</span>
+              </Link>
+            </div>
+          </div>
+        </aside>
       </main>
     </div>
   );
 }
 
-//
-// --- Views ---
-//
-function ProfileView({ purchasedDesignsCount, user }) {
+function SnapshotCard({ label, value, trend, highlight = false }) {
   return (
-    <>
-      <section className="mb-8">
-        <h2 className="text-2xl font-bold mb-4">Welcome back, {user?.name || "User"}</h2>
-        {/* Quick account info */}
-        <div className="bg-[#1d222b] rounded-xl border border-[#2d3340] p-4 mb-4 text-sm text-gray-200">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div><span className="text-gray-300">Name:</span> <span className="font-medium">{user?.name || "-"}</span></div>
-            <div><span className="text-gray-300">Email:</span> <span className="font-medium break-all">{user?.email || "-"}</span></div>
-            {user?.phone && <div><span className="text-gray-300">Phone:</span> <span className="font-medium">{user.phone}</span></div>}
-            {user?.role && <div><span className="text-gray-300">Role:</span> <span className="font-medium capitalize">{user.role}</span></div>}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={<Brush />} label="Active Projects" value="3" />
-          <StatCard icon={<ShoppingBag />} label="Designs Purchased" value={purchasedDesignsCount} />
-          <StatCard icon={<Wallet />} label="Wallet Balance" value="$1,250" />
-          <StatCard icon={<Bell />} label="Notifications" value="5" />
-        </div>
-      </section>
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Active Projects</h2>
-        <div className="bg-[#1d2129] border border-[#2d3340] rounded-xl p-6 space-y-3 text-sm">
-          <ProjectItem title="Downtown Office Redesign" status="In Progress" color="blue" />
-          <ProjectItem title="Suburban Home Extension" status="Pending Review" color="yellow" />
-          <ProjectItem title="Beach House Concept" status="Completed" color="green" />
-        </div>
-      </section>
-    </>
-  );
-}
-
-function MyDesignsView() {
-  return (
-    <div className="text-center flex flex-col items-center justify-center h-full">
-      <h2 className="text-2xl font-bold mb-4">My Designs</h2>
-      <p className="text-gray-300 mb-6 max-w-md">This is your creative space. Start a new project or manage your existing designs.</p>
-      <button className="flex items-center gap-2 bg-[#2d3442] text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#3b4354] transition-colors">
-        <Plus /> Start New Design
-      </button>
+    <div className={`rounded-xl border px-4 py-5 shadow-sm ${highlight ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
+      {trend ? <p className="mt-1 text-xs text-slate-500">{trend}</p> : null}
     </div>
   );
 }
 
-function PurchasedDesignsView({ purchasedDesigns, onRemove }) {
+function ErrorBanner({ message }) {
+  if (!message) return null;
   return (
-    <section>
-      <h2 className="text-2xl font-bold mb-4">Designs Purchased</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {purchasedDesigns.length > 0 ? (
-          purchasedDesigns.map((item) => (
-            <div key={item.id} className="bg-[#242b36] border border-[#2d3340] rounded-xl shadow-sm overflow-hidden group">
-              <img src={item.img} alt={item.name} className="w-full h-32 object-cover" />
-              <div className="p-4">
-                <h3 className="font-semibold">{item.name}</h3>
-                <p className="text-gray-300 text-sm">{item.style}</p>
-              </div>
-              <div className="p-4 border-t border-[#2d3340] opacity-0 group-hover:opacity-100 transition-opacity flex justify-end">
-                <button
-                  onClick={() => onRemove(item.id)}
-                  className="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-2"
-                >
-                  <Trash2 size={16} /> Remove
-                </button>
-              </div>
-            </div>
-          ))
-        ) : (
-          <p className="text-gray-300 col-span-full">You haven&apos;t purchased any designs yet.</p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function WalletView() {
-  const transactions = [
-    { id: 1, desc: "Added funds", amount: "+$500.00", date: "2024-08-23" },
-    { id: 2, desc: "Design purchase: 'Modern Villa'", amount: "-$150.00", date: "2024-08-22" },
-  ];
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-4">My Wallet</h2>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-[#2d3442] text-white p-6 rounded-xl">
-          <p className="text-gray-300 text-sm">Current Balance</p>
-          <p className="text-3xl font-bold mt-2">$1,250.00</p>
-          <div className="flex gap-3 mt-4">
-            <button className="flex-1 flex items-center justify-center gap-2 bg-[#303747] text-gray-100 px-4 py-2 rounded-lg font-semibold hover:bg-[#3b4354]">
-              <Plus size={16} /> Add Funds
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-2 bg-[#303747] text-gray-100 px-4 py-2 rounded-lg font-semibold hover:bg-[#3b4354]">
-              <ArrowRight size={16} /> Withdraw
-            </button>
-          </div>
-        </div>
-        <div className="lg:col-span-2 bg-[#1d2129] border border-[#2d3340] rounded-xl p-6">
-          <h3 className="font-semibold mb-4">Transaction History</h3>
-          <ul className="space-y-3 text-sm">
-            {transactions.map((t) => (
-              <li key={t.id} className="flex justify-between">
-                <div>
-                  <p className="text-gray-100">{t.desc}</p>
-                  <p className="text-gray-400 text-xs">{t.date}</p>
-                </div>
-                <p className={t.amount.startsWith("+") ? "text-green-600" : "text-red-600"}>{t.amount}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function NotificationsView() {
-  const notifications = [
-    { id: 1, text: "Your design 'Modern Villa' has been approved.", time: "2 hours ago", icon: <Brush /> },
-    { id: 2, text: "You have a new message from Studio Mosby.", time: "1 day ago", icon: <User /> },
-  ];
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-4">Notifications</h2>
-      <div className="bg-[#1d2129] border border-[#2d3340] rounded-xl p-6 space-y-4">
-        {notifications.map((n) => (
-          <div key={n.id} className="flex items-start gap-4 p-4 bg-[#242b36] rounded-lg border border-[#2d3340]">
-            <div className="text-gray-300 mt-1">{n.icon}</div>
-            <div>
-              <p className="text-gray-100">{n.text}</p>
-              <p className="text-gray-400 text-xs mt-1">{n.time}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-//
-// --- Reusable ---
-//
-function SidebarButton({ icon, label, isActive, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center px-3 py-2.5 rounded-lg text-gray-200 transition-colors ${
-        isActive ? "bg-[#303747] text-white font-semibold" : "hover:bg-[#262c37]"
-      }`}
-    >
-      <span className="mr-3">{icon}</span>
-      {label}
-    </button>
-  );
-}
-
-function StatCard({ icon, label, value }) {
-  return (
-    <div className="bg-[#242b36] rounded-xl border border-[#2d3340] p-4 flex items-center space-x-3 shadow-sm">
-      <div className="bg-[#1d2129] p-2 rounded-full border border-[#2d3340]">{icon}</div>
-      <div>
-        <h3 className="text-xs text-gray-300">{label}</h3>
-        <p className="text-lg font-bold">{value}</p>
-      </div>
+    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {message}
     </div>
   );
 }
 
-function ProjectItem({ title, status, color }) {
+function Field({ label, value, onChange, type = 'text', multiline = false, placeholder = '', autoComplete }) {
   return (
-    <li className="flex justify-between items-center">
-      <span>{title}</span>
-      <span className={`bg-${color}-100 text-${color}-700 px-2 py-1 rounded-full text-xs font-medium`}>
-        {status}
-      </span>
-    </li>
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="font-medium text-slate-700">{label}</span>
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={onChange}
+          rows={4}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+        />
+      ) : (
+        <input
+          value={value}
+          type={type}
+          onChange={onChange}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+        />
+      )}
+    </label>
   );
 }

@@ -1,80 +1,688 @@
-import { useState } from "react";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { toast } from "react-hot-toast";
 import {
+  LayoutDashboard,
   User,
   Briefcase,
   DollarSign,
-  Bell,
-  CheckCircle,
-  Clock,
   FileText,
-  XCircle,
+  Bell,
   Loader,
   Menu,
   X,
+  CheckCircle,
+  Clock,
+  XCircle,
+  ArrowRight,
+  ExternalLink,
+  RefreshCcw,
+  Sparkles,
+  ShieldCheck,
+  Target,
+  CalendarCheck,
 } from "lucide-react";
+import AssociateProfileEditor from "../../components/associate/AssociateProfileEditor.jsx";
+import { fetchAssociatePortalProfile } from "../../services/portal.js";
+import { deriveProfileStats, formatCurrency } from "../../utils/associateProfile.js";
+import { getAssociateAvatar, getAssociateFallback } from "../../utils/imageFallbacks.js";
 
-const sidebarItems = [
-  { id: "profile", label: "Profile", icon: <User size={18} /> },
-  { id: "jobs", label: "Jobs", icon: <Briefcase size={18} /> },
-  { id: "earnings", label: "Earnings", icon: <DollarSign size={18} /> },
-  { id: "applications", label: "Applications", icon: <FileText size={18} /> },
-  { id: "notifications", label: "Notifications", icon: <Bell size={18} /> },
+const STORAGE_KEYS = {
+  activity: "associate_dashboard_activity_log_v1",
+  applications: "associate_dashboard_applications_v1",
+};
+
+const APPLICATION_STATUSES = ["Draft", "Submitted", "Interview", "Won", "Closed"];
+
+const DAY_LABELS = {
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+  sun: "Sunday",
+};
+
+const PROFILE_FIELD_LABELS = {
+  title: "Headline",
+  summary: "Bio",
+  location: "Location",
+  availability: "Availability note",
+  timezone: "Timezone",
+  experienceYears: "Years of experience",
+  completedProjects: "Projects delivered",
+  "rates.hourly": "Hourly rate",
+  "rates.daily": "Daily rate",
+  languages: "Languages",
+  softwares: "Software stack",
+  specialisations: "Specialisations",
+  certifications: "Certifications",
+  portfolioLinks: "Portfolio links",
+  keyProjects: "Key projects",
+};
+
+const OPPORTUNITY_BOARD = [
+  {
+    id: "opp-bim-coordination",
+    title: "BIM coordination sprint",
+    company: "Orbit Build Co.",
+    description: "Coordinate clash detection for a 32-bed inpatient tower deliverable set.",
+    tags: ["Revit", "Healthcare", "BIM"],
+    timezone: "Asia/Kolkata",
+    budgetHourly: 45,
+    responseBy: "2025-03-27",
+    languages: ["English"],
+    format: "Remote",
+  },
+  {
+    id: "opp-parametric-facade",
+    title: "Parametric facade detailing",
+    company: "Flux Studios",
+    description: "Support the facade lead with Grasshopper scripts and IFC packaging.",
+    tags: ["Grasshopper", "Facade", "Parametric"],
+    timezone: "Europe/Berlin",
+    budgetHourly: 60,
+    responseBy: "2025-04-02",
+    languages: ["English", "German"],
+    format: "Hybrid",
+  },
+  {
+    id: "opp-visualisation-hospitality",
+    title: "Hospitality visualisation burst",
+    company: "Velvet Render Lab",
+    description: "Produce five hero renders and three dusk shots for a boutique resort pitch.",
+    tags: ["Lumion", "Visualization", "Hospitality"],
+    timezone: "Asia/Kolkata",
+    budgetHourly: 55,
+    responseBy: "2025-03-24",
+    languages: ["English"],
+    format: "Remote",
+  },
+  {
+    id: "opp-site-coordination",
+    title: "On-site coordination coverage",
+    company: "Northbeam Projects",
+    description: "Coordinate site walks, vendor alignments, and punch-list tracking for a retrofit.",
+    tags: ["Site coordination", "Retrofit", "Reporting"],
+    timezone: "Asia/Dubai",
+    budgetHourly: 50,
+    responseBy: "2025-03-30",
+    languages: ["English"],
+    format: "On-site",
+  },
 ];
 
-export default function AssociateDashboard() {
-  const [activeView, setActiveView] = useState("profile");
+const SIDEBAR_ITEMS = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "profile", label: "Profile", icon: User },
+  { id: "jobs", label: "Jobs", icon: Briefcase },
+  { id: "earnings", label: "Earnings", icon: DollarSign },
+  { id: "applications", label: "Applications", icon: FileText },
+  { id: "notifications", label: "Notifications", icon: Bell },
+];
+const isBrowser = typeof window !== "undefined";
+
+const loadStoredList = (key) => {
+  if (!isBrowser) return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistList = (key, value) => {
+  if (!isBrowser) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* ignore persistence errors */
+  }
+};
+
+const sanitizeApplications = (items) =>
+  Array.isArray(items) ? items.filter((item) => item && item.id) : [];
+
+const sanitizeActivity = (items) =>
+  Array.isArray(items)
+    ? items
+        .filter((item) => item && item.id)
+        .map((item) => ({
+          id: item.id,
+          timestamp: item.timestamp || new Date().toISOString(),
+          kind: item.kind || "log",
+          title: item.title || "Update",
+          description: item.description || "",
+          read: Boolean(item.read),
+        }))
+    : [];
+
+const createId = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `activity-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const normaliseList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).toLowerCase());
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/[,\n]/)
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const getValueByPath = (object, path) => {
+  if (!object || typeof object !== "object") return undefined;
+  return path.split(".").reduce((accumulator, key) => {
+    if (accumulator && Object.prototype.hasOwnProperty.call(accumulator, key)) {
+      return accumulator[key];
+    }
+    return undefined;
+  }, object);
+};
+
+const valuesEqual = (a, b) => {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return JSON.stringify(a || []) === JSON.stringify(b || []);
+  }
+  return (a ?? null) === (b ?? null);
+};
+
+const summariseProfileChanges = (previousProfile = {}, nextProfile = {}) => {
+  const diff = [];
+  Object.entries(PROFILE_FIELD_LABELS).forEach(([path, label]) => {
+    if (!valuesEqual(getValueByPath(previousProfile, path), getValueByPath(nextProfile, path))) {
+      diff.push(label);
+    }
+  });
+  return diff;
+};
+
+const isFilled = (value) => {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") return value.trim().length > 0;
+  return Boolean(value);
+};
+
+const computeProfileMeta = (profile) => {
+  if (!profile) {
+    return {
+      stats: deriveProfileStats({}),
+      completeness: 0,
+      filledFields: [],
+      pendingFields: Object.values(PROFILE_FIELD_LABELS),
+      updatedAt: null,
+      availabilityWindows: [],
+    };
+  }
+
+  const stats = deriveProfileStats(profile);
+  const entries = Object.entries(PROFILE_FIELD_LABELS);
+  const filledFields = [];
+  const pendingFields = [];
+
+  entries.forEach(([path, label]) => {
+    const value = getValueByPath(profile, path);
+    if (isFilled(value)) {
+      filledFields.push(label);
+    } else {
+      pendingFields.push(label);
+    }
+  });
+
+  const completeness = Math.round((filledFields.length / entries.length) * 100);
+  const updatedAt = profile.updatedAt || profile.createdAt || null;
+  const availabilityWindows = Array.isArray(profile.availabilityWindows)
+    ? [...profile.availabilityWindows]
+    : [];
+
+  return {
+    stats,
+    completeness: Number.isFinite(completeness)
+      ? Math.min(Math.max(completeness, 0), 100)
+      : 0,
+    filledFields,
+    pendingFields,
+    updatedAt,
+    availabilityWindows,
+  };
+};
+
+const formatRelativeTime = (iso) => {
+  if (!iso) return "Never";
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return "Unknown";
+  const diffMs = target.getTime() - Date.now();
+  const units = [
+    { unit: "day", ms: 86_400_000 },
+    { unit: "hour", ms: 3_600_000 },
+    { unit: "minute", ms: 60_000 },
+  ];
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  for (const { unit, ms } of units) {
+    if (Math.abs(diffMs) >= ms || unit === "minute") {
+      return formatter.format(Math.round(diffMs / ms), unit);
+    }
+  }
+  return target.toLocaleString();
+};
+
+const buildOpportunityMatches = (profile) => {
+  const enriched = OPPORTUNITY_BOARD.map((opportunity) => {
+    const tags = normaliseList(opportunity.tags);
+    const opportunityLanguages = normaliseList(opportunity.languages);
+    let score = 0;
+    const reasons = [];
+
+    if (profile) {
+      const softwareSet = new Set(normaliseList(profile.softwares));
+      const specialitySet = new Set(normaliseList(profile.specialisations));
+      const languageSet = new Set(normaliseList(profile.languages));
+      const timezone = profile.timezone?.toLowerCase();
+
+      tags.forEach((tag) => {
+        if (softwareSet.has(tag)) {
+          score += 2;
+          reasons.push(`Software match: ${tag}`);
+        } else if (specialitySet.has(tag)) {
+          score += 1;
+          reasons.push(`Focus area: ${tag}`);
+        }
+      });
+
+      if (opportunityLanguages.length) {
+        const matchedLanguage = opportunityLanguages.find((language) => languageSet.has(language));
+        if (matchedLanguage) {
+          score += 1;
+          reasons.push(`Language match: ${matchedLanguage}`);
+        }
+      }
+
+      if (opportunity.timezone && timezone && opportunity.timezone.toLowerCase() === timezone) {
+        score += 1;
+        reasons.push("Timezone alignment");
+      }
+    }
+
+    return { ...opportunity, score, reasons };
+  });
+
+  const matches = enriched
+    .filter((opportunity) => opportunity.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (matches.length) {
+    return matches;
+  }
+
+  return enriched
+    .sort((a, b) => new Date(a.responseBy).getTime() - new Date(b.responseBy).getTime())
+    .slice(0, 3)
+    .map((opportunity) => ({
+      ...opportunity,
+      score: opportunity.score || 1,
+      reasons: opportunity.reasons?.length ? opportunity.reasons : ["New marketplace lead"],
+    }));
+};
+
+const formatList = (items) => {
+  if (!items.length) return "";
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  const copy = [...items];
+  const last = copy.pop();
+  return `${copy.join(", ")}, and ${last}`;
+};
+
+const formatAvailabilityWindow = (window) => {
+  const dayLabel = DAY_LABELS[window.day] || window.day;
+  if (!window.from || !window.to) return dayLabel || "";
+  return `${dayLabel}: ${window.from} - ${window.to}`;
+};
+function AssociateDashboard() {
+  const [activeView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileState, setProfileState] = useState({ loading: true, error: null, profile: null });
+  const [applications, setApplications] = useState(() =>
+    sanitizeApplications(loadStoredList(STORAGE_KEYS.applications))
+  );
+  const [activityLog, setActivityLog] = useState(() =>
+    sanitizeActivity(loadStoredList(STORAGE_KEYS.activity))
+  );
+
+  const refreshProfile = useCallback(async (options = {}) => {
+    setProfileState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const response = await fetchAssociatePortalProfile({ preferDraft: true });
+      if (response.authRequired) {
+        setProfileState({
+          loading: false,
+          error: response.error?.message || "Sign in to manage your Skill Studio profile.",
+          profile: response.profile || null,
+        });
+        if (!options.silent) {
+          toast.error("Sign in to sync your profile");
+        }
+        return;
+      }
+
+      setProfileState({ loading: false, error: null, profile: response.profile || null });
+      if (!options.silent) {
+        toast.success(response.source === "draft" ? "Loaded profile draft" : "Profile synced");
+      }
+    } catch (error) {
+      setProfileState({
+        loading: false,
+        error: error?.message || "Unable to load profile",
+        profile: null,
+      });
+      if (!options.silent) {
+        toast.error("Unable to load profile");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshProfile({ silent: true });
+  }, [refreshProfile]);
+
+  const profileMeta = useMemo(
+    () => computeProfileMeta(profileState.profile),
+    [profileState.profile]
+  );
+
+  const opportunityMatches = useMemo(
+    () => buildOpportunityMatches(profileState.profile),
+    [profileState.profile]
+  );
+
+  const unreadNotifications = useMemo(
+    () => activityLog.filter((entry) => !entry.read).length,
+    [activityLog]
+  );
+
+  const pushActivity = useCallback((entry) => {
+    setActivityLog((prev) => {
+      const next = [entry, ...prev].slice(0, 50);
+      persistList(STORAGE_KEYS.activity, next);
+      return next;
+    });
+  }, []);
+
+  const handleProfileUpdated = useCallback(
+    (nextProfile) => {
+      if (!nextProfile) return;
+      const previousProfile = profileState.profile;
+      setProfileState((prev) => ({ ...prev, profile: nextProfile, loading: false, error: null }));
+      const changes = summariseProfileChanges(previousProfile, nextProfile);
+      pushActivity({
+        id: createId(),
+        timestamp: new Date().toISOString(),
+        kind: "profile.updated",
+        title: "Profile synced to marketplace",
+        description: changes.length
+          ? `Updated ${formatList(changes.slice(0, 4))}`
+          : "Saved without field changes",
+        read: false,
+      });
+      toast.success("Profile saved");
+    },
+    [profileState.profile, pushActivity]
+  );
+
+  const handleTrackOpportunity = useCallback(
+    (opportunity) => {
+      if (!opportunity) return;
+      let tracked = false;
+      setApplications((prev) => {
+        if (prev.some((item) => item.id === opportunity.id)) {
+          tracked = true;
+          return prev;
+        }
+        const entry = {
+          id: opportunity.id,
+          title: opportunity.title,
+          company: opportunity.company,
+          status: "Draft",
+          trackedAt: new Date().toISOString(),
+          responseBy: opportunity.responseBy,
+          matchScore: opportunity.score,
+          tags: opportunity.tags,
+          format: opportunity.format,
+        };
+        const next = [entry, ...prev].slice(0, 40);
+        persistList(STORAGE_KEYS.applications, next);
+        pushActivity({
+          id: createId(),
+          timestamp: entry.trackedAt,
+          kind: "application.tracked",
+          title: `Tracking ${opportunity.title}`,
+          description: `Added ${opportunity.company} to your pipeline.`,
+          read: false,
+        });
+        return next;
+      });
+      if (!tracked) {
+        toast.success("Opportunity added to pipeline");
+      } else {
+        toast("Already in your pipeline", { icon: "ℹ️" });
+      }
+    },
+    [pushActivity]
+  );
+
+  const handleApplicationStatusChange = useCallback(
+    (id, status) => {
+      let updated = null;
+      setApplications((prev) => {
+        const next = prev.map((item) => {
+          if (item.id !== id) return item;
+          updated = { ...item, status, updatedAt: new Date().toISOString() };
+          return updated;
+        });
+        if (!updated) return prev;
+        persistList(STORAGE_KEYS.applications, next);
+        return next;
+      });
+      if (updated) {
+        pushActivity({
+          id: createId(),
+          timestamp: updated.updatedAt,
+          kind: "application.status",
+          title: `${updated.title} moved to ${status}`,
+          description: `Status for ${updated.company} updated to ${status}.`,
+          read: false,
+        });
+        toast.success("Status updated");
+      }
+    },
+    [pushActivity]
+  );
+
+  const handleRemoveApplication = useCallback(
+    (id) => {
+      let removed = null;
+      setApplications((prev) => {
+        const next = prev.filter((item) => {
+          if (item.id === id) {
+            removed = item;
+            return false;
+          }
+          return true;
+        });
+        if (removed) {
+          persistList(STORAGE_KEYS.applications, next);
+        }
+        return next;
+      });
+      if (removed) {
+        pushActivity({
+          id: createId(),
+          timestamp: new Date().toISOString(),
+          kind: "application.removed",
+          title: `Removed ${removed.title}`,
+          description: `Stopped tracking ${removed.company} opportunity.`,
+          read: false,
+        });
+        toast("Removed from pipeline", { icon: "✔️" });
+      }
+    },
+    [pushActivity]
+  );
+
+  const handleMarkActivityRead = useCallback((id) => {
+    setActivityLog((prev) => {
+      const next = prev.map((entry) =>
+        entry.id === id ? { ...entry, read: true } : entry
+      );
+      persistList(STORAGE_KEYS.activity, next);
+      return next;
+    });
+  }, []);
+
+  const handleDismissActivity = useCallback((id) => {
+    setActivityLog((prev) => {
+      const next = prev.filter((entry) => entry.id !== id);
+      persistList(STORAGE_KEYS.activity, next);
+      return next;
+    });
+  }, []);
+
+  const handleClearActivity = useCallback(() => {
+    setActivityLog([]);
+    persistList(STORAGE_KEYS.activity, []);
+  }, []);
+
+  const activeNav = SIDEBAR_ITEMS.find((item) => item.id === activeView);
 
   const renderContent = () => {
     switch (activeView) {
-      case "jobs": return <JobsView />;
-      case "earnings": return <EarningsView />;
-      case "applications": return <ApplicationsView />;
-      case "notifications": return <NotificationsView />;
-      default: return <ProfileView />;
+      case "overview":
+        return (
+          <OverviewView
+            loading={profileState.loading}
+            error={profileState.error}
+            profile={profileState.profile}
+            meta={profileMeta}
+            opportunityMatches={opportunityMatches}
+            applications={applications}
+            activity={activityLog}
+            onNavigateProfile={() => setActiveView("profile")}
+            onRefresh={() => refreshProfile()}
+          />
+        );
+      case "profile":
+        return (
+          <ProfileView
+            profile={profileState.profile}
+            meta={profileMeta}
+            onProfileUpdate={handleProfileUpdated}
+            onRefresh={() => refreshProfile()}
+          />
+        );
+      case "jobs":
+        return (
+          <JobsView
+            profile={profileState.profile}
+            matches={opportunityMatches}
+            applications={applications}
+            meta={profileMeta}
+            onTrackOpportunity={handleTrackOpportunity}
+          />
+        );
+      case "earnings":
+        return (
+          <EarningsView
+            profile={profileState.profile}
+            meta={profileMeta}
+            applications={applications}
+          />
+        );
+      case "applications":
+        return (
+          <ApplicationsView
+            applications={applications}
+            onUpdateStatus={handleApplicationStatusChange}
+            onRemove={handleRemoveApplication}
+          />
+        );
+      case "notifications":
+        return (
+          <NotificationsView
+            activity={activityLog}
+            onMarkRead={handleMarkActivityRead}
+            onDismiss={handleDismissActivity}
+            onClear={handleClearActivity}
+          />
+        );
+      default:
+        return null;
     }
   };
 
+  const avatarImage = getAssociateAvatar(profileState.profile) || getAssociateFallback(profileState.profile);
+
   return (
     <div className="flex min-h-screen bg-gray-100 text-gray-900">
-      {/* Overlay for mobile sidebar */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-20 md:hidden"
+          className="fixed inset-0 z-20 bg-black/40 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
       <aside
-        className={`fixed md:static z-30 w-64 bg-white border-r border-gray-200 p-4 flex-col transform transition-transform duration-300
-        ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+        className={`fixed md:static z-30 w-64 bg-white border-r border-gray-200 p-4 flex-col transform transition-transform duration-300 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }`}
       >
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-semibold">Associate</h1>
-          <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
+          <button
+            className="md:hidden rounded-lg p-1.5 hover:bg-gray-100"
+            onClick={() => setSidebarOpen(false)}
+          >
             <X size={20} />
           </button>
         </div>
         <nav className="space-y-1">
-          {sidebarItems.map((item) => (
-            <SidebarButton
-              key={item.id}
-              icon={item.icon}
-              label={item.label}
-              isActive={activeView === item.id}
-              onClick={() => {
-                setActiveView(item.id);
-                setSidebarOpen(false);
-              }}
-            />
-          ))}
+          {SIDEBAR_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const badge =
+              item.id === "notifications"
+                ? unreadNotifications || null
+                : item.id === "applications"
+                  ? applications.length || null
+                  : null;
+            return (
+              <SidebarButton
+                key={item.id}
+                icon={Icon}
+                label={item.label}
+                isActive={activeView === item.id}
+                badge={badge}
+                onClick={() => {
+                  setActiveView(item.id);
+                  setSidebarOpen(false);
+                }}
+              />
+            );
+          })}
         </nav>
       </aside>
 
-      {/* Main content */}
       <main className="flex-1 flex flex-col max-w-full">
-        {/* Topbar */}
         <header className="flex items-center justify-between p-4 md:p-6 border-b bg-white">
           <div className="flex items-center gap-3">
             <button
@@ -83,216 +691,740 @@ export default function AssociateDashboard() {
             >
               <Menu size={20} />
             </button>
-            <h2 className="text-lg font-semibold capitalize">{activeView}</h2>
+            <div>
+              <h2 className="text-lg font-semibold capitalize">{activeNav?.label || "Overview"}</h2>
+              <p className="text-xs text-slate-500">
+                {profileState.profile?.title
+                  ? `${profileState.profile.title} · ${profileState.profile.location || "Location TBA"}`
+                  : "Keep your Skill Studio presence current"}
+              </p>
+            </div>
           </div>
-          <img
-            src="https://placehold.co/40x40"
-            alt="Profile"
-            className="w-10 h-10 rounded-full border border-gray-200"
-          />
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm font-semibold text-slate-900">
+                {profileState.profile?.user?.email || "associate@builtattic.com"}
+              </p>
+              <p className="text-xs text-slate-500">
+                {profileMeta.updatedAt ? `Last updated ${formatRelativeTime(profileMeta.updatedAt)}` : "Not synced yet"}
+              </p>
+            </div>
+            <img
+              src={avatarImage}
+              alt="Associate avatar"
+              className="w-10 h-10 rounded-full border border-gray-200 object-cover"
+              onError={(event) => {
+                event.currentTarget.src = getAssociateFallback(profileState.profile);
+              }}
+            />
+          </div>
         </header>
 
-        {/* Page Content */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6">{renderContent()}</div>
       </main>
     </div>
   );
 }
+function OverviewView({
+  loading,
+  error,
+  profile,
+  meta,
+  opportunityMatches,
+  applications,
+  activity,
+  onNavigateProfile,
+  onRefresh,
+}) {
+  const listingStatus = meta.completeness >= 80
+    ? { label: "Marketplace ready", tone: "positive" }
+    : meta.completeness >= 50
+      ? { label: "Needs polish", tone: "warning" }
+      : { label: "Draft", tone: "neutral" };
 
-//
-// --- Views ---
-//
-function ProfileView() {
-  const jobs = [
-    { id: 1, title: "Interior Design Project", status: "Ongoing", client: "ABC Constructions" },
-    { id: 2, title: "Renovation Job", status: "Completed", client: "HomeStyle Inc" },
-  ];
-  const isBusy = jobs.some((job) => job.status === "Ongoing");
+  const hourlyRate = meta.stats.hourly
+    ? formatCurrency(meta.stats.hourly, profile?.rates?.currency || profile?.currency || "USD")
+    : "Add hourly rate";
+
+  const dailyRate = meta.stats.daily
+    ? formatCurrency(meta.stats.daily, profile?.rates?.currency || profile?.currency || "USD")
+    : meta.stats.hourly
+      ? formatCurrency(meta.stats.hourly * 8, profile?.rates?.currency || "USD")
+      : null;
+
+  const nextOpportunity = opportunityMatches
+    .map((opportunity) => ({
+      ...opportunity,
+      due: new Date(opportunity.responseBy),
+    }))
+    .filter((entry) => !Number.isNaN(entry.due.getTime()))
+    .sort((a, b) => a.due.getTime() - b.due.getTime())[0];
 
   return (
-    <>
-      <section className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold">Welcome back, Alex 👋</h2>
-          <span
-            className={`flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-              isBusy ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-            }`}
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-900">
+            Marketplace readiness
+          </h2>
+          <p className="text-sm text-slate-600">
+            Monitor how your Skill Studio profile performs and surface the next best actions.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-400"
           >
-            <span
-              className={`h-2 w-2 rounded-full mr-2 ${isBusy ? "bg-red-500" : "bg-green-500"}`}
-            ></span>
-            {isBusy ? "Busy" : "Available"}
-          </span>
+            <RefreshCcw size={16} /> Refresh data
+          </button>
+          <button
+            type="button"
+            onClick={onNavigateProfile}
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            Update profile <ArrowRight size={16} />
+          </button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={<CheckCircle />} label="Completed Jobs" value="18" />
-          <StatCard icon={<Clock />} label="Ongoing Jobs" value="1" />
-          <StatCard icon={<Briefcase />} label="Pending Jobs" value="3" />
-          <StatCard icon={<DollarSign />} label="Total Earnings" value="$2,340" />
-        </div>
-      </section>
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 space-y-3 text-sm text-gray-700">
-          <p>📌 New job request: Plumbing Work from <b>BlueWater Co.</b></p>
-          <p>📌 Your application for "Painting Job" has been approved.</p>
-          <p>📌 You received a payment of <b>$450</b> from <b>ABC Constructions</b>.</p>
-        </div>
-      </section>
-    </>
-  );
-}
+      </div>
 
-function JobsView() {
-  const jobs = [
-    { id: 1, title: "Interior Design Project", status: "Ongoing", client: "ABC Constructions" },
-    { id: 2, title: "Electrical Fitting Work", status: "Pending", client: "XYZ Pvt Ltd" },
-    { id: 3, title: "Renovation Job", status: "Completed", client: "HomeStyle Inc" },
-  ];
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-4">My Jobs</h2>
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-        <ul className="space-y-4">
-          {jobs.map((job) => (
-            <li
-              key={job.id}
-              className="flex justify-between items-center text-sm p-4 rounded-lg bg-gray-50 border"
-            >
+      {error ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[2fr,1fr]">
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              icon={ShieldCheck}
+              label="Profile completeness"
+              value={`${meta.completeness}%`}
+              helper={listingStatus.label}
+              tone={listingStatus.tone}
+            />
+            <StatCard
+              icon={DollarSign}
+              label="Hourly rate"
+              value={hourlyRate}
+              helper={dailyRate ? `Day rate ${dailyRate}` : "Set your preferred rates"}
+            />
+            <StatCard
+              icon={Target}
+              label="Active leads"
+              value={opportunityMatches.length || "0"}
+              helper={nextOpportunity ? `Next deadline ${nextOpportunity.due.toLocaleDateString()}` : "Keep filling out your profile to unlock matches"}
+            />
+            <StatCard
+              icon={CalendarCheck}
+              label="Applications tracked"
+              value={applications.length || "0"}
+              helper={`${activity.filter((entry) => !entry.read).length} unread alerts`}
+            />
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="font-medium text-base">{job.title}</p>
-                <p className="text-gray-500">Client: {job.client}</p>
+                <h3 className="text-lg font-semibold text-slate-900">Next best actions</h3>
+                <p className="text-sm text-slate-500">
+                  Complete the remaining sections so your card stands out on the Skill Studio marketplace.
+                </p>
               </div>
-              <span
-                className={`px-3 py-1 rounded-xl text-xs font-semibold ${
-                  job.status === "Completed"
-                    ? "bg-green-100 text-green-700"
-                    : job.status === "Ongoing"
-                    ? "bg-yellow-100 text-yellow-700"
-                    : "bg-gray-100 text-gray-600"
-                }`}
+              <button
+                type="button"
+                onClick={onNavigateProfile}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
               >
-                {job.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-function EarningsView() {
-  const earnings = [
-    { id: 1, from: "ABC Constructions", amount: "+$450.00", date: "2024-08-22" },
-    { id: 2, from: "HomeStyle Inc", amount: "+$800.00", date: "2024-08-20" },
-  ];
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-4">Earnings</h2>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-gray-800 text-white p-6 rounded-xl">
-          <p className="text-gray-300 text-sm">Total Earnings</p>
-          <p className="text-3xl font-bold mt-2">$2,340.00</p>
-        </div>
-        <div className="lg:col-span-2 bg-gray-50 border rounded-xl p-6">
-          <h3 className="font-semibold mb-4">Recent Payouts</h3>
-          <ul className="space-y-3">
-            {earnings.map((e) => (
-              <li key={e.id} className="flex justify-between items-center text-sm">
-                <div>
-                  <p className="text-gray-800">From {e.from}</p>
-                  <p className="text-gray-400 text-xs">{e.date}</p>
-                </div>
-                <p className="font-medium text-green-600">{e.amount}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ApplicationsView() {
-  const applications = [
-    { id: 1, title: "Painting Job", status: "Approved", icon: <CheckCircle className="text-green-500" /> },
-    { id: 2, title: "Plumbing Work", status: "Pending", icon: <Loader className="text-yellow-500 animate-spin" /> },
-    { id: 3, title: "Carpentry Project", status: "Rejected", icon: <XCircle className="text-red-500" /> },
-  ];
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-4">Job Applications</h2>
-      <div className="bg-gray-50 border rounded-xl p-6 space-y-4">
-        {applications.map((app) => (
-          <div
-            key={app.id}
-            className="flex items-center justify-between gap-4 p-4 bg-white rounded-lg border"
-          >
-            <div className="flex items-center gap-4">
-              {app.icon}
-              <p className="text-gray-800 font-medium">{app.title}</p>
+                Edit profile <ArrowRight size={14} />
+              </button>
             </div>
-            <p className="text-sm font-semibold">{app.status}</p>
+            <ul className="mt-4 space-y-2">
+              {meta.pendingFields.length ? (
+                meta.pendingFields.slice(0, 5).map((field) => (
+                  <li
+                    key={field}
+                    className="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700"
+                  >
+                    <Sparkles size={14} /> {field}
+                  </li>
+                ))
+              ) : (
+                <li className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  All core fields are filled. Great job!
+                </li>
+              )}
+            </ul>
           </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
-function NotificationsView() {
-  const notifications = [
-    { id: 1, text: "New job request: Plumbing Work from BlueWater Co.", time: "1 hour ago", icon: <Briefcase /> },
-    { id: 2, text: "Your application for 'Painting Job' has been approved.", time: "3 hours ago", icon: <CheckCircle /> },
-  ];
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-4">Notifications</h2>
-      <div className="bg-gray-50 border rounded-xl p-6 space-y-4">
-        {notifications.map((n) => (
-          <div
-            key={n.id}
-            className="flex items-start gap-4 p-4 bg-white rounded-lg border"
-          >
-            <div className="text-gray-500 mt-1">{n.icon}</div>
-            <div>
-              <p className="text-gray-800">{n.text}</p>
-              <p className="text-gray-400 text-xs mt-1">{n.time}</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6">
+            <h3 className="text-lg font-semibold text-slate-900">Pipeline snapshot</h3>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Leads</p>
+                <p className="mt-2 text-xl font-semibold text-slate-900">{opportunityMatches.length || "0"}</p>
+                <p className="text-xs text-slate-500">Matches from your skills & timezone</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Applications</p>
+                <p className="mt-2 text-xl font-semibold text-slate-900">{applications.length || "0"}</p>
+                <p className="text-xs text-slate-500">Opportunities you are tracking</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Alerts</p>
+                <p className="mt-2 text-xl font-semibold text-slate-900">{activity.filter((entry) => !entry.read).length}</p>
+                <p className="text-xs text-slate-500">Profile + pipeline notifications</p>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
-    </section>
-  );
-}
+        </div>
 
-//
-// --- Reusable Components ---
-//
-function SidebarButton({ icon, label, isActive, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center px-3 py-2.5 rounded-lg text-gray-700 transition-colors ${
-        isActive ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
-      }`}
-    >
-      <span className="mr-3">{icon}</span>
-      {label}
-    </button>
-  );
-}
-
-function StatCard({ icon, label, value }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center space-x-3 shadow-sm">
-      <div className="bg-gray-50 p-2 rounded-full border">{icon}</div>
-      <div>
-        <h3 className="text-xs text-gray-500">{label}</h3>
-        <p className="text-lg font-bold">{value}</p>
+        <MarketplacePreview profile={profile} meta={meta} loading={loading} />
       </div>
     </div>
   );
 }
+
+function MarketplacePreview({ profile, meta, loading }) {
+  const avatar = getAssociateAvatar(profile) || getAssociateFallback(profile);
+  const summary = profile?.summary || "Add a short bio to highlight your expertise.";
+  const chips = [
+    ...(profile?.specialisations || []).slice(0, 2),
+    ...(profile?.softwares || []).slice(0, 2),
+  ];
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div className="relative h-40 overflow-hidden rounded-t-3xl bg-slate-900/5">
+        <img
+          src={avatar}
+          alt="Marketplace avatar"
+          className="h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.src = getAssociateFallback(profile);
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+      </div>
+      <div className="space-y-4 p-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Associate</p>
+            <h3 className="text-xl font-semibold text-slate-900">
+              {profile?.title || "Add a headline"}
+            </h3>
+            <p className="text-xs text-slate-500">
+              {profile?.location || "Location"} · {profile?.availability || "Availability note"}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-semibold text-amber-500">
+              {meta.stats.rating ? meta.stats.rating.toFixed(1) : "4.7"}
+            </p>
+            <p className="text-xs text-slate-500">Avg rating</p>
+          </div>
+        </div>
+        <p className="text-sm leading-relaxed text-slate-600 line-clamp-4">{summary}</p>
+        <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+              Rate
+            </p>
+            <p className="text-sm font-semibold text-slate-900">
+              {meta.stats.hourly
+                ? formatCurrency(meta.stats.hourly, profile?.rates?.currency || "USD")
+                : "Set hourly rate"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+              Experience
+            </p>
+            <p className="text-sm font-semibold text-slate-900">
+              {meta.stats.years || "–"} yrs
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+          {chips.length ? (
+            chips.map((chip) => (
+              <span key={chip} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                {chip}
+              </span>
+            ))
+          ) : (
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+              Add specialisations & software
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Link
+            to={profile?._id ? `/associateportfolio/${profile._id}` : "/associates"}
+            state={profile ? { associate: profile } : undefined}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
+          >
+            Preview listing <ExternalLink size={14} />
+          </Link>
+          <span className="text-xs text-slate-400">
+            {loading ? "Loading profile…" : meta.updatedAt ? `Last synced ${formatRelativeTime(meta.updatedAt)}` : "Not synced yet"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
+  const lastUpdated = meta.updatedAt ? formatRelativeTime(meta.updatedAt) : "Never";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-900">Marketplace profile</h2>
+          <p className="text-sm text-slate-600">
+            Everything you publish here flows directly to your Skill Studio card and associate listing.
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Last synced {lastUpdated}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={profile?._id ? `/associateportfolio/${profile._id}` : "/associates"}
+            state={profile ? { associate: profile } : undefined}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
+          >
+            Preview public card <ExternalLink size={14} />
+          </Link>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            Sync now <RefreshCcw size={14} />
+          </button>
+        </div>
+      </div>
+
+      <AssociateProfileEditor
+        onProfileUpdate={onProfileUpdate}
+        header={null}
+      />
+    </div>
+  );
+}
+
+function JobsView({ profile, matches, applications, meta, onTrackOpportunity }) {
+  const trackedIds = new Set(applications.map((item) => item.id));
+  const availability = meta.availabilityWindows?.length ? meta.availabilityWindows : [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-2xl font-semibold text-slate-900">Pipeline planner</h2>
+        <p className="text-sm text-slate-600">
+          Leads that align with your skills, software stack, and timezone appear here. Add them to your pipeline to start tracking progress.
+        </p>
+      </div>
+
+      {!profile && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+          Add your marketplace profile details to unlock personalised lead recommendations.
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {matches.map((opportunity) => {
+          const applied = trackedIds.has(opportunity.id);
+          const strength = opportunity.score >= 4 ? "High match" : opportunity.score >= 2 ? "Solid match" : "Emerging";
+          return (
+            <div key={opportunity.id} className="flex h-full flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {opportunity.title}
+                  </h3>
+                  <p className="text-sm text-slate-500">{opportunity.company} · {opportunity.format}</p>
+                </div>
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                  strength === "High match"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : strength === "Solid match"
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "bg-slate-100 text-slate-600"
+                }`}>
+                  {strength}
+                </span>
+              </div>
+              <p className="text-sm leading-relaxed text-slate-600">{opportunity.description}</p>
+              <div className="grid gap-3 text-xs text-slate-500 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+                    Response by
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {new Date(opportunity.responseBy).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+                    Budget
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {formatCurrency(opportunity.budgetHourly, "USD")} / hr
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+                    Timezone
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {opportunity.timezone || "Flexible"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                {opportunity.tags.map((tag) => (
+                  <span key={`${opportunity.id}-${tag}`} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+              <ul className="space-y-1 text-xs text-slate-500">
+                {opportunity.reasons.map((reason, index) => (
+                  <li key={`${opportunity.id}-reason-${index}`} className="flex items-start gap-2">
+                    <CheckCircle size={12} className="mt-[2px] text-emerald-500" />
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-auto flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => onTrackOpportunity(opportunity)}
+                  disabled={applied}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {applied ? "In pipeline" : "Add to pipeline"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
+                  onClick={() => onTrackOpportunity(opportunity)}
+                >
+                  {applied ? "Update status in Applications tab" : "Log interest"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6">
+        <h3 className="text-lg font-semibold text-slate-900">Availability signal</h3>
+        {availability.length ? (
+          <ul className="mt-4 space-y-2 text-sm text-slate-600">
+            {availability.slice(0, 7).map((window, index) => (
+              <li key={`${window.day}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                {formatAvailabilityWindow(window)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-slate-500">
+            Add availability windows to let buyers know when you can start.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+function EarningsView({ profile, meta, applications }) {
+  const hourly = meta.stats.hourly || 0;
+  const projectedMonthly = hourly ? hourly * 8 * 18 : 0;
+  const projectedQuarter = projectedMonthly * 3;
+  const currency = profile?.rates?.currency || profile?.currency || "USD";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-2xl font-semibold text-slate-900">Earnings outlook</h2>
+        <p className="text-sm text-slate-600">
+          Projected revenue based on your published rates and the momentum of your pipeline.
+        </p>
+      </div>
+
+      {!hourly && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+          Set your hourly and daily rates in the profile tab to unlock projections.
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
+          <p className="text-sm text-slate-300">Projected monthly</p>
+          <p className="mt-2 text-3xl font-semibold">
+            {projectedMonthly ? formatCurrency(projectedMonthly, currency) : "Set rates"}
+          </p>
+          <p className="mt-3 text-xs text-slate-400">
+            Based on an 18-day sprint with your current hourly rate.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-500">Quarterly outlook</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {projectedQuarter ? formatCurrency(projectedQuarter, currency) : "Complete rate card"}
+          </p>
+          <p className="mt-3 text-xs text-slate-500">
+            Assumes steady pipeline with current conversion ratios.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-500">Pipeline impact</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{applications.length}</p>
+          <p className="mt-3 text-xs text-slate-500">
+            Opportunities tracked in Applications tab.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6">
+        <h3 className="text-lg font-semibold text-slate-900">Payout checklist</h3>
+        <ul className="mt-4 space-y-2 text-sm text-slate-600">
+          <li className="flex items-center gap-2">
+            <CheckCircle size={14} className="text-emerald-500" /> Publish hourly and daily rates
+          </li>
+          <li className="flex items-center gap-2">
+            <CheckCircle size={14} className="text-emerald-500" /> Add at least one portfolio link
+          </li>
+          <li className="flex items-center gap-2">
+            <Clock size={14} className="text-slate-500" /> Configure payout preferences in Settings
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function ApplicationsView({ applications, onUpdateStatus, onRemove }) {
+  const statusIcon = {
+    Draft: Clock,
+    Submitted: Loader,
+    Interview: Sparkles,
+    Won: CheckCircle,
+    Closed: XCircle,
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-2xl font-semibold text-slate-900">Applications</h2>
+        <p className="text-sm text-slate-600">
+          Track responses and progression across every opportunity you have added to your pipeline.
+        </p>
+      </div>
+
+      {!applications.length ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          No applications tracked yet. Add opportunities from the Jobs tab to start logging progress.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Opportunity</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Company</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Tracked</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {applications.map((application) => {
+                const Icon = statusIcon[application.status] || Clock;
+                return (
+                  <tr key={application.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {application.title}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{application.company}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Icon size={14} className="text-slate-500" />
+                        <select
+                          value={application.status}
+                          onChange={(event) => onUpdateStatus(application.id, event.target.value)}
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-slate-500 focus:outline-none"
+                        >
+                          {APPLICATION_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500">
+                      {formatRelativeTime(application.trackedAt || application.updatedAt)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onRemove(application.id)}
+                        className="rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+function NotificationsView({ activity, onMarkRead, onDismiss, onClear }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-900">Notifications</h2>
+          <p className="text-sm text-slate-600">
+            Sync events, pipeline updates, and reminders land here. Mark them as read or clear once actioned.
+          </p>
+        </div>
+        {activity.length ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
+          >
+            Clear all
+          </button>
+        ) : null}
+      </div>
+
+      {!activity.length ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          You are all caught up. Updates from profile saves and pipeline changes will appear here.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {activity.map((entry) => (
+            <div
+              key={entry.id}
+              className={`rounded-2xl border p-4 ${
+                entry.read
+                  ? "border-slate-200 bg-white"
+                  : "border-indigo-200 bg-indigo-50"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{entry.title}</p>
+                  {entry.description ? (
+                    <p className="text-xs text-slate-600 mt-1">{entry.description}</p>
+                  ) : null}
+                  <p className="text-xs text-slate-400 mt-2">
+                    {formatRelativeTime(entry.timestamp)}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {!entry.read && (
+                    <button
+                      type="button"
+                      onClick={() => onMarkRead(entry.id)}
+                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-slate-400"
+                    >
+                      Mark read
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onDismiss(entry.id)}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-slate-400"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SidebarButton({ icon: Icon, label, isActive, onClick, badge }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+        isActive ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+      }`}
+    >
+      {Icon ? (
+        <span className={`flex h-8 w-8 items-center justify-center rounded-md ${
+          isActive ? "bg-white/15" : "bg-slate-100 text-slate-600"
+        }`}>
+          <Icon size={18} />
+        </span>
+      ) : null}
+      <span className="flex-1 text-left">{label}</span>
+      {badge ? (
+        <span className="inline-flex min-w-[1.5rem] justify-center rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
+          {badge}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function StatCard({ icon: Icon, label, value, helper, tone = "neutral" }) {
+  const palette = {
+    neutral: {
+      card: "bg-white border border-slate-200",
+      label: "text-slate-500",
+      helper: "text-slate-500",
+      icon: "bg-slate-100 text-slate-600",
+    },
+    positive: {
+      card: "bg-emerald-50 border border-emerald-200",
+      label: "text-emerald-600",
+      helper: "text-emerald-600",
+      icon: "bg-white text-emerald-600",
+    },
+    warning: {
+      card: "bg-amber-50 border border-amber-200",
+      label: "text-amber-600",
+      helper: "text-amber-600",
+      icon: "bg-white text-amber-600",
+    },
+  };
+  const colors = palette[tone] || palette.neutral;
+
+  return (
+    <div className={`rounded-xl p-4 shadow-sm ${colors.card}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={`text-xs font-semibold uppercase tracking-[0.2em] ${colors.label}`}>{label}</p>
+          <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
+          {helper ? <p className={`mt-1 text-xs ${colors.helper}`}>{helper}</p> : null}
+        </div>
+        {Icon ? (
+          <span className={`inline-flex rounded-full p-2 ${colors.icon}`}>
+            <Icon size={18} />
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export default AssociateDashboard;

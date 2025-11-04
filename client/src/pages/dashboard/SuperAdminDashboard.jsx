@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { logout as performLogout } from "../../services/auth.js";
 import {
   Search,
   Users,
@@ -26,7 +27,7 @@ const sidebarItems = [
 
 const formatCurrency = (amount, currency = "USD") => {
   const value = Number(amount);
-  if (!Number.isFinite(value)) return "GÇö";
+  if (!Number.isFinite(value)) return "G";
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -39,9 +40,9 @@ const formatCurrency = (amount, currency = "USD") => {
 };
 
 const formatDate = (input) => {
-  if (!input) return "GÇö";
+  if (!input) return "G";
   const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return "GÇö";
+  if (Number.isNaN(d.getTime())) return "G";
   return d.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -152,15 +153,16 @@ export default function SuperAdminDashboard({ onLogout }) {
     stats: dashboardStats,
   };
 
-  const handleLogout = () => {
-    if (onLogout) {
-      onLogout();
-      navigate("/login", { replace: true });
-    } else {
-      // Fallback (should not happen if prop passed)
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("role");
-      window.location.replace("/login");
+  const handleLogout = async () => {
+    try {
+      await performLogout({ silent: true });
+    } catch (error) {
+      console.warn('super_admin_logout_error', error);
+    } finally {
+      if (onLogout) {
+        onLogout();
+      }
+      navigate('/login', { replace: true });
     }
   };
 

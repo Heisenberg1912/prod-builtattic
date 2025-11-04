@@ -6,6 +6,8 @@ import { CartProvider } from "./context/CartContext";
 import { WishlistProvider } from "./context/WishlistContext";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Register from "./pages/Register";
 import ProductList from "./pages/ProductList";
 import ProductDetail from "./pages/ProductDetail";
@@ -23,6 +25,8 @@ import FirmPortfolio from "./pages/FirmPortfolio";
 import AssociatePortfolio from "./pages/AssociatePortfolio";
 import Ai from "./pages/Ai";
 import Matters from "./pages/Matters";
+import AssociatePortal from "./pages/AssociatePortal";
+import StudioPortal from "./pages/StudioPortal";
 import CurrencyConverter from "./pages/CurrencyConverter";
 import OrderHistory from "./pages/OrderHistory";
 import Buy from "./pages/Buy";
@@ -44,6 +48,7 @@ import { roleDashboardPath } from "./constants/roles.js";
 import { isValidSecretCode } from "./constants/secretCodes";
 import { LOI_TEXT } from "./constants/loiText";
 import apiClient from "./config/axios.jsx";
+import { logout as performLogout, readStoredAuth } from "./services/auth.js";
 
 const ScrollToTop = () => {
   const location = useLocation();
@@ -69,10 +74,34 @@ const LOI_ROLE_OPTIONS = [
 
 const CODE_LENGTH = 8;
 
+const ACCESS_STORAGE_KEY = "builtattic_demo_access_v1";
+
+const loadStoredAccess = () => {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(ACCESS_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
+
+const persistAccess = (granted) => {
+  if (typeof window === "undefined") return;
+  try {
+    if (granted) {
+      localStorage.setItem(ACCESS_STORAGE_KEY, "true");
+    } else {
+      localStorage.removeItem(ACCESS_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+};
+
 const createEmptyCode = () => Array(CODE_LENGTH).fill("");
 
 const App = () => {
-  const [hasAccess, setHasAccess] = useState(false);
+  const [hasAccess, setHasAccess] = useState(() => loadStoredAccess());
   const [codeAccepted, setCodeAccepted] = useState(false);
   const [acceptedCode, setAcceptedCode] = useState('');
   const [codeChars, setCodeChars] = useState(() => createEmptyCode());
@@ -221,6 +250,8 @@ const App = () => {
   };
 
   const handleResetSecret = () => {
+    persistAccess(false);
+    setHasAccess(false);
     setCodeAccepted(false);
     setAcceptedCode("");
     setProfileForm(createEmptyProfile());
@@ -233,6 +264,7 @@ const App = () => {
   // NEW: Skip LOI handler (clickable gray text)
   const handleSkipLoi = () => {
     setHasAccess(true);
+    persistAccess(true);
     setCodeAccepted(false);
     setAcceptedCode("");
     setProfileForm(createEmptyProfile());
@@ -307,6 +339,7 @@ const App = () => {
       const { data } = await apiClient.post('/access-requests', submission);
 
       setHasAccess(true);
+      persistAccess(true);
       setProfileForm(createEmptyProfile());
       setProfileError("");
       setFieldErrors({});
@@ -329,29 +362,40 @@ const App = () => {
   };
 
   // Single source of auth truth (kept if used by other parts of the app)
-  const [auth, setAuth] = useState({ token: null, role: null, loaded: false });
+  const [auth, setAuth] = useState(() => ({ ...readStoredAuth(), loaded: false }));
 
   const getDashboardPath = (role) => roleDashboardPath[role] || "/login";
 
   // Called by Login component after successful authentication
-  const handleLoginSuccess = ({ token, role }) => {
-    localStorage.setItem("auth_token", token);
-    localStorage.setItem("role", role);
+  const handleLoginSuccess = ({ token, role, user }) => {
+    try {
+      localStorage.setItem("auth_token", token);
+      localStorage.setItem("role", role);
+      if (user && typeof user === 'object') {
+        localStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("auth", JSON.stringify({ token, user }));
+      }
+    } catch (storageError) {
+      console.warn('auth_storage_error', storageError);
+    }
     setAuth({ token, role, loaded: true });
+    try {
+      window.dispatchEvent(new CustomEvent('auth:login', { detail: { token, role } }));
+    } catch (eventError) {
+      console.warn('auth_login_event_error', eventError);
+    }
     toast.success("Login successful");
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("role");
-    setAuth({ token: null, role: null, loaded: true });
+  const handleLogout = async () => {
+    await performLogout({ silent: true });
+    setAuth({ ...readStoredAuth(), loaded: true });
     toast.success("Logged out");
   };
 
   useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    const role = localStorage.getItem("role");
-    setAuth({ token, role, loaded: true });
+    const snapshot = readStoredAuth();
+    setAuth({ ...snapshot, loaded: true });
   }, []);
 
   // ---- Global currency store (selection + rates) ----
@@ -624,6 +668,8 @@ const App = () => {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login onLogin={handleLoginSuccess} />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/register" element={<Register />} />
             <Route path="/products" element={<ProductList />} />
             <Route path="/products/:id" element={<ProductDetail />} />
@@ -637,6 +683,7 @@ const App = () => {
             <Route path="/matters" element={<Matters />} />
             {/* Studio */}
             <Route path="/studio" element={<Studio />} />
+            <Route path="/studio/portal" element={<StudioPortal />} />
             {/* Warehouse */}
             <Route path="/warehouse" element={<Warehouse />} />
             <Route path="/warehouse/:id" element={<WarehouseDetail />} />
@@ -644,6 +691,7 @@ const App = () => {
             <Route path="/firms" element={<Firms />} />
             {/* NEW: Associates and portfolio routes */}
             <Route path="/associates" element={<Associates />} />
+            <Route path="/associates/portal" element={<AssociatePortal />} />
             <Route path="/firmportfolio" element={<FirmPortfolio />} />
             <Route path="/associateportfolio" element={<AssociatePortfolio />} />
             <Route path="/associateportfolio/:id" element={<AssociatePortfolio />} />
@@ -684,3 +732,7 @@ const App = () => {
 };
 
 export default App;
+
+
+
+

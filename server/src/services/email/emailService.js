@@ -156,7 +156,7 @@ export const sendSignupCredentialsEmail = async ({ to, password, loginUrl, role 
     process.env.APP_BASE_URL ||
     'https://builtattic.com/login';
   const safeRole = role ? String(role).replace(/[^a-zA-Z0-9\s-]+/g, '') : 'Builtattic member';
-  const subject = 'Welcome to Builtattic – your login is ready';
+  const subject = 'Welcome to Builtattic ï¿½ your login is ready';
   const html = `
     <div style="font-family: 'Montserrat', Arial, sans-serif; max-width:600px; margin:0 auto; padding:32px; background:#0f172a; color:#e2e8f0;">
       <div style="text-align:center; margin-bottom:28px;">
@@ -257,3 +257,26 @@ export const sendSupportEmailNotification = async ({
     return { success: false, error: error.message };
   }
 };
+
+
+
+export const sendPasswordResetEmail = async ({ to, resetUrl, expiresInMinutes = 60 }) => {
+  const transporter = createTransporter();
+  const fromAddress = process.env.EMAIL_FROM || `Builtattic <${process.env.EMAIL_USER}>`;
+  const secureUrl = (typeof resetUrl === "string" && resetUrl.trim()) ? resetUrl.trim() : "http://localhost:5173/reset-password";
+  const subject = 'Reset your Builtattic password';
+  const minutes = Math.max(5, parseInt(expiresInMinutes, 10) || 60);
+  const html = `
+    <div style="font-family: 'Montserrat', Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 32px; background: #0f172a; color: #e2e8f0;">
+      <h2 style="margin: 0 0 16px; color: #38bdf8;">Reset your password</h2>
+      <p style="margin: 0 0 24px; color: #cbd5f5;">We received a request to reset your Builtattic password. Click the button below to choose a new one.</p>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${secureUrl}" style="display: inline-block; padding: 14px 28px; background: #38bdf8; color: #0f172a; font-weight: 600; border-radius: 999px; text-decoration: none;">Reset password</a>
+      </div>
+      <p style="margin: 0 0 16px; color: #94a3b8; font-size: 13px;">This link will expire in ${minutes} minutes. If you did not request a reset, you can safely ignore this email.</p>
+      <p style="margin: 24px 0 0; color: #64748b; font-size: 12px;">For security reasons, the link above can only be used once.</p>
+    </div>
+  `;
+  await transporter.sendMail({ from: fromAddress, to, subject, html });
+};
+

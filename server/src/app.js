@@ -34,6 +34,9 @@ import mattersRouter from './routes/matters.js';
 import supportRouter from './routes/support.js';
 import documentsRouter from './routes/documents.js';
 import accessRequestsRouter from './routes/accessRequests.js';
+import associatePortalRouter from './routes/associatePortal.js';
+import studioPortalRouter from './routes/studioPortal.js';
+import settingsRouter from './routes/settings.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -81,6 +84,9 @@ app.use(['/matters', '/api/matters'], mattersRouter);
 app.use(['/support', '/api/support'], supportRouter);
 app.use(['/documents', '/api/documents'], documentsRouter);
 app.use(['/access-requests', '/api/access-requests'], accessRequestsRouter);
+app.use(['/portal/associate', '/api/portal/associate'], associatePortalRouter);
+app.use(['/portal/studio', '/api/portal/studio'], studioPortalRouter);
+app.use(['/settings', '/api/settings'], settingsRouter);
 
 app.get(['/health', '/api/health'], (_req, res) => {
   res.json({ ok: true });
@@ -170,3 +176,5 @@ app.use((error, req, res, next) => {
 });
 
 export default app;
+
+

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import argon2 from 'argon2';
 import { z } from 'zod';
@@ -7,16 +8,24 @@ import { requireAuth } from '../rbac/guards.js';
 import { validateEmailDeliverability } from '../utils/emailValidation.js';
 import { signInWithGoogle } from '../services/googleAuth.js';
 
-import { sendSignupCredentialsEmail } from '../services/email/emailService.js';
+import { sendSignupCredentialsEmail, sendPasswordResetEmail } from '../services/email/emailService.js';
 import logger from '../utils/logger.js';
 const r = Router();
 const credsSchema = z.object({
-  email: z.string().email().transform((s)=>s.trim().toLowerCase()),
+  email: z.string().email().transform((s) => s.trim().toLowerCase()),
   password: z.string().min(8)
 });
 const signupSchema = credsSchema.extend({
   role: z.enum(['user','client','vendor','firm','associate','admin','superadmin']).optional()
 });
+const forgotPasswordSchema = z.object({
+  email: z.string().email().transform((s) => s.trim().toLowerCase()),
+});
+const resetPasswordSchema = z.object({
+  token: z.string().min(32),
+  password: z.string().min(8),
+});
+
 
 async function handleSignup(req, res) {
   const parsed = signupSchema.safeParse(req.body);
@@ -129,4 +138,94 @@ r.get('/me', requireAuth, async (req, res) => {
   });
 });
 
+r.post('/forgot-password', async (req, res) => {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid email' });
+  }
+  const { email } = parsed.data;
+  const genericResponse = {
+    ok: true,
+    message: 'If that email is registered, you\'ll receive a password reset link shortly.',
+  };
+
+  const user = await User.findOne({ email }).select('email passwordReset');
+  if (!user) {
+    return res.json(genericResponse);
+  }
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  user.passwordReset = { tokenHash, expiresAt };
+  await user.save({ validateBeforeSave: false });
+
+  const resolveResetUrl = (token) => {
+    const candidates = [
+      process.env.PASSWORD_RESET_URL,
+      process.env.CLIENT_RESET_URL,
+      process.env.APP_BASE_URL,
+      process.env.CLIENT_BASE_URL,
+      process.env.PUBLIC_CLIENT_URL,
+      req.get('origin'),
+    ];
+    for (const raw of candidates) {
+      if (typeof raw !== 'string' || !raw.trim()) continue;
+      const trimmed = raw.trim();
+      if (/^https?:\/\//i.test(trimmed)) {
+        if (trimmed.includes('token=')) {
+          return trimmed;
+        }
+        if (trimmed.includes('?')) {
+          const joiner = trimmed.endsWith('?') || trimmed.endsWith('&') ? '' : '&';
+          return `${trimmed}${joiner}token=${token}`;
+        }
+        const normalized = trimmed.replace(/\/+$/g, '');
+        if (/reset-password/i.test(normalized)) {
+          return `${normalized}${normalized.includes('?') ? '&' : '?'}token=${token}`;
+        }
+        return `${normalized}/reset-password?token=${token}`;
+      }
+    }
+    return `http://localhost:5173/reset-password?token=${token}`;
+  };
+  const resetUrl = resolveResetUrl(rawToken);
+  try {
+    await sendPasswordResetEmail({ to: email, resetUrl, expiresInMinutes: 60 });
+  } catch (error) {
+    logger.warn('Failed to send password reset email', {
+      email,
+      error: error.message,
+    });
+  }
+
+  const payload = { ...genericResponse };
+  res.json(payload);
+});
+
+r.post('/reset-password', async (req, res) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid request' });
+  }
+  const { token, password } = parsed.data;
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await User.findOne({ 'passwordReset.tokenHash': tokenHash }).select('+passwordReset.tokenHash passwordReset.expiresAt');
+  if (!user || !user.passwordReset?.expiresAt) {
+    return res.status(400).json({ ok: false, error: 'Invalid or expired reset token' });
+  }
+  if (user.passwordReset.expiresAt.getTime() < Date.now()) {
+    return res.status(400).json({ ok: false, error: 'Invalid or expired reset token' });
+  }
+
+  user.passHash = await argon2.hash(password);
+  user.passwordReset = undefined;
+  await user.save({ validateBeforeSave: false });
+
+  res.json({ ok: true, message: 'Password updated successfully' });
+});
+
 export default r;
+

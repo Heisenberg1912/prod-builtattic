@@ -8,6 +8,25 @@ import { fetchMaterials } from "../services/marketplace.js";
 import { fallbackMaterials } from "../data/marketplace.js";
 import { resolveMaterialStudioHero } from "../assets/materialStudioImages.js";
 
+const formatRelativeTime = (iso) => {
+  if (!iso) return null;
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return null;
+  const diffMs = target.getTime() - Date.now();
+  const units = [
+    { unit: "day", ms: 86_400_000 },
+    { unit: "hour", ms: 3_600_000 },
+    { unit: "minute", ms: 60_000 },
+  ];
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  for (const { unit, ms } of units) {
+    if (Math.abs(diffMs) >= ms || unit === "minute") {
+      return formatter.format(Math.round(diffMs / ms), unit);
+    }
+  }
+  return target.toLocaleDateString();
+};
+
 const WarehouseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -77,6 +96,11 @@ const WarehouseDetail = () => {
   }, [material]);
 
   const materialKey = material?._id ?? material?.id ?? material?.slug ?? id;
+  const vendorProfile = material?.vendorProfile || null;
+  const vendorTagline = vendorProfile?.tagline || material?.vendorTagline || null;
+  const vendorRegions = Array.isArray(vendorProfile?.shippingRegions) ? vendorProfile.shippingRegions : [];
+  const vendorCertifications = Array.isArray(vendorProfile?.certifications) ? vendorProfile.certifications : [];
+  const vendorUpdatedAt = vendorProfile?.updatedAt || vendorProfile?.createdAt || null;
   const isWishlisted = useMemo(() => {
     if (!materialKey) return false;
     return (wishlistItems || []).some(
@@ -380,17 +404,46 @@ const WarehouseDetail = () => {
                   </button>
                 </div>
               </section>
-              {material.metafields?.vendor && (
-                <section className="bg-white border border-slate-200 rounded-2xl p-6 space-y-2 text-sm text-slate-600">
-                  <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-[0.3em]">
-                    Vendor
-                  </h3>
-                  <p>{material.metafields.vendor}</p>
-                  {material.metafields.location && (
-                    <p className="text-xs text-slate-500">
-                      {material.metafields.location}
-                    </p>
+              {(vendorProfile || material.metafields?.vendor) && (
+                <section className="bg-white border border-slate-200 rounded-2xl p-6 space-y-3 text-sm text-slate-600">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-[0.3em]">Vendor</h3>
+                    <p className="text-sm font-semibold text-slate-900">{vendorProfile?.companyName || material.metafields?.vendor}</p>
+                    {vendorTagline && (<p className="text-xs text-slate-500">{vendorTagline}</p>)}
+                    {(vendorProfile?.location || material.metafields?.location) && (
+                      <p className="text-xs text-slate-500">{vendorProfile?.location || material.metafields?.location}</p>
+                    )}
+                    {vendorRegions.length ? (
+                      <p className="text-[11px] text-slate-400">Ships to: {vendorRegions.join(' • ')}</p>
+                    ) : null}
+                    {vendorUpdatedAt && (
+                      <p className="text-[11px] text-slate-400">Updated {formatRelativeTime(vendorUpdatedAt)}</p>
+                    )}
+                  </div>
+                  {vendorProfile?.paymentTerms && (
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-[0.25em]">Payment terms</p>
+                      <p>{vendorProfile.paymentTerms}</p>
+                    </div>
                   )}
+                  {(vendorProfile?.contactEmail || vendorProfile?.contactPhone || vendorProfile?.website) && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-slate-500 uppercase tracking-[0.25em]">Contact</p>
+                      {vendorProfile?.contactEmail && <p>{vendorProfile.contactEmail}</p>}
+                      {vendorProfile?.contactPhone && <p>{vendorProfile.contactPhone}</p>}
+                      {vendorProfile?.website && (
+                        <a href={vendorProfile.website} target="_blank" rel="noreferrer" className="text-slate-900 underline">
+                          {vendorProfile.website}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                  {vendorCertifications.length ? (
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-[0.25em]">Certifications</p>
+                      <p>{vendorCertifications.slice(0, 4).join(' • ')}</p>
+                    </div>
+                  ) : null}
                 </section>
               )}
             </aside>

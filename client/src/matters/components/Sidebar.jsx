@@ -8,6 +8,7 @@ import {
   History,
   Hammer,
   Video,
+  LifeBuoy,
 } from "lucide-react";
 import { useApi } from "../lib/ctx";
 
@@ -18,6 +19,7 @@ const NAV_STACK = [
   { key: "DesignDetails", label: "Design Studio", icon: PenTool },
   { key: "FinanceReport", label: "Finance", icon: LineChart },
   { key: "History", label: "Timeline", icon: History },
+  { key: "Support", label: "Supported", icon: LifeBuoy, href: "https://builtattic.streamlit.app/" },
 ];
 
 const MODE_BADGES = [
@@ -104,8 +106,17 @@ export default function Sidebar({
     description: m.description || m.summary || "Activate this space to surface contextual data.",
   }));
 
-  const handleNav = (key) => {
-    setActiveSidebar?.(key);
+  const handleNav = (item) => {
+    if (item?.href) {
+      try {
+        window?.open(item.href, "_blank", "noopener,noreferrer");
+      } catch {
+        window?.open(item.href, "_blank");
+      }
+      if (!isDesktop) onNavigate?.();
+      return;
+    }
+    setActiveSidebar?.(item?.key);
     if (!isDesktop) onNavigate?.();
   };
 
@@ -190,13 +201,15 @@ export default function Sidebar({
       </div>
 
       <nav className={buildClassName(["flex", effectiveCollapsed ? "flex-col items-center gap-4" : "flex-col gap-3"])}>
-        {NAV_STACK.map(({ icon, label, key }) => {
-          const active = activeSidebar === key;
+        {NAV_STACK.map((item) => {
+          const { icon, label, key } = item;
+          const active = !item.href && activeSidebar === key;
+          const IconColor = active ? "#4F8CFF" : "#64748b";
           return (
             <button
               key={key}
               type="button"
-              onClick={() => handleNav(key)}
+              onClick={() => handleNav(item)}
               className={buildClassName([
                 "group inline-flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-2 text-sm transition",
                 active ? "bg-[rgba(79,140,255,0.16)] text-[var(--color-accent)]" : "hover:bg-surface-soft text-textMuted",
@@ -204,7 +217,7 @@ export default function Sidebar({
               ])}
               title={label}
             >
-              {createElement(icon, { className: "h-4 w-4", strokeWidth: 2.2, stroke: active ? "#4F8CFF" : "#64748b", fill: "none", "aria-hidden": true })}
+              {createElement(icon, { className: "h-4 w-4", strokeWidth: 2.2, stroke: IconColor, fill: "none", "aria-hidden": true })}
               {!effectiveCollapsed && <span className="font-medium">{label}</span>}
             </button>
           );

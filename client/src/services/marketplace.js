@@ -12,8 +12,119 @@ import {
 } from "../data/products.js";
 import { associateCatalog, associateEnhancements } from "../data/services.js";
 
+import { fetchVendorPortalProfile, loadVendorProfileDraft } from "./portal.js";
+
+import { decorateFirmWithProfile, decorateFirmsWithProfiles, loadFirmProfile } from "../utils/firmProfile.js";
+
 const slugify = (value = '') => value.toString().toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
 const ensureArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
+
+let vendorProfilePromise = null;
+
+async function getVendorProfileForMarketplace() {
+  if (!vendorProfilePromise) {
+    vendorProfilePromise = (async () => {
+      try {
+        const response = await fetchVendorPortalProfile({ preferDraft: true, fallbackToDraft: true });
+        if (response?.profile) {
+          return response.profile;
+        }
+      } catch (error) {
+        console.warn('vendor_profile_load_failed', error);
+      }
+      try {
+        return loadVendorProfileDraft() || null;
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return vendorProfilePromise;
+}
+
+function decorateMaterialsWithVendorProfile(items = [], profile) {
+  if (!profile) return items;
+  const catalog = Array.isArray(profile.catalogSkus) ? profile.catalogSkus : [];
+  if (!catalog.length) return items;
+  const slugSet = new Set(catalog.map((entry) => entry && String(entry).trim().toLowerCase()).filter(Boolean));
+  if (!slugSet.size) return items;
+
+  return items.map((material) => {
+    const slugCandidates = [
+      material.slug,
+      material._id,
+      material.id,
+      material.handle,
+      material.metafields?.slug,
+      material.metafields?.sku,
+    ]
+      .map((value) => (value ? String(value).trim().toLowerCase() : null))
+      .filter(Boolean);
+    const matched = slugCandidates.some((candidate) => slugSet.has(candidate));
+    if (!matched) return material;
+
+    const next = { ...material, vendorProfile: profile };
+    next.metafields = { ...(material.metafields || {}) };
+    if (profile.companyName) {
+      next.metafields.vendor = profile.companyName;
+      next.vendor = profile.companyName;
+    }
+    if (profile.location) {
+      next.metafields.location = profile.location;
+    }
+    if (profile.leadTimeDays && !next.metafields.leadTime) {
+      next.metafields.leadTime = `${profile.leadTimeDays} days`;
+    }
+    if (profile.minOrderQuantity && !next.metafields.moq) {
+      next.metafields.moq = profile.minOrderQuantity;
+    }
+    if (profile.tagline) {
+      next.vendorTagline = profile.tagline;
+    }
+    if (profile.heroImage && !next.heroImage) {
+      next.heroImage = profile.heroImage;
+    }
+    return next;
+  });
+}
+
+const buildFirmFromStudio = (studio = {}) => {
+  if (studio.firm) return { ...studio.firm };
+  const firmId =
+    studio.firmId ||
+    studio.vendorId ||
+    studio.ownerId ||
+    studio.sellerId ||
+    null;
+  if (!firmId) return null;
+  return {
+    _id: firmId,
+    name:
+      studio.firmName ||
+      studio.creator?.name ||
+      studio.vendorName ||
+      studio.sellerName ||
+      '',
+  };
+};
+
+const decorateStudioWithStoredProfile = (studio = {}) => {
+  const firmCandidate = buildFirmFromStudio(studio);
+  const profile = firmCandidate ? loadFirmProfile(firmCandidate._id, firmCandidate) : null;
+  if (studio.firm) {
+    const existingFirm = { ...studio.firm };
+    const decorated = profile ? decorateFirmWithProfile(existingFirm, profile) : existingFirm;
+    return { ...studio, firm: decorated };
+  }
+  if (!firmCandidate) {
+    return { ...studio };
+  }
+  const decoratedCandidate = profile ? decorateFirmWithProfile(firmCandidate, profile) : firmCandidate;
+  return { ...studio, firm: decoratedCandidate };
+};
+
+const decorateStudiosWithProfiles = (studios = []) =>
+  studios.map((studio) => decorateStudioWithStoredProfile(studio));
 
 const normalizeStudio = (studio = {}) => {
   const galleryArray = ensureArray(studio.gallery).filter(Boolean);
@@ -209,12 +320,12 @@ async function tryRequest(path, params) {
 
 export async function fetchCatalog(params = {}) {
   if (params.kind === "studio") {
-    return filterStudios(LOCAL_STUDIOS, params);
+    return decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
   }
   if (params.kind === "material") {
     return filterMaterials(LOCAL_MATERIALS, params);
   }
-  const studios = filterStudios(LOCAL_STUDIOS, params);
+  const studios = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
   const materials = filterMaterials(LOCAL_MATERIALS, params);
   return [...studios, ...materials];
 }
@@ -249,7 +360,7 @@ const buildStudioFacets = (list = []) => {
 export async function fetchStudios(params = {}) {
   try {
     const { data } = await client.get("/marketplace/studios", { params });
-    const items = (data?.items || []).map(normalizeStudio);
+    const items = decorateStudiosWithProfiles((data?.items || []).map(normalizeStudio));
     const meta = data?.meta || {};
     return {
       items,
@@ -260,7 +371,7 @@ export async function fetchStudios(params = {}) {
       },
     };
   } catch {
-    const filtered = filterStudios(LOCAL_STUDIOS, params);
+    const filtered = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
     return {
       items: filtered,
       meta: {
@@ -273,9 +384,10 @@ export async function fetchStudios(params = {}) {
 }
 
 export async function fetchMaterials(params = {}) {
+  const vendorProfile = await getVendorProfileForMarketplace();
   try {
     const { data } = await client.get("/marketplace/materials", { params });
-    const items = (data?.items || []).map(normalizeMaterial);
+    const items = decorateMaterialsWithVendorProfile((data?.items || []).map(normalizeMaterial), vendorProfile);
     const meta = data?.meta || { total: items.length };
     return {
       items,
@@ -286,10 +398,10 @@ export async function fetchMaterials(params = {}) {
       },
     };
   } catch {
-    const filtered = filterMaterials(LOCAL_MATERIALS, params);
+    const fallback = decorateMaterialsWithVendorProfile(filterMaterials(LOCAL_MATERIALS, params), vendorProfile);
     return {
-      items: filtered,
-      meta: { total: filtered.length, web3: null },
+      items: fallback,
+      meta: { total: fallback.length, web3: null },
     };
   }
 }
@@ -314,7 +426,7 @@ export async function fetchMarketplaceAssociates(params = {}) {
 export async function fetchMarketplaceFirms(params = {}) {
   try {
     const { data } = await client.get("/marketplace/firms", { params });
-    const items = data?.items || [];
+    const items = decorateFirmsWithProfiles(data?.items || []);
     return {
       items,
       meta: {
@@ -323,7 +435,7 @@ export async function fetchMarketplaceFirms(params = {}) {
       },
     };
   } catch {
-    const filtered = filterFirms(fallbackFirms, params);
+    const filtered = decorateFirmsWithProfiles(filterFirms(fallbackFirms, params));
     return { items: filtered, meta: { total: filtered.length, web3: null } };
   }
 }
@@ -334,9 +446,10 @@ export async function fetchStudioBySlug(slug, params = {}) {
     const { data } = await client.get(`/marketplace/studios/${slug}`, { params });
     const item = data?.item;
     if (!item) throw new Error('Not found');
-    return normalizeStudio(item);
+    return decorateStudioWithStoredProfile(normalizeStudio(item));
   } catch {
-    return LOCAL_STUDIOS.find((studio) => studio.slug === slug) || null;
+    const local = LOCAL_STUDIOS.find((studio) => studio.slug === slug) || null;
+    return local ? decorateStudioWithStoredProfile(local) : null;
   }
 }
 

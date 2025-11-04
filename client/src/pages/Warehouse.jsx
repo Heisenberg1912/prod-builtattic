@@ -7,7 +7,7 @@ import {
   HiOutlineHeart,
   HiHeart,
 } from "react-icons/hi";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { marketplaceFeatures } from "../data/marketplace.js";
@@ -31,6 +31,25 @@ const extractWishlistIds = (items) => {
     if (key != null) set.add(String(key));
   });
   return set;
+};
+
+const formatRelativeTime = (iso) => {
+  if (!iso) return null;
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return null;
+  const diffMs = target.getTime() - Date.now();
+  const units = [
+    { unit: "day", ms: 86_400_000 },
+    { unit: "hour", ms: 3_600_000 },
+    { unit: "minute", ms: 60_000 },
+  ];
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  for (const { unit, ms } of units) {
+    if (Math.abs(diffMs) >= ms || unit === "minute") {
+      return formatter.format(Math.round(diffMs / ms), unit);
+    }
+  }
+  return target.toLocaleDateString();
 };
 
 const MATERIAL_FILTER_SECTIONS = {
@@ -539,9 +558,9 @@ const Warehouse = () => {
 
         {!loading && web3Meta && (
 
-          <div className="rounded-2xl border border-amber-200 bg-amber-900/90 px-6 py-5 text-amber-100 shadow-sm">
+          <div className="rounded-2xl border border-slate-800 bg-black px-6 py-5 text-slate-100 shadow-sm">
 
-            <p className="text-[11px] uppercase tracking-[0.35em] text-amber-300">
+            <p className="text-[11px] uppercase tracking-[0.35em] text-slate-400">
 
               Warehouse provenance
 
@@ -557,7 +576,7 @@ const Warehouse = () => {
 
               {Array.isArray(web3Meta.anchors) && web3Meta.anchors.length > 0 ? (
 
-                <p className="text-xs text-amber-200">
+                <p className="text-xs text-slate-300">
 
                   Latest anchors: {web3Meta.anchors.slice(0, 3).join(" · ")}
 
@@ -575,7 +594,7 @@ const Warehouse = () => {
 
         <AnimatePresence>
           {showFilters && (
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
@@ -621,7 +640,7 @@ const Warehouse = () => {
                   </div>
                 ))}
               </div>
-            </motion.div>
+            </Motion.div>
 
           )}
         </AnimatePresence>
@@ -644,28 +663,35 @@ const Warehouse = () => {
               const materialKey = item._id ?? item.id ?? item.slug;
               const favourite = materialKey ? favourites.has(String(materialKey)) : false;
               const pricing = item.pricing || {};
-              const vendor = item.metafields?.vendor || "Builtattic partner";
-              const location = item.metafields?.location || "Global";
-              const heroOverride = resolveMaterialStudioHero(item);
+              const vendorProfile = item.vendorProfile || null;
+              const vendor = vendorProfile?.companyName || item.metafields?.vendor || "Builtattic partner";
+              const location = vendorProfile?.location || item.metafields?.location || "Global";
+              const heroOverride = resolveMaterialStudioHero(item) || vendorProfile?.heroImage || null;
               const materialImage = heroOverride || getMaterialImage(item);
               const materialFallback = heroOverride || getMaterialFallback(item);
               const moq =
+                vendorProfile?.minOrderQuantity ??
                 item.metafields?.moq ??
                 pricing.minQuantity ??
                 item.inventory ??
                 0;
               const leadTime =
-                item.metafields?.leadTimeDays ||
-                (item.delivery?.leadTimeWeeks
-                  ? `${item.delivery.leadTimeWeeks * 7}`
-                  : null);
+                vendorProfile?.leadTimeDays ??
+                item.metafields?.leadTimeDays ??
+                (item.delivery?.leadTimeWeeks ? item.delivery.leadTimeWeeks * 7 : null);
+              const vendorTagline = vendorProfile?.tagline || item.vendorTagline || null;
+              const vendorRegions = Array.isArray(vendorProfile?.shippingRegions)
+                ? vendorProfile.shippingRegions.slice(0, 3)
+                : [];
+              const vendorUpdatedAt = vendorProfile?.updatedAt || vendorProfile?.createdAt || null;
+              const leadTimeDisplay = Number.isFinite(Number(leadTime)) ? Number(leadTime) : null;
 
               const detailPath = item.slug
                 ? `/warehouse/${item.slug}`
                 : `/warehouse/${item._id}`;
 
               return (
-                <motion.article
+                <Motion.article
                   key={item._id}
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -707,6 +733,17 @@ const Warehouse = () => {
                         <p className="text-sm text-slate-500">
                           {vendor}, {location}
                         </p>
+                        {vendorTagline && (
+                          <p className="text-xs text-slate-500 mt-1">{vendorTagline}</p>
+                        )}
+                        {vendorRegions.length ? (
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            {vendorRegions.join(' • ')}
+                          </p>
+                        ) : null}
+                        {vendorUpdatedAt && (
+                          <p className="text-[11px] text-slate-400 mt-1">Updated {formatRelativeTime(vendorUpdatedAt)}</p>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 text-xs text-slate-600">
@@ -732,9 +769,9 @@ const Warehouse = () => {
                           <p className="text-sm font-semibold text-slate-900">
                             MOQ {moq.toLocaleString()}
                           </p>
-                          {leadTime && (
+                          {leadTimeDisplay !== null && (
                             <p className="text-[11px] text-slate-500 mt-1">
-                              Lead time {leadTime} days
+                              Lead time {leadTimeDisplay} days
                             </p>
                           )}
                         </div>
@@ -799,7 +836,7 @@ const Warehouse = () => {
                       </div>
                     </div>
                   </Link>
-                </motion.article>
+                </Motion.article>
               );
             })}
         </section>
@@ -831,3 +868,4 @@ const Warehouse = () => {
 };
 
 export default Warehouse;
+

@@ -5,6 +5,7 @@ import cartIcon from "/src/assets/icons/Cart Vector.png";
 import userAvatar from "/src/assets/icons/Profile Settings vector.png";
 import { motion, AnimatePresence } from "framer-motion";
 import { normalizeRole, resolveDashboardPath } from "../constants/roles.js";
+import { logout as performLogout } from "../services/auth.js";
 import { useCart } from "../context/CartContext";
 
 /* ---------- helpers for dashboard path ---------- */
@@ -131,17 +132,14 @@ const Navbar = () => {
 
   // Dropdown state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownItems = useMemo(() => {
-    const base = [
-      { label: "Dashboard", to: isAuthed ? dashboardPath : "/login" },
-      { label: "Account", to: "/account" },
-      { label: "Wishlist", to: "/wishlist" },
-      { label: "Cart", to: "/cart" },
-      { label: "Settings", to: "/settings" },
-    ];
-    if (isAuthed) return base;
-    return [{ label: "Login", to: "/login", prominent: true }, ...base];
-  }, [isAuthed, dashboardPath]);
+  const dropdownItems = useMemo(() => [
+    { label: "Dashboard", to: isAuthed ? dashboardPath : "/login" },
+    { label: "Account", to: "/account" },
+    { label: "Wishlist", to: "/wishlist" },
+    { label: "Cart", to: "/cart" },
+    { label: "Settings", to: "/settings" },
+  ], [dashboardPath, isAuthed]);
+  const showSignInCTA = !isAuthed;
 
   useEffect(() => {
     if (!isDropdownOpen) return undefined;
@@ -176,6 +174,22 @@ const Navbar = () => {
     }
   };
 
+  const handleLogoutClick = async () => {
+    closeDropdown(true);
+    try {
+      await performLogout({ silent: true });
+    } catch (error) {
+      console.warn('navbar_logout_error', error);
+    } finally {
+      setAuthState(readAuthSnapshot());
+      setUser(getCurrentUser());
+      try {
+        window.location.assign('/login');
+      } catch (navError) {
+        console.warn('navbar_logout_navigation_error', navError);
+      }
+    }
+  };
   const navLinks = [
     { to: "/ai", label: "VitruviAI" },
     { to: "/studio", label: "Design Studio" },
@@ -250,22 +264,29 @@ const Navbar = () => {
                     className="absolute right-0 top-full mt-2 w-60 rounded-xl bg-black/92 text-white shadow-[0_24px_50px_rgba(0,0,0,0.6)] ring-1 ring-white/12 backdrop-blur-md"
                   >
                     <nav className="flex flex-col overflow-hidden text-sm font-semibold tracking-wide divide-y divide-white/10">
-                      {dropdownItems.map((item) => {
-                        const itemClasses = item.prominent
-                          ? "px-6 py-3 transition hover:bg-white/10 text-white uppercase tracking-[0.24em]"
-                          : "px-6 py-3 transition hover:bg-white/10 text-white/90";
-                        return (
-                          <NavLink
-                            key={item.label}
-                            to={item.to}
-                            className={itemClasses}
-                            onClick={() => closeDropdown(true)}
-                          >
-                            {item.label}
-                          </NavLink>
-                        );
-                      })}
+                      {dropdownItems.map((item) => (
+                        <NavLink
+                          key={item.label}
+                          to={item.to}
+                          className="px-6 py-3 transition hover:bg-white/10 text-white/90"
+                          onClick={() => closeDropdown(true)}
+                        >
+                          {item.label}
+                        </NavLink>
+                      ))}
                     </nav>
+                    {showSignInCTA && (
+                      <div className="border-t border-white/10 px-6 py-4">
+                        <NavLink
+                          to="/login"
+                          className="inline-flex w-full items-center justify-center rounded-full bg-white text-sm font-semibold text-black transition hover:bg-white/90"
+                          onClick={() => closeDropdown(true)}
+                        >
+                          Sign in
+                        </NavLink>
+                      </div>
+                    )}
+
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -354,22 +375,29 @@ const Navbar = () => {
               onClick={(event) => event.stopPropagation()}
             >
               <nav className="flex flex-col overflow-hidden text-center text-sm font-semibold tracking-wide divide-y divide-white/10">
-                {dropdownItems.map((item) => {
-                  const itemClasses = item.prominent
-                    ? "px-6 py-3 transition hover:bg-white/10 text-white uppercase tracking-[0.24em]"
-                    : "px-6 py-3 transition hover:bg-white/10 text-white/90";
-                  return (
-                    <NavLink
-                      key={item.label}
-                      to={item.to}
-                      className={itemClasses}
-                      onClick={() => closeDropdown(true)}
-                    >
-                      {item.label}
-                    </NavLink>
-                  );
-                })}
+                {dropdownItems.map((item) => (
+                  <NavLink
+                    key={item.label}
+                    to={item.to}
+                    className="px-6 py-3 transition hover:bg-white/10 text-white/90"
+                    onClick={() => closeDropdown(true)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
               </nav>
+              {showSignInCTA && (
+                <div className="border-t border-white/10 px-6 py-4">
+                  <NavLink
+                    to="/login"
+                    className="inline-flex w-full items-center justify-center rounded-full bg-white text-sm font-semibold text-black transition hover:bg-white/90"
+                    onClick={() => closeDropdown(true)}
+                  >
+                    Sign in
+                  </NavLink>
+                </div>
+              )}
+
             </motion.div>
           </motion.div>
         )}
@@ -379,3 +407,7 @@ const Navbar = () => {
 };
 
 export default Navbar;
+
+
+
+

@@ -215,8 +215,8 @@ const Firms = () => {
         )}
 
         {!loading && web3Meta && (
-          <div className="rounded-2xl border border-sky-200 bg-sky-900/90 px-6 py-5 text-sky-100 shadow-sm">
-            <p className="text-[11px] uppercase tracking-[0.35em] text-sky-300">
+          <div className="rounded-2xl border border-slate-800 bg-black px-6 py-5 text-slate-100 shadow-sm">
+            <p className="text-[11px] uppercase tracking-[0.35em] text-slate-400">
               Marketplace provenance
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-4">
@@ -224,8 +224,8 @@ const Firms = () => {
                 {web3Meta.total ?? 0} firm portfolios verified on {web3Meta.chain ?? "Polygon"}
               </h2>
               {Array.isArray(web3Meta.anchors) && web3Meta.anchors.length > 0 ? (
-                <p className="text-xs text-sky-200">
-                  Latest anchors: {web3Meta.anchors.slice(0, 3).join(" · ")}
+                <p className="text-xs text-slate-300">
+                  Latest anchors: {web3Meta.anchors.slice(0, 3).join(" ï¿½ ")}
                 </p>
               ) : null}
             </div>

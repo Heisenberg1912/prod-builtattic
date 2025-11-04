@@ -1282,6 +1282,9 @@ const Studio = () => {
                               {firmCountry && (
                                 <p className="text-xs text-slate-500">{firmCountry}</p>
                               )}
+                              {studio.firm?.tagline && (
+                                <p className="text-xs text-slate-500">{studio.firm.tagline}</p>
+                              )}
                             </div>
                             {firmLogo ? (
                               <img
@@ -1320,6 +1323,19 @@ const Studio = () => {
                             </div>
                           )}
 
+                          {Array.isArray(studio.firm?.services) && studio.firm.services.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {studio.firm.services.slice(0, 4).map((service) => (
+                                <span
+                                  key={`service-${studio.slug || studio.id}-${service}`}
+                                  className="rounded-full bg-slate-900/10 px-2.5 py-1 text-xs font-medium text-slate-600"
+                                >
+                                  {service}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
                           {programTokens && (
                             <p className="text-xs text-slate-500">{programTokens}</p>
                           )}
@@ -1339,6 +1355,32 @@ const Studio = () => {
                         <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
                           {supportingText}
                         </p>
+
+                        <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                          {studio.firm?.contact?.email && (
+                            <a
+                              href={`mailto:${studio.firm.contact.email}`}
+                              className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+                            >
+                              Email firm
+                            </a>
+                          )}
+                          {studio.firm?.contact?.phone && (
+                            <span className="inline-flex items-center gap-2">
+                              {studio.firm.contact.phone}
+                            </span>
+                          )}
+                          {studio.firm?.website && (
+                            <a
+                              href={studio.firm.website}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+                            >
+                              Visit website
+                            </a>
+                          )}
+                        </div>
 
                         <div className="mt-auto flex flex-wrap items-end justify-between gap-3">
                           {priceLabel ? (
@@ -1563,8 +1605,4 @@ const Studio = () => {
 };
 
 export default Studio;
-
-
-
-
 

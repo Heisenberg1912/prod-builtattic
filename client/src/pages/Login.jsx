@@ -1,6 +1,6 @@
 /* global google */
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { login as apiLogin, loginWithGoogle } from "../services/auth.js";
 import {
   normalizeRole,
@@ -40,7 +40,36 @@ function deriveRole(user) {
   return "user";
 }
 
+const PORTAL_COPY = {
+  associate: {
+    badge: "Associate Portal",
+    heading: "Associate workspace sign-in",
+    description: "Keep your Builtattic associate profile up to date with fresh services, rates, and availability.",
+    helper: "Need an invite? Email partnerships@builtattic.com."
+  },
+  studio: {
+    badge: "Studio Portal",
+    heading: "Studio workspace sign-in",
+    description: "Submit new studios, refresh imagery, and highlight your latest projects.",
+    helper: "Need access? Contact studios@builtattic.com."
+  },
+};
+
 const LoginPage = ({ onLogin }) => {
+  const location = useLocation();
+  const portalMode = useMemo(() => {
+    try {
+      const params = new URLSearchParams(location?.search || "");
+      const value = params.get("portal");
+      if (!value) return null;
+      const normalized = value.toLowerCase();
+      return normalized === "associate" || normalized === "studio" ? normalized : null;
+    } catch (error) {
+      return null;
+    }
+  }, [location?.search]);
+  const portalCopy = portalMode ? PORTAL_COPY[portalMode] : null;
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,6 +77,13 @@ const LoginPage = ({ onLogin }) => {
   const navigate = useNavigate();
   const googleButtonRef = useRef(null);
   const [googleInitialized, setGoogleInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!portalMode) return;
+    try {
+      localStorage.setItem("last_login_portal", portalMode);
+    } catch {}
+  }, [portalMode]);
 
   const handleGoogleCredential = useCallback(async (response) => {
     try {
@@ -60,6 +96,9 @@ const LoginPage = ({ onLogin }) => {
       try { localStorage.setItem("auth_token", token); } catch {}
       try { localStorage.setItem("role", resolvedRole); } catch {}
       try { localStorage.setItem("user", JSON.stringify(user || {})); } catch {}
+      if (portalMode) {
+        try { localStorage.setItem("login_portal_hint", portalMode); } catch {}
+      }
       if (typeof onLogin === "function") {
         onLogin({ token, role: resolvedRole, user, redirectPath: dest });
       }
@@ -68,7 +107,7 @@ const LoginPage = ({ onLogin }) => {
       console.error("[GOOGLE LOGIN]", err);
       setError(err.message || "Google sign-in failed");
     }
-  }, [navigate, onLogin]);
+  }, [navigate, onLogin, portalMode]);
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -137,9 +176,19 @@ const LoginPage = ({ onLogin }) => {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold text-center text-[#1D1D1F] mb-8">
-          Sign in to your account
+        {portalCopy?.badge && (
+          <span className="mx-auto mb-3 inline-flex items-center rounded-full bg-[#EEF2FF] px-3 py-1 text-xs font-semibold uppercase tracking-widest text-[#4338CA]">
+            {portalCopy.badge}
+          </span>
+        )}
+        <h2 className="text-2xl font-bold text-center text-[#1D1D1F] mb-2">
+          {portalCopy?.heading || "Sign in to your account"}
         </h2>
+        {portalCopy?.description && (
+          <p className="mb-8 text-center text-sm text-[#6E6E73]">
+            {portalCopy.description}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit}>
           {/* Email */}
@@ -219,6 +268,12 @@ const LoginPage = ({ onLogin }) => {
         {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
           <p className="text-xs text-gray-400 mt-2 text-center">
             
+          </p>
+        )}
+
+        {portalCopy?.helper && (
+          <p className="mt-4 text-center text-sm text-[#6E6E73]">
+            {portalCopy.helper}
           </p>
         )}
 
