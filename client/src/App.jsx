@@ -101,6 +101,7 @@ const persistAccess = (granted) => {
 const createEmptyCode = () => Array(CODE_LENGTH).fill("");
 
 const App = () => {
+  const location = useLocation();
   const [hasAccess, setHasAccess] = useState(() => loadStoredAccess());
   const [codeAccepted, setCodeAccepted] = useState(false);
   const [acceptedCode, setAcceptedCode] = useState('');
@@ -124,6 +125,7 @@ const App = () => {
   const [isSubmittingProfile, setIsSubmittingProfile] = useState(false);
 
   const codeInputsRef = useRef([]);
+  const secretResetHandled = useRef(false);
 
   const sanitizeCodeValue = (value = "") =>
     value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
@@ -260,6 +262,32 @@ const App = () => {
     setCodeChars(() => createEmptyCode());
     setCodeError("");
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const shouldReset = params.has("secret") || params.has("forceSecret");
+    if (shouldReset && !secretResetHandled.current) {
+      secretResetHandled.current = true;
+      persistAccess(false);
+      setHasAccess(false);
+      setCodeAccepted(false);
+      setAcceptedCode("");
+      setProfileForm(createEmptyProfile());
+      setProfileError("");
+      setFieldErrors({});
+      setCodeChars(() => createEmptyCode());
+      setCodeError("");
+      if (typeof window !== 'undefined') {
+        params.delete("secret");
+        params.delete("forceSecret");
+        const nextSearch = params.toString();
+        const newUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+        window.history.replaceState({}, '', newUrl);
+      }
+    } else if (!shouldReset) {
+      secretResetHandled.current = false;
+    }
+  }, [location.search]);
 
   // NEW: Skip LOI handler (clickable gray text)
   const handleSkipLoi = () => {

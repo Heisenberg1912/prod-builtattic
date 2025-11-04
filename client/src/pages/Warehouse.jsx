@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   HiOutlineFilter,
   HiOutlineSearch,
@@ -177,6 +177,7 @@ const categorizeMoq = (qty) => {
 
 
 const Warehouse = () => {
+  const navigate = useNavigate();
   const { addToCart } = useCart();
   const { addToWishlist, removeFromWishlist, wishlistItems = [] } = useWishlist();
   const [query, setQuery] = useState("");
@@ -696,8 +697,19 @@ const Warehouse = () => {
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition"
+                  role="link"
+                  tabIndex={0}
+                  onClick={(event) => {
+                    if (event.defaultPrevented) return;
+                    navigate(detailPath);
+                  }}
+                  onKeyDown={(event) => {
+                    if ((event.key === "Enter" || event.key === " ") && event.currentTarget === event.target) {
+                      event.preventDefault();
+                      navigate(detailPath);
+                    }
+                  }}
                 >
-                  <Link to={detailPath} className="block h-full">
                     <div className="relative">
                       <img
                         src={materialImage}
@@ -707,6 +719,7 @@ const Warehouse = () => {
                         onError={(event) => applyFallback(event, materialFallback)}
                       />
                       <button
+                        type="button"
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -800,6 +813,7 @@ const Warehouse = () => {
 
                       <div className="flex flex-wrap gap-3">
                         <button
+                          type="button"
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -810,6 +824,7 @@ const Warehouse = () => {
                           Add to cart
                         </button>
                         <button
+                          type="button"
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -819,7 +834,9 @@ const Warehouse = () => {
                         >
                           {favourite ? "Remove from wishlist" : "Add to wishlist"}
                         </button>
-                        <button className="px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:border-slate-300 transition">
+                        <button
+                          type="button"
+                          className="px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:border-slate-300 transition">
                           Enquire
                         </button>
                         {item.web3Proof?.explorerUrl && (
@@ -828,14 +845,17 @@ const Warehouse = () => {
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-2 text-xs font-medium text-amber-600 hover:text-amber-500"
+                            onClick={(event) => event.stopPropagation()}
                           >
                             <span className="h-2 w-2 rounded-full bg-amber-400" />
-                            On-chain proof · {item.web3Proof.anchor}
+                            <span>On-chain proof</span>
+                            {item.web3Proof.anchor ? (
+                              <span className="font-mono text-amber-700">{item.web3Proof.anchor}</span>
+                            ) : null}
                           </a>
                         )}
                       </div>
                     </div>
-                  </Link>
                 </Motion.article>
               );
             })}
@@ -868,4 +888,5 @@ const Warehouse = () => {
 };
 
 export default Warehouse;
+
 

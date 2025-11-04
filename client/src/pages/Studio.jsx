@@ -9,7 +9,7 @@
 // - Montserrat font injected via <link> (no other file edits)
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { HiOutlineSearch } from "react-icons/hi";
 import { AiFillStar } from "react-icons/ai";
@@ -113,7 +113,7 @@ const CATEGORY_IMAGE_MAP = {
 
 const DEFAULT_CATEGORY_IMG = CATEGORY_IMAGE_MAP.All || null;
 const motionCreate = typeof motion.create === "function" ? motion.create : motion;
-const MotionLink = motionCreate(Link);
+const MotionArticle = motionCreate("article");
 
 const CATEGORY_DISPLAY_ORDER = [
   "All",
@@ -253,6 +253,7 @@ const AMAZON_OPTIONS = {
 
 const Studio = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
 
   // --- Core state
@@ -890,17 +891,25 @@ const Studio = () => {
                   </button>
                   <div className={collapsed["Typology"] ? "hidden" : "space-y-1 max-h-56 overflow-auto pr-1"}>
                     {(selectedCategory === "All"
-                      ? Object.values(TYPOLOGIES_BY_CATEGORY).flat()
-                      : (TYPOLOGIES_BY_CATEGORY[selectedCategory] || [])
-                    ).map((opt) => (
-                      <label key={opt} className="flex items-center gap-2 text-sm text-slate-700">
+                      ? Object.entries(TYPOLOGIES_BY_CATEGORY).flatMap(([category, entries]) =>
+                          entries.map((option) => ({ category, option }))
+                        )
+                      : (TYPOLOGIES_BY_CATEGORY[selectedCategory] || []).map((option) => ({
+                          category: selectedCategory,
+                          option,
+                        }))
+                    ).map(({ category, option }, index) => (
+                      <label
+                        key={`${category}-${option}-${index}`}
+                        className="flex items-center gap-2 text-sm text-slate-700"
+                      >
                         <input
                           type="checkbox"
                           className="h-4 w-4 accent-slate-800"
-                          checked={!!filters["Typology"]?.has(opt)}
-                          onChange={() => handleFilterToggle("Typology", opt)}
+                          checked={!!filters["Typology"]?.has(option)}
+                          onChange={() => handleFilterToggle("Typology", option)}
                         />
-                        <span>{opt}</span>
+                        <span>{option}</span>
                       </label>
                     ))}
                   </div>
@@ -1240,14 +1249,32 @@ const Studio = () => {
                     .join(" | ");
 
                   return (
-                    <MotionLink
+                    <MotionArticle
                       key={studio._id || studio.slug || studio.id}
-                      to={href}
                       initial={initialAnim}
                       animate={inViewAnim}
                       className="group flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
+                      role="link"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        if (event.defaultPrevented) return;
+                        navigate(href);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          (event.key === "Enter" || event.key === " ") &&
+                          event.currentTarget === event.target
+                        ) {
+                          event.preventDefault();
+                          navigate(href);
+                        }
+                      }}
                     >
-                      <div className="relative aspect-[4/3] w-full overflow-hidden">
+                      <Link
+                        to={href}
+                        onClick={(event) => event.stopPropagation()}
+                        className="relative aspect-[4/3] w-full overflow-hidden"
+                      >
                         <img
                           src={heroImage}
                           alt={studio.title}
@@ -1267,7 +1294,7 @@ const Studio = () => {
                             ))}
                           </div>
                         )}
-                      </div>
+                      </Link>
 
                       <div className="flex flex-1 flex-col gap-5 p-6">
                         <div className="flex flex-col gap-3">
@@ -1277,7 +1304,13 @@ const Studio = () => {
                                 {firmName || "Verified studio"}
                               </p>
                               <h2 className="text-lg sm:text-xl font-semibold text-slate-900 leading-tight line-clamp-2">
-                                {studio.title}
+                                <Link
+                                  to={href}
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="text-slate-900 hover:text-slate-700 transition"
+                                >
+                                  {studio.title}
+                                </Link>
                               </h2>
                               {firmCountry && (
                                 <p className="text-xs text-slate-500">{firmCountry}</p>
@@ -1325,14 +1358,25 @@ const Studio = () => {
 
                           {Array.isArray(studio.firm?.services) && studio.firm.services.length > 0 && (
                             <div className="flex flex-wrap gap-2">
-                              {studio.firm.services.slice(0, 4).map((service) => (
-                                <span
-                                  key={`service-${studio.slug || studio.id}-${service}`}
-                                  className="rounded-full bg-slate-900/10 px-2.5 py-1 text-xs font-medium text-slate-600"
-                                >
-                                  {service}
-                                </span>
-                              ))}
+                              {studio.firm.services.slice(0, 4).map((service, index) => {
+                                const serviceLabel =
+                                  typeof service === "string"
+                                    ? service
+                                    : service?.title || service?.name || service?.description;
+                                if (!serviceLabel) return null;
+                                const serviceKey =
+                                  typeof service === "string"
+                                    ? service
+                                    : service?._id || service?.title || service?.name || index;
+                                return (
+                                  <span
+                                    key={`service-${studio.slug || studio.id}-${serviceKey}`}
+                                    className="rounded-full bg-slate-900/10 px-2.5 py-1 text-xs font-medium text-slate-600"
+                                  >
+                                    {serviceLabel}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
 
@@ -1345,6 +1389,7 @@ const Studio = () => {
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-2 text-xs font-medium text-indigo-500 hover:text-indigo-400"
+                              onClick={(event) => event.stopPropagation()}
                             >
                               <span className="h-2 w-2 rounded-full bg-indigo-400" />
                               Verified on-chain | {studio.web3Proof.anchor}
@@ -1361,6 +1406,7 @@ const Studio = () => {
                             <a
                               href={`mailto:${studio.firm.contact.email}`}
                               className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+                              onClick={(event) => event.stopPropagation()}
                             >
                               Email firm
                             </a>
@@ -1376,6 +1422,7 @@ const Studio = () => {
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+                              onClick={(event) => event.stopPropagation()}
                             >
                               Visit website
                             </a>
@@ -1398,7 +1445,7 @@ const Studio = () => {
                           )}
                         </div>
                       </div>
-                    </MotionLink>
+                    </MotionArticle>
                   );
                 })}
               </section>
@@ -1509,17 +1556,25 @@ const Studio = () => {
             </button>
             <div className={`${collapsed["Typology"] ? "hidden" : "mt-2 grid grid-cols-2 gap-2"}`}>
               {(selectedCategory === "All"
-                ? Object.values(TYPOLOGIES_BY_CATEGORY).flat()
-                : (TYPOLOGIES_BY_CATEGORY[selectedCategory] || [])
-              ).map((opt) => (
-                <label key={opt} className="flex items-center gap-2 text-xs text-slate-700">
+                ? Object.entries(TYPOLOGIES_BY_CATEGORY).flatMap(([category, entries]) =>
+                    entries.map((option) => ({ category, option }))
+                  )
+                : (TYPOLOGIES_BY_CATEGORY[selectedCategory] || []).map((option) => ({
+                    category: selectedCategory,
+                    option,
+                  }))
+              ).map(({ category, option }, index) => (
+                <label
+                  key={`${category}-${option}-${index}`}
+                  className="flex items-center gap-2 text-xs text-slate-700"
+                >
                   <input
                     type="checkbox"
                     className="h-4 w-4 accent-slate-800"
-                    checked={!!filters["Typology"]?.has(opt)}
-                    onChange={() => handleFilterToggle("Typology", opt)}
+                    checked={!!filters["Typology"]?.has(option)}
+                    onChange={() => handleFilterToggle("Typology", option)}
                   />
-                  <span className="truncate">{opt}</span>
+                  <span className="truncate">{option}</span>
                 </label>
               ))}
             </div>
