@@ -357,7 +357,23 @@ function suggestProgramFromState(selected, analysis) {
     : /duplex|villa|bungalow|single-family/i.test(typo) ? "1,800–3,200 sq.ft"
     : "800–2,000 sq.ft";
   const direction = /tropical|hot/i.test(analysis?.["Climate Adaptability"] || "") ? "South-West optimized" : "East-facing";
-  return { programName, size, direction };
+
+  const notes = [];
+  if (analysis?.Style) {
+    notes.push(`${analysis.Style} expression with contextual detailing.`);
+  }
+  if (analysis?.["Additional Features"]) {
+    notes.push(`Highlight ${analysis["Additional Features"].toLowerCase()} early in zoning.`);
+  }
+  if (/hot|tropical/.test((analysis?.["Climate Adaptability"] || "").toLowerCase())) {
+    notes.push("Prioritise passive cooling corridors and shaded outdoor edges.");
+  } else if (/cold/.test((analysis?.["Climate Adaptability"] || "").toLowerCase())) {
+    notes.push("Stack services along the north face to preserve winter gain.");
+  }
+
+  const noteText = notes.length ? notes.join(" ") : "Refine circulation before detailed issue.";
+
+  return { programName, size, direction, notes: noteText };
 }
 
 
@@ -380,6 +396,9 @@ export default function App() {
   const [nlpBreakdown, setNlpBreakdown] = useState(null);
   const [roomSplits, setRoomSplits] = useState(() => defaultRoomConfig());
   const [variationIdeas, setVariationIdeas] = useState([]);
+  const [programSummary, setProgramSummary] = useState(null);
+  const [actionChecklist, setActionChecklist] = useState([]);
+  const [insightSource, setInsightSource] = useState(null);
   const [isImageModalOpen, setImageModalOpen] = useState(false);
   const fileInputRef = useRef(null);
   const voiceTimeoutRef = useRef(null);
@@ -426,7 +445,18 @@ export default function App() {
 
 
   const chips = useMemo(() => formatSelectedChips(selected), [selected]);
-  const program = useMemo(() => suggestProgramFromState(selected, analysis), [selected, analysis]);
+  const program = useMemo(() => {
+    const base = suggestProgramFromState(selected, analysis);
+    if (!programSummary) {
+      return base;
+    }
+    return {
+      programName: programSummary.programName || base.programName,
+      size: programSummary.size || base.size,
+      direction: programSummary.direction || base.direction,
+      notes: programSummary.notes || base.notes,
+    };
+  }, [programSummary, selected, analysis]);
 
 
   const openBuilt = useMemo(() => computeOpenBuiltFromRooms(roomSplits), [roomSplits]);
@@ -486,8 +516,11 @@ export default function App() {
     setAnalysis(normalizedPrompt);
     const resolvedRooms = resolveRoomConfig(result?.roomSplits, normalizedPrompt, promptText);
     setRoomSplits(resolvedRooms);
-    setNlpBreakdown(createDetailedNlpBreakdown(promptText, normalizedPrompt, resolvedRooms));
-    setVariationIdeas(buildVariationIdeas(normalizedPrompt, promptText));
+    setProgramSummary(normalizeProgramSummary(result?.programSummary));
+    setInsightSource(result?.insightSource || result?.source || null);
+    setNlpBreakdown(resolveNlpBreakdown(result?.nlpBreakdown, promptText, normalizedPrompt, resolvedRooms));
+    setVariationIdeas(resolveVariationIdeas(result?.variationIdeas, normalizedPrompt, promptText));
+    setActionChecklist(resolveActionChecklist(result?.actionChecklist, normalizedPrompt, promptText));
     setImageModalOpen(false);
 
 
@@ -536,6 +569,9 @@ export default function App() {
     setNlpBreakdown(null);
     setVariationIdeas([]);
     setRoomSplits(defaultRoomConfig());
+    setProgramSummary(null);
+    setActionChecklist([]);
+    setInsightSource(null);
     try {
       const result = await callAnalyzeAndGenerate(annotatedPrompt, snapshot);
       applyAnalyzeResult(result, annotatedPrompt, snapshot);
@@ -546,8 +582,11 @@ export default function App() {
       setDesignAnalysis(simulateDesignInsights(fallbackPrompt));
       const resolvedRooms = defaultRoomConfig(fallbackPrompt, annotatedPrompt);
       setRoomSplits(resolvedRooms);
-      setNlpBreakdown(createDetailedNlpBreakdown(annotatedPrompt, fallbackPrompt, resolvedRooms));
-      setVariationIdeas(buildVariationIdeas(fallbackPrompt, annotatedPrompt));
+      setProgramSummary(null);
+      setInsightSource(null);
+      setNlpBreakdown(resolveNlpBreakdown(null, annotatedPrompt, fallbackPrompt, resolvedRooms));
+      setVariationIdeas(resolveVariationIdeas(null, fallbackPrompt, annotatedPrompt));
+      setActionChecklist(resolveActionChecklist(null, fallbackPrompt, annotatedPrompt));
       setImgB64(null);
       setImageUrl(null);
       completePhaseFlow(true);
@@ -1065,6 +1104,12 @@ ${snippet}` : snippet));
 
 
 
+                {program.notes ? (
+                  <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600 leading-relaxed">
+                    {program.notes}
+                  </div>
+                ) : null}
+
                 <div className="mt-4 text-[12px] text-neutral-500 leading-relaxed">Adjust proportions below or explore alternates to rebalance the scheme before exporting.</div>
 
 
@@ -1084,7 +1129,19 @@ ${snippet}` : snippet));
               <Card className="col-span-1 xl:col-span-8 p-4">
 
 
-                <Section title="Prompt Intelligence" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Detailed NLP</span>} />
+                <Section
+                  title="Prompt Intelligence"
+                  right={
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-neutral-500">
+                      <span>Detailed NLP</span>
+                      {insightSource === "gemini" ? (
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
+                          Gemini
+                        </span>
+                      ) : null}
+                    </div>
+                  }
+                />
 
 
                 {nlpBreakdown ? (
@@ -1490,6 +1547,85 @@ ${snippet}` : snippet));
 
 
 
+            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
+
+
+
+              <Card className="col-span-1 xl:col-span-12 p-4">
+
+
+
+                <Section
+                  title="Action Checklist"
+                  right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Pre-issue tasks</span>}
+                />
+
+
+
+                {actionChecklist.length ? (
+
+
+
+                  <ul className="mt-3 space-y-2 text-sm text-neutral-700">
+
+
+
+                    {actionChecklist.map((item) => (
+
+
+
+                      <li key={item.id} className="flex items-start gap-3">
+
+
+
+                        <span className="mt-1 h-2 w-2 rounded-full bg-neutral-400" />
+
+
+
+                        <span>{item.text}</span>
+
+
+
+                      </li>
+
+
+
+                    ))}
+
+
+
+                  </ul>
+
+
+
+                ) : (
+
+
+
+                  <div className="text-sm text-neutral-500">Generate a brief to surface coordination tasks.</div>
+
+
+
+                )}
+
+
+
+                <div className="mt-3 text-[11px] text-neutral-500 leading-relaxed">
+                  {insightSource === "gemini"
+                    ? "Gemini highlights these coordination checkpoints so nothing slips before DD issue."
+                    : "Use these checkpoints to steer coordination when AI enrichment is unavailable."}
+                </div>
+
+
+
+              </Card>
+
+
+
+            </div>
+
+
+
             {/* Analysis Table */}
             <Card className="mt-4">
               <div className="p-4">
@@ -1699,6 +1835,189 @@ function computeOpenBuiltFromRooms(config, siteArea = DEFAULT_SITE_AREA) {
   return { built: Number(built.toFixed(1)), open: Number(open.toFixed(1)), ratio, note };
 }
 
+
+
+function normalizeProgramSummary(summary) {
+  if (!summary || typeof summary !== "object") return null;
+  const programName = toTitleCase(summary.programName || summary.name || "");
+  const size = typeof summary.size === "string" ? summary.size.trim() : "";
+  const directionRaw = summary.direction || summary.orientation || "";
+  const direction = typeof directionRaw === "string" ? directionRaw.trim() : "";
+  const notes = typeof summary.notes === "string" ? summary.notes.trim() : "";
+  if (!programName && !size && !direction && !notes) {
+    return null;
+  }
+  return {
+    programName: programName || undefined,
+    size: size || undefined,
+    direction: direction || undefined,
+    ...(notes ? { notes } : {}),
+  };
+}
+
+function buildActionChecklist(analysis, promptText = "") {
+  const items = new Set();
+  const climate = (analysis?.["Climate Adaptability"] || "").toLowerCase();
+  const features = (analysis?.["Additional Features"] || "").toLowerCase();
+  const style = (analysis?.Style || "").toLowerCase();
+  const promptLower = (promptText || "").toLowerCase();
+
+  items.add("Verify local code setbacks and fire clearances before issuing DD.");
+
+  if (/hot|arid|tropical/.test(climate)) {
+    items.add("Model shading and cross ventilation for climate resilience.");
+  } else if (/cold|alpine/.test(climate)) {
+    items.add("Add thermal buffer vestibules and review envelope U-values.");
+  }
+
+  if (features.includes("solar")) {
+    items.add("Coordinate solar infrastructure zones with MEP routing.");
+  }
+  if (features.includes("rain")) {
+    items.add("Lay out recharge pits aligned with rainwater strategy.");
+  }
+  if (style.includes("industrial")) {
+    items.add("Confirm structural bay spacing with consultant early.");
+  }
+
+  if (/accessibility|universal/.test(promptLower)) {
+    items.add("Audit accessibility slopes, clear widths, and lift reach.");
+  }
+
+  items.add("Review service cores with structural and MEP teams before freeze.");
+
+  return Array.from(items)
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((text, index) => ({ id: "fallback-action-" + index, text }));
+}
+
+function resolveNlpBreakdown(serverBreakdown, promptText, analysis, rooms) {
+  const fallback = createDetailedNlpBreakdown(promptText, analysis, rooms);
+  if (!serverBreakdown || typeof serverBreakdown !== "object") {
+    return fallback;
+  }
+
+  const summary = typeof serverBreakdown.summary === "string" && serverBreakdown.summary.trim()
+    ? serverBreakdown.summary.trim()
+    : fallback.summary;
+
+  const wordCount = Number.isFinite(Number(serverBreakdown.wordCount))
+    ? Math.max(0, Math.round(Number(serverBreakdown.wordCount)))
+    : fallback.wordCount;
+
+  const keywords = Array.isArray(serverBreakdown.keywords) && serverBreakdown.keywords.length
+    ? serverBreakdown.keywords
+        .map((token) => (typeof token === "string" ? token.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 12)
+    : fallback.keywords;
+
+  const spaces = Array.isArray(serverBreakdown.spaces) && serverBreakdown.spaces.length
+    ? serverBreakdown.spaces
+        .map((token) => (typeof token === "string" ? token.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 8)
+    : fallback.spaces;
+
+  const tone = typeof serverBreakdown.tone === "string" && serverBreakdown.tone.trim()
+    ? serverBreakdown.tone.trim()
+    : fallback.tone;
+
+  const compliance = Array.isArray(serverBreakdown.compliance) && serverBreakdown.compliance.length
+    ? serverBreakdown.compliance
+        .map((line) => (typeof line === "string" ? line.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 6)
+    : fallback.compliance;
+
+  return {
+    ...fallback,
+    summary,
+    wordCount,
+    keywords,
+    spaces,
+    tone,
+    compliance,
+  };
+}
+
+function resolveVariationIdeas(serverIdeas, analysis, promptText) {
+  if (Array.isArray(serverIdeas) && serverIdeas.length) {
+    const normalized = serverIdeas
+      .map((idea, index) => {
+        if (!idea) return null;
+        if (typeof idea === "string") {
+          const clean = idea.trim();
+          if (!clean) return null;
+          return {
+            id: "variation-" + index,
+            title: clean.length > 72 ? clean.slice(0, 69) + "..." : clean,
+            summary: clean,
+          };
+        }
+        if (typeof idea === "object") {
+          const title = typeof idea.title === "string" && idea.title.trim()
+            ? idea.title.trim()
+            : typeof idea.name === "string" && idea.name.trim()
+            ? idea.name.trim()
+            : "";
+          const summary = typeof idea.summary === "string" && idea.summary.trim()
+            ? idea.summary.trim()
+            : typeof idea.detail === "string" && idea.detail.trim()
+            ? idea.detail.trim()
+            : typeof idea.description === "string" && idea.description.trim()
+            ? idea.description.trim()
+            : "";
+          if (!title && !summary) return null;
+          return {
+            id: idea.id || idea.key || "variation-" + index,
+            title: title || toTitleCase(summary.slice(0, 64)),
+            summary: summary || title,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .slice(0, 4);
+    if (normalized.length) {
+      return normalized;
+    }
+  }
+  return buildVariationIdeas(analysis, promptText);
+}
+
+function resolveActionChecklist(serverChecklist, analysis, promptText = "") {
+  if (Array.isArray(serverChecklist) && serverChecklist.length) {
+    const normalized = serverChecklist
+      .map((item, index) => {
+        if (!item) return null;
+        if (typeof item === "string") {
+          const clean = item.trim();
+          return clean ? { id: "action-" + index, text: clean } : null;
+        }
+        if (typeof item === "object") {
+          const text =
+            (typeof item.text === "string" && item.text.trim()) ||
+            (typeof item.label === "string" && item.label.trim()) ||
+            (typeof item.action === "string" && item.action.trim()) ||
+            "";
+          if (!text) return null;
+          return {
+            id: item.id || item.key || "action-" + index,
+            text,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .slice(0, 6);
+    if (normalized.length) {
+      return normalized;
+    }
+  }
+  return buildActionChecklist(analysis, promptText);
+}
 
 function createDetailedNlpBreakdown(promptText = "", analysis, rooms) {
   const clean = (promptText || "").trim();

@@ -1,4 +1,18 @@
 import { randomUUID } from 'crypto';
+import {
+  MattersMode,
+  MattersInventoryItem,
+  MattersFinanceRecord,
+  MattersGalleryAsset,
+  MattersInsight,
+  MattersRisk,
+  MattersIncident,
+  MattersDrill,
+  MattersWeather,
+  MattersSystem,
+  MattersConfig,
+  MattersDelivery,
+} from '../models/matters/index.js';
 
 const deepClone = (value) => JSON.parse(JSON.stringify(value));
 const nowISO = () => new Date().toISOString();
@@ -157,6 +171,162 @@ const inventory = [
     updated_at: seedTimestamp,
   },
 ];
+const deliveries = [
+  {
+    id: 'del-1',
+    mode: 'construction',
+    label: 'Floor finish batch A2',
+    note: 'Arrives in ~4 hrs',
+    eta: '2024-12-28T14:00:00Z',
+    status: 'en route',
+  },
+  {
+    id: 'del-2',
+    mode: 'construction',
+    label: 'Lighting pod fixtures',
+    note: '3 units queued',
+    eta: '2024-12-28T18:00:00Z',
+    status: 'queued',
+  },
+  {
+    id: 'del-3',
+    mode: 'procurement',
+    label: 'Utility turnout dossier',
+    note: 'Messenger pick-up 09:00',
+    eta: '2024-12-29T09:00:00Z',
+    status: 'scheduled',
+  },
+];
+
+const actions = [
+  {
+    id: 'act-1',
+    mode: 'construction',
+    title: 'Verify AV rough-ins on level 12',
+    owner: 'QA team',
+    status: 'pending',
+    eta: '2024-12-28T10:30:00Z',
+    impact: 'HIGH',
+    tags: ['MEP', 'Quality'],
+    description: 'Confirm conduit spacing before ceiling close-out.',
+  },
+  {
+    id: 'act-2',
+    mode: 'construction',
+    title: 'Replace damaged louvers along facade stack B',
+    owner: 'Envelope crew',
+    status: 'in-progress',
+    eta: '2024-12-29T06:00:00Z',
+    impact: 'MEDIUM',
+    tags: ['Facade'],
+    description: 'Swap louvers before panel sealant cure.',
+  },
+  {
+    id: 'act-3',
+    mode: 'design',
+    title: 'Assemble utility turnout dossier',
+    owner: 'Design ops',
+    status: 'blocked',
+    eta: '2025-01-02T12:00:00Z',
+    impact: 'HIGH',
+    tags: ['Docs', 'Permitting'],
+    description: 'Waiting on updated stamped elevations from MEP.',
+  },
+  {
+    id: 'act-4',
+    mode: 'procurement',
+    title: 'Run safety induction for swing shift',
+    owner: 'HSE',
+    status: 'pending',
+    eta: '2024-12-29T05:30:00Z',
+    impact: 'MEDIUM',
+    tags: ['Safety'],
+    description: 'Brief crews on new hoist sequencing.',
+  },
+  {
+    id: 'act-5',
+    mode: 'site-monitoring',
+    title: 'Calibrate thermal cameras',
+    owner: 'Monitoring team',
+    status: 'done',
+    eta: '2024-12-27T04:00:00Z',
+    impact: 'LOW',
+    tags: ['Sensors'],
+    description: 'Completed nightly calibration on deck sensors.',
+  },
+];
+
+const permits = [
+  {
+    id: 'permit-1',
+    mode: 'construction',
+    title: 'Phase 3 structural certificate',
+    authority: 'Kaduna Development Authority',
+    owner: 'Aisha Bello',
+    due: '2025-01-04',
+    status: 'watch',
+    stage: 'Awaiting stamped load calculations',
+    deliverables: ['Upload seismic calc addendum', 'Confirm egress update'],
+    attachments: 4,
+    lastTouch: '2024-12-29T09:30:00Z',
+  },
+  {
+    id: 'permit-2',
+    mode: 'construction',
+    title: 'Fire suppression tie-in',
+    authority: 'Federal Fire Service',
+    owner: 'Chinedu Ajayi',
+    due: '2024-12-28',
+    status: 'blocked',
+    stage: 'Hold pending pressure test witness',
+    deliverables: ['Schedule joint hydro test', 'Share valve schedule'],
+    attachments: 6,
+    lastTouch: '2024-12-26T16:15:00Z',
+  },
+  {
+    id: 'permit-3',
+    mode: 'procurement',
+    title: 'Utility easement registration',
+    authority: 'Gonin Gora Utility Board',
+    owner: 'Maryam Yusuf',
+    due: '2025-01-12',
+    status: 'cleared',
+    stage: 'Signed by land registry',
+    deliverables: ['Courier wet copy', 'Upload stamped plans'],
+    attachments: 2,
+    lastTouch: '2024-12-27T08:00:00Z',
+  },
+];
+
+const compliancePackages = [
+  {
+    id: 'comp-1',
+    mode: 'construction',
+    title: 'Life-safety audit set',
+    status: 'review',
+    owner: 'Compliance Ops',
+    updated_at: '2024-12-27T11:00:00Z',
+  },
+  {
+    id: 'comp-2',
+    mode: 'procurement',
+    title: 'Utility turnout dossier',
+    status: 'assembling',
+    owner: 'Permitting',
+    updated_at: '2024-12-28T07:30:00Z',
+  },
+  {
+    id: 'comp-3',
+    mode: 'design',
+    title: 'Hospitality mockup kit',
+    status: 'approved',
+    owner: 'Design QA',
+    updated_at: '2024-12-25T18:45:00Z',
+  },
+];
+
+
+
 
 const financeRecords = [
   {
@@ -511,7 +681,7 @@ const mattersUser = {
   role: 'resilience-director',
 };
 
-const store = {
+const seedStore = {
   modes,
   inventory,
   financeRecords,
@@ -520,6 +690,10 @@ const store = {
   incidents,
   risks,
   drills,
+  deliveries,
+  actions,
+  permits,
+  compliancePackages,
   kpisByMode,
   weatherByMode,
   chatConfig,
@@ -531,17 +705,17 @@ const sortByDateDesc = (items, field) =>
   [...items].sort((a, b) => new Date(b[field]).getTime() - new Date(a[field]).getTime());
 
 const requireMode = (mode) => {
-  if (!store.modes.find((item) => item.name === mode)) {
+  if (!seedStore.modes.find((item) => item.name === mode)) {
     const error = new Error(`Mode '${mode}' not found`);
     error.status = 404;
     throw error;
   }
 };
 
-export const listModes = () => deepClone([...store.modes].sort((a, b) => a.order - b.order));
+const seed_listModes = () => deepClone([...seedStore.modes].sort((a, b) => a.order - b.order));
 
-export const getMode = (name) => {
-  const mode = store.modes.find((item) => item.name === name);
+const seed_getMode = (name) => {
+  const mode = seedStore.modes.find((item) => item.name === name);
   if (!mode) {
     const error = new Error(`Mode '${name}' not found`);
     error.status = 404;
@@ -550,15 +724,21 @@ export const getMode = (name) => {
   return deepClone(mode);
 };
 
-export const listInventory = ({ mode, category, status, limit = 50 }) => {
-  let items = store.inventory;
+const seed_listInventory = ({ mode, category, status, limit = 50 }) => {
+  let items = seedStore.inventory;
   if (mode) items = items.filter((item) => item.mode === mode);
   if (category) items = items.filter((item) => item.category === category);
   if (status) items = items.filter((item) => item.status === status);
-  return deepClone(sortByDateDesc(items, 'updated_at').slice(0, limit));
+  const sorted = sortByDateDesc(items, 'updated_at').slice(0, limit);
+  const cloned = deepClone(sorted);
+  const incoming = seedStore.deliveries.filter((delivery) =>
+    !mode || delivery.mode === mode
+  );
+  cloned.incoming = deepClone(incoming.slice(0, 6));
+  return cloned;
 };
 
-export const createInventory = (payload) => {
+const seed_createInventory = (payload) => {
   requireMode(payload.mode);
   const now = nowISO();
   const record = {
@@ -567,18 +747,18 @@ export const createInventory = (payload) => {
     updated_at: now,
     ...payload,
   };
-  store.inventory.push(record);
+  seedStore.inventory.push(record);
   return deepClone(record);
 };
 
-export const listFinance = ({ mode, record_type, limit = 50 }) => {
-  let items = store.financeRecords;
+const seed_listFinance = ({ mode, record_type, limit = 50 }) => {
+  let items = seedStore.financeRecords;
   if (mode) items = items.filter((item) => item.mode === mode);
   if (record_type) items = items.filter((item) => item.record_type === record_type);
   return deepClone(sortByDateDesc(items, 'updated_at').slice(0, limit));
 };
 
-export const createFinance = (payload) => {
+const seed_createFinance = (payload) => {
   requireMode(payload.mode);
   const now = nowISO();
   const record = {
@@ -587,17 +767,17 @@ export const createFinance = (payload) => {
     updated_at: now,
     ...payload,
   };
-  store.financeRecords.push(record);
+  seedStore.financeRecords.push(record);
   return deepClone(record);
 };
 
-export const listGallery = ({ mode, limit = 24 }) => {
-  let items = store.galleryAssets;
+const seed_listGallery = ({ mode, limit = 24 }) => {
+  let items = seedStore.galleryAssets;
   if (mode) items = items.filter((item) => item.mode === mode);
   return deepClone(sortByDateDesc(items, 'uploaded_at').slice(0, limit));
 };
 
-export const createGalleryAsset = (payload) => {
+const seed_createGalleryAsset = (payload) => {
   requireMode(payload.mode);
   const now = nowISO();
   const record = {
@@ -605,18 +785,18 @@ export const createGalleryAsset = (payload) => {
     uploaded_at: now,
     ...payload,
   };
-  store.galleryAssets.push(record);
+  seedStore.galleryAssets.push(record);
   return deepClone(record);
 };
 
-export const listInsights = ({ mode, tag, limit = 6 }) => {
-  let items = store.insights;
+const seed_listInsights = ({ mode, tag, limit = 6 }) => {
+  let items = seedStore.insights;
   if (mode) items = items.filter((item) => item.mode === mode);
   if (tag) items = items.filter((item) => item.tags?.includes(tag));
   return deepClone(sortByDateDesc(items, 'created_at').slice(0, limit));
 };
 
-export const createInsight = (payload) => {
+const seed_createInsight = (payload) => {
   requireMode(payload.mode);
   const now = nowISO();
   const record = {
@@ -625,11 +805,84 @@ export const createInsight = (payload) => {
     updated_at: now,
     ...payload,
   };
-  store.insights.push(record);
+  seedStore.insights.push(record);
   return deepClone(record);
 };
 
-export const getChatConfig = () => deepClone(store.chatConfig);
+const seed_getChatConfig = () => deepClone(seedStore.chatConfig);
+
+const shouldUseDatabase = (process.env.MATTERS_DB_DISABLED || '').toLowerCase() !== 'true';
+
+let seedPromise;
+const ensureSeeded = async () => {
+  if (!shouldUseDatabase) return;
+  if (seedPromise) return seedPromise;
+  seedPromise = (async () => {
+    const [
+      modeCount,
+      inventoryCount,
+      financeCount,
+      galleryCount,
+      insightCount,
+      riskCount,
+      incidentCount,
+      drillCount,
+      systemCount,
+      configCount,
+      weatherCount,
+      deliveryCount,
+    ] = await Promise.all([
+      MattersMode.estimatedDocumentCount(),
+      MattersInventoryItem.estimatedDocumentCount(),
+      MattersFinanceRecord.estimatedDocumentCount(),
+      MattersGalleryAsset.estimatedDocumentCount(),
+      MattersInsight.estimatedDocumentCount(),
+      MattersRisk.estimatedDocumentCount(),
+      MattersIncident.estimatedDocumentCount(),
+      MattersDrill.estimatedDocumentCount(),
+      MattersSystem.estimatedDocumentCount(),
+      MattersConfig.estimatedDocumentCount(),
+      MattersWeather.estimatedDocumentCount(),
+      MattersDelivery.estimatedDocumentCount(),
+    ]);
+
+    const operations = [];
+    if (!modeCount) operations.push(MattersMode.insertMany(modes));
+    if (!inventoryCount) operations.push(MattersInventoryItem.insertMany(inventory));
+    if (!financeCount) operations.push(MattersFinanceRecord.insertMany(financeRecords));
+    if (!galleryCount) operations.push(MattersGalleryAsset.insertMany(galleryAssets));
+    if (!insightCount) operations.push(MattersInsight.insertMany(insights));
+    if (!riskCount) operations.push(MattersRisk.insertMany(risks));
+    if (!incidentCount) operations.push(MattersIncident.insertMany(incidents));
+    if (!drillCount) operations.push(MattersDrill.insertMany(drills));
+    if (!systemCount) operations.push(MattersSystem.insertMany(systems));
+    if (!deliveryCount) operations.push(MattersDelivery.insertMany(deliveries));
+    if (!configCount) {
+      operations.push(
+        MattersConfig.create({
+          chat_config: seedStore.chatConfig,
+          default_user: seedStore.user,
+          kpis_by_mode: seedStore.kpisByMode,
+        })
+      );
+    }
+    if (!weatherCount) {
+      const weatherDocs = Object.entries(seedStore.weatherByMode).map(([mode, record]) => ({
+        mode,
+        ...record,
+      }));
+      operations.push(MattersWeather.insertMany(weatherDocs));
+    }
+
+    if (operations.length) {
+      await Promise.all(operations);
+    }
+  })().catch((error) => {
+    seedPromise = undefined;
+    throw error;
+  });
+  return seedPromise;
+};
 
 const aggregateInventoryMetrics = (items) => {
   return items.reduce((acc, item) => {
@@ -649,19 +902,27 @@ const aggregateFinanceMetrics = (items) => {
   }, {});
 };
 
-export const getDashboardSummary = (mode) => {
+const seed_getDashboardSummary = (mode) => {
   requireMode(mode);
-  const latestInventory = listInventory({ mode, limit: 4 });
-  const latestFinance = listFinance({ mode, limit: 4 });
-  const galleryPreview = listGallery({ mode, limit: 4 });
-  const insightPreview = listInsights({ mode, limit: 4 });
+  const latestInventory = seed_listInventory({ mode, limit: 4 });
+  const latestFinance = seed_listFinance({ mode, limit: 4 });
+  const galleryPreview = seed_listGallery({ mode, limit: 4 });
+  const insightPreview = seed_listInsights({ mode, limit: 4 });
+  const actions = deepClone(seedStore.actions.filter((item) => item.mode === mode).slice(0, 8));
+  const permitsForMode = deepClone(seedStore.permits.filter((item) => item.mode === mode).slice(0, 6));
+  const compliancePackagesForMode = deepClone(
+    seedStore.compliancePackages.filter((pkg) => pkg.mode === mode)
+  );
+  const deliveriesForMode = deepClone(
+    seedStore.deliveries.filter((delivery) => delivery.mode === mode)
+  );
 
   const metrics = {
     inventorySummary: aggregateInventoryMetrics(
-      store.inventory.filter((item) => item.mode === mode)
+      seedStore.inventory.filter((item) => item.mode === mode)
     ),
     financeSummary: aggregateFinanceMetrics(
-      store.financeRecords.filter((item) => item.mode === mode)
+      seedStore.financeRecords.filter((item) => item.mode === mode)
     ),
   };
 
@@ -672,17 +933,27 @@ export const getDashboardSummary = (mode) => {
     latest_finance: latestFinance,
     gallery_preview: galleryPreview,
     insights: insightPreview,
-    kpis: store.kpisByMode[mode] || {},
-    incidents: store.incidents.filter((item) => item.mode === mode),
-    risks: store.risks.filter((item) => item.mode === mode),
-    systems: store.systems,
-    user: store.user,
-  };
+    actions,
+    checklist: actions.filter((item) => item.status !== 'done'),
+    permits: permitsForMode,
+    compliance: {
+      packages: compliancePackagesForMode,
+      updated_at: '2024-12-28T12:00:00Z',
+      owner: 'Compliance Ops',
+    },
+    deliveries: deliveriesForMode,
+    kpis: seedStore.kpisByMode[mode] || {},
+    incidents: seedStore.incidents.filter((item) => item.mode === mode),
+    risks: seedStore.risks.filter((item) => item.mode === mode),
+    systems: seedStore.systems,
+    user: seedStore.user,
 };
 
-export const getWeatherInsight = ({ mode, units = 'metric' }) => {
+};
+
+const seed_getWeatherInsight = ({ mode, units = 'metric' }) => {
   requireMode(mode);
-  const base = store.weatherByMode[mode] || store.weatherByMode.design;
+  const base = seedStore.weatherByMode[mode] || seedStore.weatherByMode.design;
   const temperature =
     units === 'imperial' && base.units === 'metric'
       ? Math.round((base.temperature * 9) / 5 + 32)
@@ -695,8 +966,8 @@ export const getWeatherInsight = ({ mode, units = 'metric' }) => {
   };
 };
 
-export const updateRiskStatus = (id, payload) => {
-  const risk = store.risks.find((item) => item.id === id);
+const seed_updateRiskStatus = (id, payload) => {
+  const risk = seedStore.risks.find((item) => item.id === id);
   if (!risk) {
     const error = new Error('Risk not found');
     error.status = 404;
@@ -715,23 +986,49 @@ export const updateRiskStatus = (id, payload) => {
   return deepClone(risk);
 };
 
-export const listIncidents = (mode) => {
-  let items = store.incidents;
+const seed_listIncidents = (mode) => {
+  let items = seedStore.incidents;
   if (mode) items = items.filter((item) => item.mode === mode);
   return deepClone(items);
 };
 
-export const listRisks = (mode) => {
-  let items = store.risks;
+const seed_listRisks = (mode) => {
+  let items = seedStore.risks;
   if (mode) items = items.filter((item) => item.mode === mode);
   return deepClone(items);
 };
 
-export const listDrills = (mode) => {
-  let items = store.drills;
+const seed_listDrills = (mode) => {
+  let items = seedStore.drills;
   if (mode) items = items.filter((item) => item.mode === mode);
   return deepClone(items);
 };
+
+
+
+
+
+
+
+export const listModes = seed_listModes;
+export const getMode = seed_getMode;
+export const listInventory = seed_listInventory;
+export const createInventory = seed_createInventory;
+export const listFinance = seed_listFinance;
+export const createFinance = seed_createFinance;
+export const listGallery = seed_listGallery;
+export const createGalleryAsset = seed_createGalleryAsset;
+export const listInsights = seed_listInsights;
+export const createInsight = seed_createInsight;
+export const getChatConfig = seed_getChatConfig;
+export const getDashboardSummary = seed_getDashboardSummary;
+export const getWeatherInsight = seed_getWeatherInsight;
+export const updateRiskStatus = seed_updateRiskStatus;
+export const listIncidents = seed_listIncidents;
+export const listRisks = seed_listRisks;
+export const listDrills = seed_listDrills;
+
+
 
 
 

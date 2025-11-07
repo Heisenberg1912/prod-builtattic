@@ -65,6 +65,29 @@ const DEFAULT_RANGES = {
   rating: [0, 5],
 };
 
+const VISIBLE_OPTION_LIMIT = 6;
+const QUICK_FILTER_LIMIT = 6;
+
+const buildAssociateHaystack = (associate) =>
+  [
+    associate.title,
+    associate.summary,
+    associate.location,
+    associate.bio,
+    associate.focus,
+    associate.practice,
+    associate.user?.email,
+    (associate.specialisations || []).join(" "),
+    (associate.skills || []).join(" "),
+    (associate.expertise || []).join(" "),
+    (associate.tags || []).join(" "),
+    (associate.pastProjects || []).join(" "),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+const getHaystackString = (parts) => (Array.isArray(parts) ? parts.join(" ") : "");
+
 const withinRange = (value, [min, max]) => {
   if (!Number.isFinite(value)) return true;
   return value >= min && value <= max;
@@ -179,6 +202,8 @@ const Associates = () => {
   const [filters, setFilters] = useState(() => createEmptyFilterState());
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [collapsed, setCollapsed] = useState({});
+  const [filterSearchTerms, setFilterSearchTerms] = useState({});
+  const [showAllOptions, setShowAllOptions] = useState({});
 
   const [rateRange, setRateRange] = useState(DEFAULT_RANGES.rate);
   const [rateSel, setRateSel] = useState(DEFAULT_RANGES.rate);
@@ -243,6 +268,55 @@ const Associates = () => {
     const all = associates.flatMap((associate) => associate.specialisations || []);
     return ["All", ...new Set(all)];
   }, [associates]);
+
+  const associateHaystacks = useMemo(() => associates.map((associate) => buildAssociateHaystack(associate)), [associates]);
+
+  const optionStats = useMemo(() => {
+    const stats = {};
+    ASSOCIATE_FILTER_SECTIONS.forEach((section) => {
+      stats[section] = {};
+    });
+
+    associateHaystacks.forEach((parts) => {
+      if (!parts || !parts.length) return;
+      const haystack = getHaystackString(parts);
+      if (!haystack) return;
+      ASSOCIATE_FILTER_SECTIONS.forEach((section) => {
+        const options = FILTER_SETS[section] || [];
+        options.forEach((option) => {
+          const needle = option.toLowerCase();
+          if (needle && haystack.includes(needle)) {
+            stats[section][option] = (stats[section][option] || 0) + 1;
+          }
+        });
+      });
+    });
+
+    return stats;
+  }, [associateHaystacks]);
+
+  const quickFilterSuggestions = useMemo(() => {
+    const entries = [];
+    ASSOCIATE_FILTER_SECTIONS.forEach((section) => {
+      const sectionStats = optionStats[section];
+      if (!sectionStats) return;
+      Object.entries(sectionStats).forEach(([option, count]) => {
+        if (!count) return;
+        const alreadySelected = filters?.[section]?.has(option);
+        if (alreadySelected) return;
+        entries.push({ section, option, count });
+      });
+    });
+
+    return entries
+      .sort((a, b) => {
+        if (b.count === a.count) {
+          return a.option.localeCompare(b.option);
+        }
+        return b.count - a.count;
+      })
+      .slice(0, QUICK_FILTER_LIMIT);
+  }, [filters, optionStats]);
 
   const toggleSection = (section) => {
     setCollapsed((prev) => ({ ...prev, [section]: !prev?.[section] }));
@@ -356,8 +430,25 @@ const Associates = () => {
         }
         return { ...prev, [section]: new Set() };
       });
+      setFilterSearchTerms((prev) => ({ ...prev, [section]: "" }));
     },
     [setFilters],
+  );
+
+  const handleFilterSearchChange = useCallback((section, value) => {
+    setFilterSearchTerms((prev) => ({ ...prev, [section]: value }));
+  }, []);
+
+  const toggleShowAllForSection = useCallback((section) => {
+    setShowAllOptions((prev) => ({ ...prev, [section]: !prev?.[section] }));
+  }, []);
+
+  const handleQuickFilterSelect = useCallback(
+    (section, option) => {
+      setCollapsed((prev) => ({ ...prev, [section]: false }));
+      handleFilterToggle(section, option);
+    },
+    [handleFilterToggle],
   );
 
   const resetRateFilter = useCallback(() => {
@@ -382,10 +473,13 @@ const Associates = () => {
     resetExperienceFilter();
     resetProjectsFilter();
     resetRatingFilter();
+    setFilterSearchTerms({});
+    setShowAllOptions({});
   }, [resetExperienceFilter, resetProjectsFilter, resetRateFilter, resetRatingFilter, setFilters]);
 
   const filteredAssociates = useMemo(() => {
-    const baseList = associates.filter((associate) => {
+    const baseIndexes = [];
+    associates.forEach((associate, index) => {
       const matchesQuery =
         !query ||
         associate.title?.toLowerCase().includes(query.toLowerCase()) ||
@@ -395,55 +489,48 @@ const Associates = () => {
       const matchesSpecialisation =
         selectedSpecialisation === "All" ||
         (associate.specialisations || []).includes(selectedSpecialisation);
-      if (!matchesQuery || !matchesSpecialisation) return false;
+      if (!matchesQuery || !matchesSpecialisation) {
+        return;
+      }
 
       const rate = extractRate(associate);
       const experience = extractExperience(associate);
       const projects = extractProjects(associate);
       const rating = extractRating(associate);
 
-      return (
+      const matchesRanges =
         withinRange(rate, rateSel) &&
         withinRange(experience, experienceSel) &&
         withinRange(projects, projectsSel) &&
-        withinRange(rating, ratingSel)
-      );
+        withinRange(rating, ratingSel);
+
+      if (matchesRanges) {
+        baseIndexes.push(index);
+      }
     });
 
     const activeSections = ASSOCIATE_FILTER_SECTIONS.filter((key) => filters[key]?.size);
     if (!activeSections.length) {
-      return baseList;
+      return baseIndexes.map((index) => associates[index]);
     }
 
-    return baseList.filter((associate) => {
-      const haystackParts = [
-        associate.title,
-        associate.summary,
-        associate.location,
-        associate.bio,
-        associate.focus,
-        associate.practice,
-        associate.user?.email,
-        (associate.specialisations || []).join(" "),
-        (associate.skills || []).join(" "),
-        (associate.expertise || []).join(" "),
-        (associate.tags || []).join(" "),
-        (associate.pastProjects || []).join(" "),
-      ]
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase());
-      if (!haystackParts.length) return false;
-      return activeSections.every((section) => {
-        const set = filters[section];
-        if (!set || set.size === 0) return true;
-        return Array.from(set).some((option) => {
-          const needle = option.toLowerCase();
-          return haystackParts.some((part) => part.includes(needle));
+    return baseIndexes
+      .filter((index) => {
+        const haystackParts = associateHaystacks[index];
+        if (!haystackParts || haystackParts.length === 0) return false;
+        return activeSections.every((section) => {
+          const set = filters[section];
+          if (!set || set.size === 0) return true;
+          return Array.from(set).some((option) => {
+            const needle = option.toLowerCase();
+            return haystackParts.some((part) => part.includes(needle));
+          });
         });
-      });
-    });
+      })
+      .map((index) => associates[index]);
   }, [
     associates,
+    associateHaystacks,
     query,
     selectedSpecialisation,
     filters,
@@ -810,6 +897,30 @@ const Associates = () => {
                   </div>
                 )}
 
+                {quickFilterSuggestions.length ? (
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                      Popular quick filters
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {quickFilterSuggestions.map(({ section, option, count }) => (
+                        <motion.button
+                          key={`${section}-${option}`}
+                          type="button"
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => handleQuickFilterSelect(section, option)}
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          <span>{option}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                            {count}
+                          </span>
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="px-4 py-3 border-b border-slate-100">
                   <DualRange
                     id="rate"
@@ -863,22 +974,47 @@ const Associates = () => {
                   if (!options.length) return null;
                   const activeCount = filters?.[section]?.size ?? 0;
                   const isCollapsed = collapsed[section];
+                  const stats = optionStats[section] || {};
+                  const searchTerm = (filterSearchTerms[section] || "").trim();
+                  const normalizedTerm = searchTerm.toLowerCase();
+                  const sortedOptions = [...options].sort((a, b) => {
+                    const aCount = stats[a] || 0;
+                    const bCount = stats[b] || 0;
+                    if (aCount === bCount) {
+                      return a.localeCompare(b);
+                    }
+                    return bCount - aCount;
+                  });
+                  const filteredOptions = normalizedTerm
+                    ? sortedOptions.filter((option) => option.toLowerCase().includes(normalizedTerm))
+                    : sortedOptions;
+                  const showAll = showAllOptions[section];
+                  const visibleOptions = showAll ? filteredOptions : filteredOptions.slice(0, VISIBLE_OPTION_LIMIT);
+                  const hiddenCount = Math.max(filteredOptions.length - visibleOptions.length, 0);
+                  const emptyState = !filteredOptions.length;
+
                   return (
                     <div key={section} className="px-4 py-3 border-b border-slate-100">
-                      <div className="mb-2 flex items-center gap-2">
+                      <div className="flex items-start gap-2">
                         <button
                           type="button"
                           onClick={() => toggleSection(section)}
                           className="flex flex-1 items-center gap-2 text-left text-sm font-semibold text-slate-700"
                         >
                           <span
-                            className={`inline-block transition-transform ${isCollapsed ? "rotate-0" : "rotate-90"}`}
+                            aria-hidden
+                            className={`inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-[11px] transition-transform ${
+                              isCollapsed ? "rotate-0" : "rotate-90"
+                            }`}
                           >
-                            {">"}
+                            ▸
                           </span>
                           <span className="flex-1">{section}</span>
+                          <span className="text-[11px] font-medium text-slate-400">
+                            {filteredOptions.length || 0} options
+                          </span>
                           {activeCount ? (
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
                               {activeCount}
                             </span>
                           ) : null}
@@ -893,25 +1029,71 @@ const Associates = () => {
                           </button>
                         ) : null}
                       </div>
-                      <div className={isCollapsed ? "hidden" : "space-y-1 max-h-48 overflow-auto pr-1"}>
-                        {options.map((option) => {
-                          const isActive = filters?.[section]?.has(option);
-                          return (
-                            <label
-                              key={option}
-                              className="flex items-center gap-2 text-sm text-slate-700"
-                            >
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 accent-slate-800"
-                                checked={!!isActive}
-                                onChange={() => handleFilterToggle(section, option)}
-                              />
-                              <span>{option}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
+
+                      {!isCollapsed && (
+                        <div className="mt-3 space-y-3">
+                          <input
+                            type="search"
+                            value={searchTerm}
+                            onChange={(event) => handleFilterSearchChange(section, event.target.value)}
+                            placeholder={`Search ${options.length} options...`}
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          />
+
+                          {emptyState ? (
+                            <p className="text-xs text-slate-500">
+                              No matches yet. Try a different keyword.
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {visibleOptions.map((option) => {
+                                const isActive = filters?.[section]?.has(option);
+                                const count = stats[option] || 0;
+                                return (
+                                  <motion.button
+                                    key={option}
+                                    type="button"
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => handleFilterToggle(section, option)}
+                                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition ${
+                                      isActive
+                                        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    <span className="flex-1 text-left">{option}</span>
+                                    <span
+                                      className={`ml-3 rounded-full px-2 py-0.5 text-[11px] ${
+                                        isActive ? "bg-slate-800 text-white/80" : "bg-slate-100 text-slate-500"
+                                      }`}
+                                    >
+                                      {count}
+                                    </span>
+                                  </motion.button>
+                                );
+                              })}
+                              {hiddenCount > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleShowAllForSection(section)}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  Show {hiddenCount} more
+                                </button>
+                              ) : null}
+                              {showAll && filteredOptions.length > VISIBLE_OPTION_LIMIT ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleShowAllForSection(section)}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                >
+                                  Show less
+                                </button>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

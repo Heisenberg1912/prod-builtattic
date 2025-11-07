@@ -78,4 +78,9 @@ export const api = {
   postAssistant: (payload) => request("/assistant", { method: "POST", body: payload }),
   updateRiskStatus: (id, payload) =>
     request(`/risks/${id}`, { method: "PATCH", body: payload }),
+  getSiteFeeds: (params = {}) =>
+    request(`/surveillance/feeds${buildQuery(params)}`),
+  getSiteFeed: (id) => request(`/surveillance/feeds/${id}`),
+  analyzeSiteFrame: (payload) =>
+    request("/surveillance/analyze", { method: "POST", body: payload }),
 };

@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import * as mattersService from '../services/mattersService.js';
 import { chatWithAssistant } from '../services/mattersAssistantService.js';
+import {
+  listSiteFeeds,
+  getSiteFeed,
+  analyzeSiteFeedFrame,
+} from '../services/mattersVisionService.js';
 
 const router = Router();
 
@@ -222,5 +227,47 @@ router.patch(
   })
 );
 
-export default router;
+router.get(
+  '/surveillance/feeds',
+  asyncHandler(async (req, res) => {
+    try {
+      const data = listSiteFeeds({ mode: req.query.mode });
+      return send(res, data);
+    } catch (err) {
+      return handleError(err, res);
+    }
+  })
+);
 
+router.get(
+  '/surveillance/feeds/:id',
+  asyncHandler(async (req, res) => {
+    try {
+      const feed = getSiteFeed(req.params.id);
+      if (!feed) {
+        return res.status(404).json({ error: 'Feed not found' });
+      }
+      return send(res, feed);
+    } catch (err) {
+      return handleError(err, res);
+    }
+  })
+);
+
+router.post(
+  '/surveillance/analyze',
+  asyncHandler(async (req, res) => {
+    try {
+      const { feedId, imageUrl, question, mode } = req.body || {};
+      if (!feedId && !imageUrl) {
+        return res.status(400).json({ error: "Provide either 'feedId' or 'imageUrl'" });
+      }
+      const insight = await analyzeSiteFeedFrame({ feedId, imageUrl, question, mode });
+      return send(res, insight);
+    } catch (err) {
+      return handleError(err, res);
+    }
+  })
+);
+
+export default router;

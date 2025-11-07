@@ -30,6 +30,9 @@ export function ApiProvider({ children }) {
   const [error, setError] = useState("")
   const [activeSidebar, setActiveSidebar] = useState("Dashboard")
   const [locationOverride, setLocationOverride] = useState("")
+  const [siteFeeds, setSiteFeeds] = useState([])
+  const [activeFeedId, setActiveFeedId] = useState(null)
+  const [feedInsights, setFeedInsights] = useState({})
 
   const loadModes = useCallback(async () => {
     try {
@@ -59,6 +62,29 @@ export function ApiProvider({ children }) {
   const updateLoading = useCallback((key, value) => {
     setLoading((prev) => ({ ...prev, [key]: value }))
   }, [])
+
+  const refreshSiteFeeds = useCallback(
+    async (targetMode) => {
+      const mode = targetMode || activeMode
+      updateLoading("surveillance", true)
+      try {
+        const feeds = await api.getSiteFeeds(mode ? { mode } : undefined)
+        setSiteFeeds(feeds)
+        setActiveFeedId((prev) => {
+          if (prev && feeds.some((feed) => feed.id === prev)) {
+            return prev
+          }
+          return feeds[0]?.id || null
+        })
+      } catch (err) {
+        console.error(err)
+        setError((prev) => prev || "Unable to load surveillance feeds.")
+      } finally {
+        updateLoading("surveillance", false)
+      }
+    },
+    [activeMode, updateLoading],
+  )
 
   const refreshAll = useCallback(
     async (targetMode) => {
@@ -175,7 +201,8 @@ export function ApiProvider({ children }) {
     if (!activeMode) return
     refreshAll(activeMode).catch(() => {})
     refreshWeather(activeMode).catch(() => {})
-  }, [activeMode, refreshAll, refreshWeather])
+    refreshSiteFeeds(activeMode).catch(() => {})
+  }, [activeMode, refreshAll, refreshWeather, refreshSiteFeeds])
 
   const refreshRisks = useCallback(
     async (targetMode) => {
@@ -198,6 +225,52 @@ export function ApiProvider({ children }) {
     }
     return api.updateRiskStatus(id, payload)
   }, [])
+
+  const analyzeSiteFrame = useCallback(
+    async ({ feedId, question } = {}) => {
+      const selectedFeedId = feedId || activeFeedId
+      if (!selectedFeedId) {
+        throw new Error("Select a feed before requesting analysis")
+      }
+      setFeedInsights((prev) => ({
+        ...prev,
+        [selectedFeedId]: {
+          ...(prev[selectedFeedId] || {}),
+          loading: true,
+          error: null,
+        },
+      }))
+      try {
+        const feed = siteFeeds.find((item) => item.id === selectedFeedId)
+        const payload = {
+          feedId: selectedFeedId,
+          mode: activeMode,
+          question,
+          imageUrl: feed?.imageUrl,
+        }
+        const insight = await api.analyzeSiteFrame(payload)
+        setFeedInsights((prev) => ({
+          ...prev,
+          [selectedFeedId]: {
+            ...insight,
+            loading: false,
+            receivedAt: new Date().toISOString(),
+          },
+        }))
+      } catch (err) {
+        console.error(err)
+        setFeedInsights((prev) => ({
+          ...prev,
+          [selectedFeedId]: {
+            ...(prev[selectedFeedId] || {}),
+            loading: false,
+            error: err.message || "Unable to analyze frame",
+          },
+        }))
+      }
+    },
+    [activeFeedId, siteFeeds, activeMode],
+  )
 
   const value = useMemo(
     () => ({
@@ -228,6 +301,12 @@ export function ApiProvider({ children }) {
       setActiveSidebar,
       locationOverride,
       setLocationOverride,
+      siteFeeds,
+      activeFeedId,
+      setActiveFeedId,
+      refreshSiteFeeds,
+      analyzeSiteFrame,
+      feedInsights,
     }),
     [
       modes,
@@ -255,6 +334,12 @@ export function ApiProvider({ children }) {
       activeSidebar,
       setActiveSidebar,
       locationOverride,
+      siteFeeds,
+      activeFeedId,
+      refreshSiteFeeds,
+      analyzeSiteFrame,
+      feedInsights,
+      setActiveFeedId,
     ],
   )
 

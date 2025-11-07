@@ -25,6 +25,9 @@ import {
   ChevronRight,
   Menu,
   X,
+  ClipboardList,
+  HardHat,
+  Package,
 } from "lucide-react";
 
 import Sidebar from "../components/Sidebar";
@@ -159,6 +162,44 @@ const FALLBACK_DASHBOARD = {
         "https://images.unsplash.com/photo-1529429617124-aee7887287b1?auto=format&fit=crop&w=400&q=80",
     },
   ],
+  permits: [
+    {
+      id: "structural-phase-3",
+      title: "Phase 3 structural certificate",
+      authority: "Kaduna Development Authority",
+      owner: "Aisha Bello",
+      due: "2025-01-04",
+      status: "watch",
+      stage: "Awaiting stamped load calculations",
+      deliverables: ["Upload seismic calc addendum", "Confirm egress update"],
+      attachments: 4,
+      lastTouch: "2024-12-29T09:30:00Z",
+    },
+    {
+      id: "fire-suppression",
+      title: "Fire suppression tie-in",
+      authority: "Federal Fire Service",
+      owner: "Chinedu Ajayi",
+      due: "2024-12-28",
+      status: "blocked",
+      stage: "Hold pending pressure test witness",
+      deliverables: ["Schedule joint hydro test", "Share valve schedule"],
+      attachments: 6,
+      lastTouch: "2024-12-26T16:15:00Z",
+    },
+    {
+      id: "utility-easement",
+      title: "Utility easement registration",
+      authority: "Gonin Gora Utility Board",
+      owner: "Maryam Yusuf",
+      due: "2025-01-12",
+      status: "cleared",
+      stage: "Signed by land registry",
+      deliverables: ["Courier wet copy", "Upload stamped plans"],
+      attachments: 2,
+      lastTouch: "2024-12-27T08:00:00Z",
+    },
+  ],
   catalogue: [
     {
       id: "aurora",
@@ -197,6 +238,44 @@ const FALLBACK_DASHBOARD = {
         "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80",
     },
   ],
+  actions: [
+    {
+      id: "handover-av",
+      title: "Verify AV rough-ins on level 12",
+      owner: "QA team",
+      status: "pending",
+      eta: "2024-12-28T10:30:00Z",
+      tags: ["MEP", "Quality"],
+      impact: "High",
+    },
+    {
+      id: "louver-repair",
+      title: "Replace damaged louvers along facade stack B",
+      owner: "Envelope crew",
+      status: "in-progress",
+      eta: "2024-12-30T08:00:00Z",
+      tags: ["Facade"],
+      impact: "Medium",
+    },
+    {
+      id: "permit-pack",
+      title: "Assemble utility turnout dossier",
+      owner: "Design ops",
+      status: "blocked",
+      eta: "2025-01-02T16:00:00Z",
+      tags: ["Permitting", "Docs"],
+      impact: "High",
+    },
+    {
+      id: "crew-induction",
+      title: "Run safety induction for swing shift",
+      owner: "HSE",
+      status: "pending",
+      eta: "2024-12-29T06:30:00Z",
+      tags: ["Safety"],
+      impact: "Medium",
+    },
+  ],
 };
 
 const ICON_MAP = {
@@ -205,6 +284,31 @@ const ICON_MAP = {
   structure: LayoutGrid,
   interiors: Paintbrush,
   finishing: Sparkles,
+};
+
+
+const FOCUS_SHORTCUTS = [
+  { key: "Inventory", title: "Inventory pulse", description: "Balance call-offs vs. site draw.", icon: Package },
+  { key: "OrderMaterial", title: "Procurement", description: "Release call-offs and RFQs.", icon: ClipboardList },
+  { key: "DesignDetails", title: "Design studio", description: "Review drops & markups.", icon: Sparkles },
+  { key: "History", title: "Timeline", description: "Issue & incident log.", icon: CalendarDays },
+  { key: "FinanceReport", title: "Finance", description: "Drawdowns and exposure.", icon: HardHat },
+];
+
+const ACTION_FILTERS = [
+  { key: "pending", label: "Open" },
+  { key: "in-progress", label: "Active" },
+  { key: "blocked", label: "Blocked" },
+  { key: "done", label: "Cleared" },
+  { key: "all", label: "All" },
+];
+
+const ACTION_STATUS_META = {
+  pending: { label: "Pending", tone: "bg-amber-500/15 text-amber-600" },
+  "in-progress": { label: "In progress", tone: "bg-sky-500/15 text-sky-600" },
+  blocked: { label: "Blocked", tone: "bg-rose-500/15 text-rose-600" },
+  done: { label: "Cleared", tone: "bg-emerald-500/15 text-emerald-600" },
+  all: { label: "All", tone: "bg-slate-500/10 text-slate-500" },
 };
 
 /* --------------------------------- Utilities -------------------------------- */
@@ -253,6 +357,24 @@ const enforceScopedAnswer = (text) => {
   return SCOPE_REMINDER;
 };
 
+const normalizeActionList = (list = []) =>
+  list.map((item, index) => ({
+    id: item.id || item.slug || `action-${index}`,
+    title: item.title || item.name || item.summary || `Action ${index + 1}`,
+    owner: item.owner || item.lead || item.assignee || "Unassigned",
+    status: (item.status || item.state || "pending").toLowerCase(),
+    eta: item.eta || item.due || item.deadline,
+    impact: item.impact || item.priority || "Medium",
+    tags: Array.isArray(item.tags)
+      ? item.tags
+      : item.tag
+      ? [item.tag]
+      : item.focus
+      ? [item.focus]
+      : [],
+    description: item.description || item.notes || "",
+  }));
+
 const formatCurrency = (value, currency = "USD") => {
   if (value === undefined || value === null || Number.isNaN(Number(value))) return "--";
   try {
@@ -278,6 +400,105 @@ const resolveImage = (entry, index = 0) =>
   entry?.hero_image ||
   entry?.url ||
   `${FALLBACK_DASHBOARD.catalogue[0].image}&sig=${index}`;
+
+const PERMIT_STATUS_META = {
+  cleared: {
+    label: "Cleared",
+    helper: "Ready to release",
+    pillClass: "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30",
+  },
+  watch: {
+    label: "Watch",
+    helper: "Needs follow-up",
+    pillClass: "bg-amber-500/15 text-amber-600 border border-amber-500/30",
+  },
+  blocked: {
+    label: "Blocked",
+    helper: "Escalate today",
+    pillClass: "bg-rose-500/15 text-rose-600 border border-rose-500/30",
+  },
+};
+
+const normalizePermitStatus = (value = "") => {
+  const normalized = String(value).toLowerCase();
+  if (/clear|approve|sign/.test(normalized)) return "cleared";
+  if (/block|hold|stop|risk/.test(normalized)) return "blocked";
+  return "watch";
+};
+
+const coerceDeliverables = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (!entry) return "";
+        if (typeof entry === "string") return entry.trim();
+        if (typeof entry === "object") return entry.label || entry.name || entry.title || entry.task || "";
+        return "";
+      })
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/[,•;\n]/)
+      .map((chunk) => chunk.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const formatPermitDate = (value) => {
+  if (!value) return "TBD";
+  const ts = new Date(value);
+  if (Number.isNaN(ts.getTime())) return value;
+  return ts.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
+const permitDaysUntil = (value) => {
+  if (!value) return null;
+  const ts = new Date(value);
+  if (Number.isNaN(ts.getTime())) return null;
+  return Math.ceil((ts.getTime() - Date.now()) / 86400000);
+};
+
+const relativeDueLabel = (value) => {
+  const diff = permitDaysUntil(value);
+  if (diff === null) return "No deadline set";
+  if (diff < -1) return `${Math.abs(diff)} days past due`;
+  if (diff === -1) return "1 day past due";
+  if (diff === 0) return "Due today";
+  if (diff === 1) return "Due tomorrow";
+  return `Due in ${diff} days`;
+};
+
+const formatPermitRelative = (value) => {
+  if (!value) return "just now";
+  const ts = new Date(value);
+  if (Number.isNaN(ts.getTime())) return value;
+  const diff = Date.now() - ts.getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+};
+
+const dueToneClass = (value) => {
+  const diff = permitDaysUntil(value);
+  if (diff === null) return "text-textMuted";
+  if (diff < 0) return "text-rose-500";
+  if (diff <= 2) return "text-amber-500";
+  return "text-textPrimary";
+};
+
+const formatShortDate = (value) => {
+  if (!value) return "";
+  const ts = new Date(value);
+  if (Number.isNaN(ts.getTime())) return value;
+  return ts.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
 
 /* --------------------------------- Skeletons -------------------------------- */
 
@@ -663,6 +884,293 @@ function ActiveProjectsCard({ data, loading }) {
   );
 }
 
+
+
+function FocusShortcuts({ onSelect }) {
+  return (
+    <section className="rounded-3xl border border-border bg-surface shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 sm:px-6 py-3">
+        <div>
+          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.3em] text-textMuted">Quick focus</p>
+          <p className="text-sm text-textPrimary/80">Jump into the workspace you need</p>
+        </div>
+        <span className="text-[11px] text-textMuted">Tap to pivot the main canvas</span>
+      </div>
+      <div className="grid gap-3 px-4 sm:px-6 py-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {FOCUS_SHORTCUTS.map((shortcut) => {
+          const Icon = shortcut.icon;
+          return (
+            <button
+              key={shortcut.key}
+              type="button"
+              onClick={() => onSelect?.(shortcut.key)}
+              className="w-full rounded-2xl border border-border/70 bg-surface-soft px-3 py-3 text-left shadow-[0_10px_30px_rgba(15,23,42,0.06)] transition hover:border-border"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent)]/15 text-[var(--color-accent)]">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-textPrimary truncate">{shortcut.title}</p>
+                  <p className="text-[11px] text-textMuted truncate">{shortcut.description}</p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ActionBoard({ items = [] }) {
+  const [filter, setFilter] = useState("pending");
+  const [tasks, setTasks] = useState(() => normalizeActionList(items));
+
+  useEffect(() => {
+    setTasks(normalizeActionList(items));
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return tasks;
+    return tasks.filter((task) => task.status === filter);
+  }, [tasks, filter]);
+
+  const total = tasks.length;
+  const completed = tasks.filter((task) => task.status === "done").length;
+  const progress = total ? Math.round((completed / total) * 100) : 0;
+
+  const handleToggleStatus = (taskId) => {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId
+          ? { ...task, status: task.status === "done" ? "pending" : "done" }
+          : task,
+      ),
+    );
+  };
+
+  const visibleTasks = filtered.length ? filtered : tasks;
+
+  return (
+    <section className="rounded-3xl border border-border bg-surface shadow-card" aria-label="Action board">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 sm:px-6 py-3 sm:py-4">
+        <div className="min-w-0">
+          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.3em] text-textMuted">Action board</p>
+          <p className="text-sm text-textPrimary/80">{total ? `${completed}/${total} cleared` : "No tracked items"}</p>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-textMuted">
+          <span className="flex items-center gap-1 rounded-full border border-border px-2 py-1">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            {progress}%
+          </span>
+          <div className="hidden sm:block h-1.5 w-24 rounded-full bg-border">
+            <div className="h-full rounded-full bg-[var(--color-accent)]" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-3">
+        {ACTION_FILTERS.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => setFilter(option.key)}
+            className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
+              filter === option.key ? "border-[var(--color-accent)] text-[var(--color-accent)]" : "border-border text-textMuted"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3 px-4 sm:px-6 pb-4 sm:pb-5">
+        {visibleTasks.length ? (
+          visibleTasks.map((task) => {
+            const tone = ACTION_STATUS_META[task.status] || ACTION_STATUS_META.pending;
+            return (
+              <article key={task.id} className="rounded-2xl border border-border/70 bg-surface-soft p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-textPrimary line-clamp-2">{task.title}</p>
+                    <p className="text-[11px] text-textMuted">Owner: {task.owner}</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${tone.tone}`}>{tone.label || "Pending"}</span>
+                </div>
+
+                {task.description && <p className="mt-2 text-sm text-textMuted line-clamp-2">{task.description}</p>}
+
+                {task.tags.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {task.tags.map((tag, index) => (
+                      <span key={`${task.id}-tag-${index}`} className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-textPrimary/80">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-textMuted">
+                  <span className={dueToneClass(task.eta)}>{relativeDueLabel(task.eta)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-textMuted">
+                      {task.impact}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStatus(task.id)}
+                      className="rounded-full border border-border px-3 py-1 text-[11px] font-medium text-textPrimary hover:text-[var(--color-accent)]"
+                    >
+                      {task.status === "done" ? "Reopen" : "Mark cleared"}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })
+        ) : (
+          <p className="rounded-2xl border border-dashed border-border/70 bg-surface-soft p-4 text-sm text-textMuted">
+            No tasks match this filter.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function UpcomingDeliveries({ items = [] }) {
+  if (!Array.isArray(items) || !items.length) return null;
+  return (
+    <section className="rounded-3xl border border-border bg-surface shadow-card">
+      <div className="flex items-center justify-between border-b border-border/60 px-4 sm:px-6 py-3">
+        <div>
+          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.3em] text-textMuted">Upcoming deliveries</p>
+          <p className="text-sm text-textPrimary/80">Latest call-offs heading to site</p>
+        </div>
+        <span className="text-[11px] text-textMuted">{items.length} queued</span>
+      </div>
+      <div className="divide-y divide-border/60">
+        {items.map((item, index) => (
+          <div key={`${item.label || 'delivery'}-${index}`} className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-textPrimary truncate">{item.label || `Delivery ${index + 1}`}</p>
+              <p className="text-xs text-textMuted truncate">{item.note || item.status || 'Awaiting update'}</p>
+            </div>
+            <span className="text-xs text-textMuted">{item.eta || 'ETA pending'}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TimelineBoard({ title = 'Timeline', events = [] }) {
+  if (!Array.isArray(events) || !events.length) {
+    return <PlaceholderPanel title={title} description="Connect project data to populate this view." />;
+  }
+  return (
+    <section className="rounded-3xl border border-border bg-surface shadow-card">
+      <div className="flex items-center justify-between border-b border-border/60 px-4 sm:px-6 py-3">
+        <div>
+          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.3em] text-textMuted">{title}</p>
+          <p className="text-sm text-textPrimary/80">Recent approvals, holds, and releases</p>
+        </div>
+        <span className="text-[11px] text-textMuted">{events.length} items</span>
+      </div>
+      <div className="divide-y divide-border/60">
+        {events.map((event) => {
+          const tone = ACTION_STATUS_META[event.status] || ACTION_STATUS_META.pending;
+          return (
+            <article key={event.id} className="flex flex-col gap-2 px-4 sm:px-6 py-3 sm:py-4">
+              <div className="flex flex-wrap items-center justify-between text-[11px] text-textMuted">
+                <span>{formatShortDate(event.date)}</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone.tone}`}>{tone.label}</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-textPrimary">{event.title}</p>
+                {event.impact && (
+                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-textMuted">{event.impact}</span>
+                )}
+              </div>
+              {event.summary && <p className="text-sm text-textMuted">{event.summary}</p>}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function HeroCollage({ images = [], weather, projects }) {
+  const safeImages = images.length ? images : FALLBACK_DASHBOARD.gallery.slice(0, 3);
+  const onSchedule = Math.round((projects?.onSchedule ?? FALLBACK_DASHBOARD.projects.onSchedule) * 100);
+  const activeProjects = projects?.active ?? FALLBACK_DASHBOARD.projects.active;
+  const backlog = projects?.backlog ?? FALLBACK_DASHBOARD.projects.backlog;
+  const location = weather?.location || FALLBACK_DASHBOARD.weather.location;
+  const temperature = weather?.temperature ?? FALLBACK_DASHBOARD.weather.temperature;
+  const condition = weather?.condition ?? FALLBACK_DASHBOARD.weather.condition;
+
+  return (
+    <section className="rounded-[32px] border border-border bg-gradient-to-r from-[rgba(7,12,24,0.95)] via-[rgba(17,24,39,0.92)] to-[rgba(30,41,59,0.9)] text-white shadow-card">
+      <div className="grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.6fr)] xl:grid-cols-[minmax(0,1fr)_minmax(0,0.65fr)]">
+        <div className="flex flex-col gap-4 p-5 sm:p-7">
+          <p className="text-[11px] uppercase tracking-[0.35em] text-white/70">Field pulse</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <h2 className="text-3xl sm:text-4xl font-semibold leading-tight">{temperature}°C</h2>
+            <span className="rounded-full border border-white/30 px-3 py-1 text-xs uppercase tracking-[0.25em]">{condition}</span>
+          </div>
+          <p className="text-sm text-white/80">{location}</p>
+          <div className="grid grid-cols-3 gap-3 text-center text-[11px] uppercase tracking-[0.2em]">
+            <div className="rounded-2xl border border-white/15 bg-white/5 px-2 py-3">
+              <p className="text-2xl font-semibold tracking-normal">{activeProjects}</p>
+              <p className="mt-1 text-[10px] text-white/70">Active</p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/5 px-2 py-3">
+              <p className="text-2xl font-semibold tracking-normal">{backlog}</p>
+              <p className="mt-1 text-[10px] text-white/70">Queued</p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/5 px-2 py-3">
+              <p className="text-2xl font-semibold tracking-normal">{onSchedule}%</p>
+              <p className="mt-1 text-[10px] text-white/70">On track</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs text-white/80">
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1">
+              <Sun className="h-4 w-4 text-amber-200" />
+              UV moderate
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1">
+              <Droplets className="h-4 w-4 text-sky-200" />
+              {weather?.humidity ?? "58"}% humidity
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1">
+              <Wind className="h-4 w-4 text-cyan-200" />
+              {weather?.wind ?? "11"} km/h winds
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-3 p-4 sm:p-6 lg:grid-cols-2">
+          {safeImages.map((item, index) => (
+            <div key={`${item.label}-${index}`} className="relative min-h-[140px] overflow-hidden rounded-3xl border border-white/10 bg-white/5">
+              <div
+                className="absolute inset-0 bg-cover bg-center"
+                style={{ backgroundImage: `url(${item.image})` }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+              <div className="relative flex h-full flex-col justify-between p-4">
+                <p className="text-[10px] uppercase tracking-[0.25em] text-white/70">{item.label}</p>
+                <p className="text-sm font-semibold text-white">Mood capture</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function GalleryCategories({ categories, loading }) {
   if (loading) return <SectionSkeleton lines={6} minH="min-h-[260px]" />;
 
@@ -719,13 +1227,26 @@ function GalleryCategories({ categories, loading }) {
   );
 }
 
+
 /** PRODUCT SHOWCASE — collapsible, starts collapsed */
 function ProductShowcase({ items, loading }) {
   if (loading) return <SectionSkeleton lines={6} minH="min-h-[320px]" />;
 
   const cards = items && items.length ? items : FALLBACK_DASHBOARD.catalogue;
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 1024px)").matches;
+  });
+  const previewCards = cards.slice(0, 4);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia("(max-width: 1024px)");
+    const handler = (event) => setCollapsed(event.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   return (
     <section aria-label="Systems catalogue" className="relative overflow-hidden rounded-3xl border border-border bg-surface shadow-card">
@@ -755,13 +1276,39 @@ function ProductShowcase({ items, loading }) {
         </button>
       </div>
 
-      {/* body only when expanded */}
-      {!collapsed && (
+      {/* body shows compact previews on mobile and full grid on desktop */}
+      {collapsed ? (
+        <div className="px-4 sm:px-6 pb-4">
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {previewCards.map((card) => (
+              <div
+                key={`${card.id}-preview`}
+                className="flex-shrink-0 w-36 sm:w-40 overflow-hidden rounded-2xl border border-border/60 bg-surface-soft"
+              >
+                <div className="relative h-40">
+                  <img
+                    src={card.image}
+                    alt={card.title}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    sizes="144px"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[rgba(12,17,27,0.9)] via-transparent to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 space-y-1 p-2 text-white">
+                    <span className="text-[9px] uppercase tracking-[0.3em] text-white/70">{card.badge}</span>
+                    <p className="text-sm font-semibold leading-snug line-clamp-2">{card.title}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
         <>
           <div className="px-4 sm:px-6 pb-5 sm:pb-6">
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 sm:gap-4">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] md:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 sm:gap-4">
               {cards.map((card) => (
-                <article key={card.id} className="group relative overflow-hidden rounded-3xl aspect-[4/5] min-w-0">
+                <article key={card.id} className="group relative overflow-hidden rounded-3xl aspect-[3/4] min-w-0">
                   <img
                     src={card.image}
                     alt={card.title}
@@ -838,6 +1385,156 @@ function ProductShowcase({ items, loading }) {
           )}
         </>
       )}
+    </section>
+  );
+}
+
+function PermitPipelinePanel({ items, loading }) {
+  const normalizedItems = useMemo(() => {
+    const source = Array.isArray(items) && items.length ? items : FALLBACK_DASHBOARD.permits;
+    return source.map((raw, index) => {
+      const status = normalizePermitStatus(raw.status || raw.state || raw.health);
+      return {
+        id: raw.id || raw.slug || `permit-${index}`,
+        title: raw.title || raw.name || raw.package || `Permit ${index + 1}`,
+        authority: raw.authority || raw.agency || raw.jurisdiction || raw.issuer || raw.department || "Local authority",
+        owner: raw.owner || raw.assignee || raw.point_of_contact || raw.poc || raw.manager || "Unassigned",
+        due: raw.due || raw.deadline || raw.target_date || raw.next_decision,
+        status,
+        stage: raw.stage || raw.phase || raw.next_step || raw.summary || "",
+        deliverables: coerceDeliverables(raw.deliverables || raw.dependencies || raw.requirements || raw.blockers),
+        attachments: Number(raw.attachments ?? (Array.isArray(raw.documents) ? raw.documents.length : 0)) || 0,
+        lastTouch: raw.lastTouch || raw.updated_at || raw.updatedAt || raw.last_update,
+      };
+    });
+  }, [items]);
+
+  const summary = useMemo(() => {
+    const base = { cleared: 0, watch: 0, blocked: 0 };
+    normalizedItems.forEach((item) => {
+      base[item.status] = (base[item.status] || 0) + 1;
+    });
+    return base;
+  }, [normalizedItems]);
+
+  const timeline = useMemo(() => {
+    return normalizedItems
+      .slice()
+      .sort((a, b) => {
+        const aTime = a.due ? new Date(a.due).getTime() : Number.POSITIVE_INFINITY;
+        const bTime = b.due ? new Date(b.due).getTime() : Number.POSITIVE_INFINITY;
+        return aTime - bTime;
+      })
+      .slice(0, 3);
+  }, [normalizedItems]);
+
+  const showSkeleton = loading && (!items || !items.length);
+  if (showSkeleton) return <SectionSkeleton lines={5} minH="min-h-[360px]" />;
+
+  const nextDecision = timeline[0];
+
+  return (
+    <section className="rounded-3xl border border-border bg-surface shadow-card" aria-label="Permit readiness">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 sm:px-6 py-3 sm:py-4">
+        <div className="min-w-0">
+          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.3em] text-textMuted">Compliance</p>
+          <h3 className="text-base sm:text-lg font-semibold text-textPrimary">Permit readiness</h3>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-[11px] sm:text-xs text-textMuted hover:text-textPrimary"
+        >
+          View log
+          <Eye className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="space-y-4 px-4 sm:px-6 py-4 sm:py-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          {Object.entries(PERMIT_STATUS_META).map(([key, meta]) => {
+            const count = summary[key] ?? 0;
+            const percent = normalizedItems.length ? Math.round((count / normalizedItems.length) * 100) : 0;
+            return (
+              <div key={key} className="rounded-2xl border border-border/60 bg-surface-soft p-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-textMuted">{meta.label}</p>
+                <p className="text-2xl font-semibold text-textPrimary">{count}</p>
+                <p className="text-[11px] text-textMuted">
+                  {meta.helper}
+                  {normalizedItems.length ? ` · ${percent}%` : ""}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {nextDecision && (
+          <div className="rounded-2xl border border-border/60 bg-surface-soft px-4 py-3 sm:px-5 sm:py-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-textMuted">Next decision</p>
+              <p className="text-sm font-semibold text-textPrimary truncate">{nextDecision.title}</p>
+              <p className="text-xs text-textMuted truncate">{nextDecision.authority}</p>
+            </div>
+            <div className="text-left sm:text-right">
+              <p className={`text-sm font-semibold ${dueToneClass(nextDecision.due)}`}>{formatPermitDate(nextDecision.due)}</p>
+              <p className="text-[11px] text-textMuted">{relativeDueLabel(nextDecision.due)}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-border/70 bg-surface-alt divide-y divide-border/60">
+          {timeline.length ? (
+            timeline.map((pkg) => {
+              const statusMeta = PERMIT_STATUS_META[pkg.status] || PERMIT_STATUS_META.watch;
+              return (
+                <article key={pkg.id} className="flex flex-col gap-3 px-4 py-4 sm:px-5 sm:py-4 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-textPrimary truncate">{pkg.title}</p>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.pillClass}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-textMuted truncate">
+                      {pkg.authority} · Owner: {pkg.owner}
+                    </p>
+                    {pkg.stage && <p className="text-xs text-textPrimary/80 line-clamp-2">{pkg.stage}</p>}
+                    {pkg.deliverables.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {pkg.deliverables.slice(0, 3).map((item, index) => (
+                          <span key={`${pkg.id}-deliverable-${index}`} className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-textPrimary">
+                            {item}
+                          </span>
+                        ))}
+                        {pkg.deliverables.length > 3 && (
+                          <span className="text-[11px] text-textMuted">+{pkg.deliverables.length - 3} more</span>
+                        )}
+                      </div>
+                    ) : null}
+                    <p className="text-[11px] text-textMuted">Updated {formatPermitRelative(pkg.lastTouch)}</p>
+                  </div>
+                  <div className="w-full sm:w-[190px] space-y-2 text-left sm:text-right">
+                    <div>
+                      <p className={`text-sm font-semibold ${dueToneClass(pkg.due)}`}>{formatPermitDate(pkg.due)}</p>
+                      <p className="text-[11px] text-textMuted">{relativeDueLabel(pkg.due)}</p>
+                    </div>
+                    <div className="text-[11px] text-textMuted">
+                      {pkg.attachments ? `${pkg.attachments} doc${pkg.attachments === 1 ? "" : "s"}` : "No docs"}
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-border px-3 py-2 text-xs font-medium text-textPrimary hover:text-[var(--color-accent)]"
+                    >
+                      Log follow-up
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <p className="px-4 py-6 text-center text-sm text-textMuted">Add permit packages to begin tracking.</p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
@@ -1018,6 +1715,7 @@ export default function Dashboard() {
     refreshWeather,
     loading,
     activeSidebar,
+    setActiveSidebar,
   } = useApi() || {};
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1164,6 +1862,13 @@ export default function Dashboard() {
     return FALLBACK_DASHBOARD.gallery;
   }, [gallery]);
 
+  const heroImages = useMemo(() => {
+    if (galleryCategories && galleryCategories.length) {
+      return galleryCategories.slice(0, 3);
+    }
+    return FALLBACK_DASHBOARD.gallery.slice(0, 3);
+  }, [galleryCategories]);
+
   const projectSummary = useMemo(() => {
     if (summary?.projects) {
       return {
@@ -1177,6 +1882,57 @@ export default function Dashboard() {
     return FALLBACK_DASHBOARD.projects;
   }, [summary]);
 
+  const permitPackages = useMemo(() => {
+    const direct = Array.isArray(summary?.permits) ? summary.permits : [];
+    if (direct.length) return direct;
+    const compliance = Array.isArray(summary?.compliance?.packages) ? summary.compliance.packages : [];
+    if (compliance.length) return compliance;
+    const regulatory = Array.isArray(summary?.regulatory?.permits) ? summary.regulatory.permits : [];
+    if (regulatory.length) return regulatory;
+    return FALLBACK_DASHBOARD.permits;
+  }, [summary]);
+
+  const priorityActions = useMemo(() => {
+    const primary = Array.isArray(summary?.actions) ? summary.actions : [];
+    if (primary.length) return normalizeActionList(primary);
+    const checklist = Array.isArray(summary?.checklist) ? summary.checklist : [];
+    if (checklist.length) return normalizeActionList(checklist);
+    const fallbacks = Array.isArray(FALLBACK_DASHBOARD.actions) ? FALLBACK_DASHBOARD.actions : [];
+    return normalizeActionList(fallbacks);
+  }, [summary]);
+
+  const timelineEvents = useMemo(() => {
+    const actions = (priorityActions || []).map((task) => ({
+      id: `action-${task.id}`,
+      title: task.title,
+      summary: task.description || `Owner: ${task.owner}`,
+      date: task.eta,
+      status: task.status,
+      impact: task.impact || '' ,
+      type: task.tags?.some((tag) => /doc|permit|procure/i.test(tag || '')) ? 'procurement' : 'action',
+    }));
+    const permits = (permitPackages || []).map((pkg) => ({
+      id: `permit-${pkg.id}`,
+      title: pkg.title,
+      summary: pkg.stage || pkg.authority,
+      date: pkg.due,
+      status: pkg.status || 'watch',
+      impact: pkg.authority,
+      type: 'permit',
+    }));
+    const all = [...actions, ...permits];
+    const valueOf = (entry) => {
+      const ts = new Date(entry.date || 0);
+      return Number.isNaN(ts.getTime()) ? Infinity : ts.getTime();
+    };
+    return all.sort((a, b) => valueOf(a) - valueOf(b));
+  }, [priorityActions, permitPackages]);
+
+  const procurementTimeline = useMemo(() => timelineEvents.filter((event) => event.type === 'permit' || event.type === 'procurement'), [timelineEvents]);
+  const financeTimeline = useMemo(() => timelineEvents.filter((event) => ['blocked', 'watch', 'cleared'].includes(event.status)), [timelineEvents]);
+  const inventoryDeliveries = useMemo(() => (Array.isArray(inventoryData?.incoming) ? inventoryData.incoming : []), [inventoryData]);
+
+
   const handleSidebarToggle = () => {
     if (isDesktop) setSidebarCollapsed((prev) => !prev);
     else setSidebarMobileOpen((prev) => !prev);
@@ -1186,6 +1942,17 @@ export default function Dashboard() {
     refreshAll?.();
     refreshWeather?.();
   };
+
+  const handleFocusShortcut = useCallback(
+    (key) => {
+      if (!key) return;
+      setActiveSidebar?.(key);
+      if (!isDesktop) {
+        window?.scrollTo?.({ top: 0, behavior: "smooth" });
+      }
+    },
+    [setActiveSidebar, isDesktop],
+  );
 
   /* ---------------------------- Views bound to sidebar ---------------------------- */
 
@@ -1224,53 +1991,76 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Main adaptive grid: collapses to single column on small screens */}
-      <div className="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)]">
-        <div className="grid gap-4 sm:gap-6 xl:grid-cols-[320px_minmax(0,1fr)_320px] 2xl:grid-cols-[340px_minmax(0,1fr)_340px]">
-          <div className="space-y-4 sm:space-y-6">
+      <HeroCollage images={heroImages} weather={weatherData} projects={projectSummary} />
+      <FocusShortcuts onSelect={handleFocusShortcut} />
+
+      {/* Primary layout */}
+      <div className="grid gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+        <div className="space-y-5 lg:space-y-6">
+          <div className="grid gap-4 lg:gap-5 lg:grid-cols-2">
             <BudgetOverview data={budgetData} loading={loading?.budget} />
             <InventoryStatus data={inventoryData} loading={loading?.inventory} />
           </div>
 
-          <div className="space-y-4 sm:space-y-6">
-            <MilestoneRail stages={milestoneData} loading={loading?.milestones} />
-            <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-              <WeatherCard data={weatherData} loading={loading?.weather} onRefresh={() => refreshWeather?.()} />
-              <ActiveProjectsCard data={projectSummary} loading={loading?.projects} />
-            </div>
-            <ProductShowcase loading={loading?.catalogue} />
+          <MilestoneRail stages={milestoneData} loading={loading?.milestones} />
+
+          <div className="grid gap-4 lg:gap-5 lg:grid-cols-2">
+            <WeatherCard data={weatherData} loading={loading?.weather} onRefresh={() => refreshWeather?.()} />
+            <ActiveProjectsCard data={projectSummary} loading={loading?.projects} />
           </div>
 
-          <div className="space-y-4 sm:space-y-6">
-            <GalleryCategories categories={galleryCategories} loading={loading?.gallery} />
-            <PlaceholderPanel title="Site broadcasts" description="Live camera feeds and drone flyovers will stream here once activated." />
-            <AssociateChatPanel />
-          </div>
+          <ProductShowcase loading={loading?.catalogue} />
+          <ActionBoard items={priorityActions} />
+        </div>
+
+        <div className="space-y-5 lg:space-y-6">
+          <GalleryCategories categories={galleryCategories} loading={loading?.gallery} />
+          <PermitPipelinePanel items={permitPackages} loading={loading?.summary} />
+          <AssociateChatPanel />
         </div>
       </div>
+
     </div>
   );
 
   const InventoryView = (
-    <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-      <InventoryStatus data={inventoryData} loading={loading?.inventory} />
+    <div className="space-y-5 lg:space-y-6">
+      <div className="grid gap-4 lg:gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+        <InventoryStatus data={inventoryData} loading={loading?.inventory} />
+        <PermitPipelinePanel items={permitPackages} loading={loading?.summary} />
+      </div>
+      <UpcomingDeliveries items={inventoryDeliveries} />
       <GalleryCategories categories={galleryCategories} loading={loading?.gallery} />
     </div>
   );
 
   const ProcurementView = (
-    <PlaceholderPanel title="Procurement workspace" description="Create call-offs, compare vendor quotes, and release purchase orders directly from this panel." />
+    <div className="space-y-5 lg:space-y-6">
+      <ProductShowcase items={FALLBACK_DASHBOARD.catalogue} loading={loading?.catalogue} />
+      <TimelineBoard title="Procurement log" events={procurementTimeline} />
+    </div>
   );
 
   const FinanceView = (
-    <PlaceholderPanel title="Finance dashboard" description="Track drawdowns, incoming invoices, and cashflow forecasts once the finance API is connected." />
+    <div className="space-y-5 lg:space-y-6">
+      <BudgetOverview data={budgetData} loading={loading?.budget} />
+      <TimelineBoard title="Finance timeline" events={financeTimeline} />
+    </div>
   );
 
   const TimelineView = (
-    <PlaceholderPanel title="Timeline" description="Issue logs and milestone journals will appear here once captured from the field teams." />
+    <div className="space-y-5 lg:space-y-6">
+      <TimelineBoard events={timelineEvents} />
+      <ActionBoard items={priorityActions} />
+    </div>
   );
 
-  const DesignView = <ProductShowcase items={FALLBACK_DASHBOARD.catalogue} loading={loading?.catalogue} />;
+  const DesignView = (
+    <div className="space-y-5 lg:space-y-6">
+      <ProductShowcase items={FALLBACK_DASHBOARD.catalogue} loading={loading?.catalogue} />
+      <GalleryCategories categories={galleryCategories} loading={loading?.gallery} />
+    </div>
+  );
 
   const contentBySidebar = {
     Dashboard: DashboardView,
@@ -1285,13 +2075,18 @@ export default function Dashboard() {
   const mainContent = contentBySidebar[activeSidebar || "Dashboard"] || DashboardView;
 
   return (
-    <div className="min-h-[calc(var(--vh,1vh)*100)] overflow-x-hidden bg-base text-textPrimary">
+    <div className="relative min-h-[calc(var(--vh,1vh)*100)] overflow-x-hidden bg-base text-textPrimary">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-[var(--color-accent)]/20 blur-[120px] opacity-70" />
+        <div className="absolute bottom-0 right-6 h-64 w-64 rounded-full bg-surface-alt/70 blur-3xl opacity-60" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(79,140,255,0.15),_transparent_60%)]" />
+      </div>
       {/* Dim overlay on mobile when sidebar open */}
       {!isDesktop && sidebarMobileOpen && (
         <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebarMobileOpen(false)} aria-hidden="true" />
       )}
 
-      <div className="relative mx-auto flex w-full max-w-[1680px] flex-col gap-4 sm:gap-6 px-4 sm:px-6 lg:px-10 pt-4 pb-[calc(env(safe-area-inset-bottom,0)+96px)] lg:pb-16 lg:flex-row">
+      <div className="relative mx-auto flex w-full max-w-\[1680px\] flex-col gap-4 sm:gap-6 px-4 sm:px-6 lg:px-10 pt-4 pb-[calc(env(safe-area-inset-bottom,0)+96px)] lg:pb-16 lg:flex-row">
         <Sidebar
           collapsed={sidebarCollapsed}
           mobileOpen={sidebarMobileOpen}
@@ -1320,5 +2115,6 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
