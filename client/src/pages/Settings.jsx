@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { getSettings, updateSettings } from "../services/settings.js";
@@ -11,6 +11,7 @@ import {
 import { normalizeRole, resolveDashboardPath } from "../constants/roles.js";
 import {
   Shield,
+  ShieldCheck,
   Smartphone,
   Bell,
   Mail,
@@ -22,6 +23,11 @@ import {
   MonitorSmartphone,
   Laptop,
   Tablet,
+  User,
+  Briefcase,
+  Globe,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 
 const SETTINGS_DEFAULTS = {
@@ -29,23 +35,176 @@ const SETTINGS_DEFAULTS = {
     orderUpdates: true,
     partnerAnnouncements: true,
     researchBriefs: false,
+    productTips: true,
+    weeklyDigest: true,
+    smsAlerts: false,
+    preferredChannel: "email",
+    digestFrequency: "weekly",
   },
   privacy: {
     shareProfile: true,
     shareAnalytics: true,
     retainData: true,
+    searchVisibility: true,
+    profileIndexing: false,
   },
   security: {
     twoStep: false,
     loginAlerts: true,
+    deviceVerification: true,
+    biometricUnlock: false,
+  },
+  profile: {
+    fullName: "",
+    email: "",
+    phone: "",
+    location: "",
+    company: "",
+    jobTitle: "",
+    pronouns: "",
+    timezone: "",
+    website: "",
+    avatar: "",
+    bio: "",
   },
 };
+
+const SETTINGS_SECTIONS = [
+  { id: "profile", label: "Profile & identity" },
+  { id: "sessions", label: "Sessions" },
+  { id: "workspace", label: "Contributor workspaces" },
+  { id: "security", label: "Security" },
+  { id: "notifications", label: "Notifications" },
+  { id: "shortcuts", label: "Workspace shortcuts" },
+  { id: "privacy", label: "Privacy & data" },
+];
+
+const TIMEZONE_OPTIONS = [
+  "UTC",
+  "America/Los_Angeles",
+  "America/New_York",
+  "Europe/London",
+  "Europe/Berlin",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Australia/Sydney",
+  "America/Sao_Paulo",
+  "Africa/Johannesburg",
+];
+
+const PROFILE_CONTACT_FIELDS = [
+  { id: "fullName", label: "Full name", placeholder: "Aanya Sharma", autoComplete: "name" },
+  { id: "email", label: "Contact email", placeholder: "you@builtattic.com", autoComplete: "email" },
+  { id: "phone", label: "Mobile number", placeholder: "+91 98765 43210", autoComplete: "tel" },
+  { id: "location", label: "City / Region", placeholder: "Bengaluru, India", autoComplete: "address-level2" },
+];
+
+const PROFILE_WORK_FIELDS = [
+  { id: "company", label: "Studio / Company", placeholder: "Builtattic Studio" },
+  { id: "jobTitle", label: "Role", placeholder: "Design Lead" },
+  { id: "pronouns", label: "Pronouns", placeholder: "She / Her" },
+  { id: "timezone", label: "Timezone", type: "select" },
+];
+
+const PROFILE_PUBLIC_FIELDS = [
+  { id: "website", label: "Portfolio link", placeholder: "https://builtattic.com/yourstudio" },
+  { id: "bio", label: "Public bio", type: "textarea", placeholder: "Describe your focus areas, specialties, or workstyle." },
+];
 
 const mergeSettingsWithDefaults = (incoming = {}) => ({
   notifications: { ...SETTINGS_DEFAULTS.notifications, ...(incoming.notifications || {}) },
   privacy: { ...SETTINGS_DEFAULTS.privacy, ...(incoming.privacy || {}) },
   security: { ...SETTINGS_DEFAULTS.security, ...(incoming.security || {}) },
+  profile: { ...SETTINGS_DEFAULTS.profile, ...(incoming.profile || {}) },
 });
+
+const detectTimezone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch (error) {
+    return "UTC";
+  }
+};
+
+const TRUSTED_SESSIONS_KEY = "builtattic_trusted_sessions";
+
+const readTrustedSessions = () => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(TRUSTED_SESSIONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    console.warn("trusted_session_storage_error", error);
+    return {};
+  }
+};
+
+const detectCurrentSession = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const ua = navigator.userAgent || "";
+    const platform = navigator.platform || "";
+    const isTablet = /iPad|Tablet/i.test(ua);
+    const isMobile = /Mobi|Android/i.test(ua) && !isTablet;
+    let icon = "desktop";
+    if (isTablet) icon = "tablet";
+    else if (isMobile) icon = "mobile";
+    else if (/Mac|Win|Linux/i.test(platform)) icon = "laptop";
+    const browserMatch = ua.match(/(Chrome|Safari|Firefox|Edge)\/([0-9.]+)/i);
+    const browser = browserMatch ? `${browserMatch[1]} ${browserMatch[2]}` : "Current browser";
+    const location = detectTimezone().replace("_", " ");
+    return {
+      id: "current",
+      device: isMobile ? "Mobile device" : isTablet ? "Tablet" : "This browser",
+      browser,
+      location,
+      lastActive: "Just now",
+      ip: "Private network",
+      current: true,
+      icon,
+      trusted: true,
+    };
+  } catch (error) {
+    return null;
+  }
+};
+
+const buildInitialSessions = () => {
+  const trustMap = readTrustedSessions();
+  const current = detectCurrentSession();
+  const seeded = INITIAL_SESSIONS.map((session) => ({
+    ...session,
+    trusted: trustMap[session.id] ?? session.trusted ?? false,
+  }));
+  if (current) {
+    const existingIndex = seeded.findIndex((session) => session.id === "current");
+    if (existingIndex >= 0) {
+      seeded[existingIndex] = { ...seeded[existingIndex], ...current };
+    } else {
+      seeded.unshift(current);
+    }
+  }
+  return seeded;
+};
+
+const hydrateProfileWithUser = (profile = {}, user) => {
+  if (!user) return profile;
+  const nextProfile = { ...profile };
+  const applyIfEmpty = (key, value) => {
+    if (nextProfile[key]) return;
+    if (!value) return;
+    nextProfile[key] = value;
+  };
+  applyIfEmpty("fullName", user.name || user.fullName);
+  applyIfEmpty("email", user.email);
+  applyIfEmpty("company", user.company || user.organization || user.orgName);
+  applyIfEmpty("jobTitle", user.title || user.role);
+  applyIfEmpty("phone", user.phone);
+  if (!nextProfile.timezone) {
+    nextProfile.timezone = detectTimezone();
+  }
+  return nextProfile;
+};
 
 const SECURITY_CONTROLS = [
   {
@@ -58,6 +217,28 @@ const SECURITY_CONTROLS = [
     disabledLabel: "Disabled",
     successMessage: (enabled) =>
       enabled ? "Two-step verification enabled." : "Two-step verification disabled.",
+  },
+  {
+    id: "deviceVerification",
+    title: "Device verification",
+    description: "Ask for a confirmation link the first time a device signs in.",
+    icon: ShieldCheck,
+    type: "toggle",
+    enabledLabel: "Required",
+    disabledLabel: "Off",
+    successMessage: (enabled) =>
+      enabled ? "New devices will require verification." : "Device verification paused.",
+  },
+  {
+    id: "biometricUnlock",
+    title: "Biometric unlock",
+    description: "Allow Touch ID / Face ID where supported.",
+    icon: Smartphone,
+    type: "toggle",
+    enabledLabel: "Allowed",
+    disabledLabel: "Off",
+    successMessage: (enabled) =>
+      enabled ? "Biometric prompts enabled." : "Biometric prompts disabled.",
   },
   {
     id: "loginAlerts",
@@ -81,9 +262,48 @@ const SECURITY_CONTROLS = [
 ];
 
 const notificationChannels = [
-  { id: "orderUpdates", label: "Order & build milestone updates", icon: Bell },
-  { id: "partnerAnnouncements", label: "Partner launches & marketplace news", icon: Mail },
-  { id: "researchBriefs", label: "Design research briefs & case studies", icon: Mail },
+  {
+    id: "orderUpdates",
+    label: "Order & project milestones",
+    description: "Approvals, deliveries, and build blockers.",
+    icon: Bell,
+  },
+  {
+    id: "partnerAnnouncements",
+    label: "Marketplace news",
+    description: "Launches, price changes, and curated drops.",
+    icon: Mail,
+  },
+  {
+    id: "researchBriefs",
+    label: "Research briefs",
+    description: "Case studies and benchmarks.",
+    icon: Mail,
+  },
+  {
+    id: "productTips",
+    label: "Workflow tips",
+    description: "Feature walkthroughs sent monthly.",
+    icon: Mail,
+  },
+  {
+    id: "smsAlerts",
+    label: "Critical SMS alerts",
+    description: "Escalations for active jobs.",
+    icon: Smartphone,
+  },
+];
+
+const digestOptions = [
+  { value: "daily", label: "Daily summary", helper: "Great for active builds" },
+  { value: "weekly", label: "Weekly recap", helper: "Default" },
+  { value: "monthly", label: "Monthly digest", helper: "For occasional check-ins" },
+];
+
+const preferredChannelOptions = [
+  { value: "email", label: "Email", helper: "Detailed updates" },
+  { value: "sms", label: "SMS", helper: "Only critical alerts" },
+  { value: "inapp", label: "In-app", helper: "Inbox inside dashboard" },
 ];
 
 const workspaceCards = [
@@ -106,18 +326,28 @@ const workspaceCards = [
 const privacyControls = [
   {
     id: "shareProfile",
-    title: "Showcase profile to vendors & firms",
-    description: "Allow curated partners to view your professional profile.",
+    title: "Showcase profile to vendors & studios",
+    description: "Allow curated partners to view your profile when you collaborate.",
   },
   {
     id: "shareAnalytics",
     title: "Contribute anonymised analytics",
-    description: "Help improve Builtattic recommendations. Opt-out anytime.",
+    description: "Help refine marketplace recommendations. Opt-out anytime.",
   },
   {
     id: "retainData",
     title: "Retain procurement data for 24 months",
-    description: "Extend history to match archive timelines.",
+    description: "Extend export history to match audit requirements.",
+  },
+  {
+    id: "searchVisibility",
+    title: "Enable search visibility",
+    description: "Allow your public card to appear in partner search results.",
+  },
+  {
+    id: "profileIndexing",
+    title: "Index profile on web",
+    description: "Permit Builtattic landing pages to reference your workspace.",
   },
 ];
 
@@ -131,13 +361,14 @@ const SESSION_ICON_MAP = {
 const INITIAL_SESSIONS = [
   {
     id: "current",
-    device: "Windows · Chrome",
-    browser: "Chrome 121",
-    location: "Bengaluru, IN",
+    device: "This browser",
+    browser: "",
+    location: "",
     lastActive: "Just now",
-    ip: "103.24.56.18",
+    ip: "Private",
     current: true,
     icon: "desktop",
+    trusted: true,
   },
   {
     id: "laptop",
@@ -148,6 +379,7 @@ const INITIAL_SESSIONS = [
     ip: "43.89.14.22",
     current: false,
     icon: "laptop",
+    trusted: false,
   },
   {
     id: "tablet",
@@ -158,6 +390,7 @@ const INITIAL_SESSIONS = [
     ip: "122.178.64.11",
     current: false,
     icon: "tablet",
+    trusted: true,
   },
 ];
 
@@ -170,7 +403,7 @@ const Settings = () => {
   const [success, setSuccess] = useState("");
   const [authState, setAuthState] = useState(() => readStoredAuth());
   const [userProfile, setUserProfile] = useState(() => readStoredUser());
-  const [sessions, setSessions] = useState(() => INITIAL_SESSIONS);
+  const [sessions, setSessions] = useState(() => buildInitialSessions());
   const [resetSending, setResetSending] = useState(false);
   const [lastResetRequest, setLastResetRequest] = useState(null);
 
@@ -184,12 +417,16 @@ const Settings = () => {
       try {
         const data = await getSettings();
         if (!isMounted) return;
-        setSettings({ ...mergeSettingsWithDefaults(data), hasChanges: false });
+        const merged = mergeSettingsWithDefaults(data);
+        const resolvedProfile = hydrateProfileWithUser(merged.profile, userProfile);
+        setSettings({ ...merged, profile: resolvedProfile, hasChanges: false });
         setError("");
       } catch (err) {
         if (!isMounted) return;
         if (err?.fallback) {
-          setSettings({ ...mergeSettingsWithDefaults(err.fallback), hasChanges: false });
+          const fallback = mergeSettingsWithDefaults(err.fallback);
+          const resolvedProfile = hydrateProfileWithUser(fallback.profile, userProfile);
+          setSettings({ ...fallback, profile: resolvedProfile, hasChanges: false });
           setError(err.message);
         } else {
           setError(err?.message || "Unable to load settings");
@@ -230,6 +467,19 @@ const Settings = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const trustPayload = sessions.reduce((acc, session) => {
+        acc[session.id] = Boolean(session.trusted);
+        return acc;
+      }, {});
+      window.localStorage.setItem(TRUSTED_SESSIONS_KEY, JSON.stringify(trustPayload));
+    } catch (storageError) {
+      console.warn("trusted_session_persist_error", storageError);
+    }
+  }, [sessions]);
+
   const clearSuccess = () => setSuccess("");
 
   const toggleNotification = (id) => {
@@ -241,6 +491,19 @@ const Settings = () => {
       return {
         ...prev,
         notifications: { ...(prev.notifications || {}), [id]: !current },
+        hasChanges: true,
+      };
+    });
+  };
+
+  const updateNotificationPreference = (key, value) => {
+    clearSuccess();
+    setError("");
+    setSettings((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        notifications: { ...(prev.notifications || {}), [key]: value },
         hasChanges: true,
       };
     });
@@ -276,6 +539,19 @@ const Settings = () => {
     });
   };
 
+  const updateProfileField = (field, value) => {
+    clearSuccess();
+    setError("");
+    setSettings((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        profile: { ...(prev.profile || {}), [field]: value },
+        hasChanges: true,
+      };
+    });
+  };
+
   const handleSecurityAction = async (control) => {
     if (!control || !settings) return;
     clearSuccess();
@@ -301,7 +577,7 @@ const Settings = () => {
         return;
       }
       if (resetSending) return;
-      const email = userProfile?.email;
+      const email = settings.profile?.email || userProfile?.email;
       if (!email) {
         toast.error("Add an email address in your profile to receive reset links");
         return;
@@ -346,6 +622,19 @@ const Settings = () => {
     toast.success('Session signed out');
   };
 
+  const handleSessionTrustToggle = (sessionId) => {
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              trusted: !session.trusted,
+            }
+          : session,
+      ),
+    );
+  };
+
   const handleSignOutAllSessions = () => {
     const otherSessions = sessions.filter((session) => !session.current);
     if (!otherSessions.length) return;
@@ -362,6 +651,7 @@ const Settings = () => {
           notifications: settings.notifications,
           privacy: settings.privacy,
           security: settings.security,
+          profile: settings.profile,
         },
         sessions,
       };
@@ -389,7 +679,7 @@ const Settings = () => {
       return;
     }
     const confirmed = window.confirm(
-      'Are you sure you want to request account closure? This exits you from the demo session.',
+      'Are you sure you want to request account closure? This signs you out across devices.',
     );
     if (!confirmed) return;
     try {
@@ -400,6 +690,39 @@ const Settings = () => {
       toast.success('Account closure request noted. Our team will follow up.');
       navigate('/login', { replace: true });
     }
+  };
+
+  const handleProfileSync = () => {
+    if (!settings || !userProfile) return;
+    const mapping = {
+      fullName: userProfile.name || userProfile.fullName,
+      email: userProfile.email,
+      phone: userProfile.phone,
+      company: userProfile.company || userProfile.organization || userProfile.orgName,
+      jobTitle: userProfile.title || userProfile.role,
+    };
+    const nextProfile = { ...(settings.profile || {}) };
+    let mutated = false;
+    Object.entries(mapping).forEach(([key, value]) => {
+      if (!value) return;
+      if (nextProfile[key] === value) return;
+      nextProfile[key] = value;
+      mutated = true;
+    });
+    if (!nextProfile.timezone) {
+      nextProfile.timezone = detectTimezone();
+      mutated = true;
+    }
+    if (!mutated) {
+      toast('Profile details already synced');
+      return;
+    }
+    setSettings((prev) => ({
+      ...prev,
+      profile: nextProfile,
+      hasChanges: true,
+    }));
+    toast.success('Profile details synced from your account');
   };
 
   const handleSave = async () => {
@@ -414,8 +737,8 @@ const Settings = () => {
     setSaving(true);
     setError('');
     setSuccess('');
-    const { notifications, privacy, security } = settings;
-    const payload = { notifications, privacy, security };
+    const { notifications, privacy, security, profile } = settings;
+    const payload = { notifications, privacy, security, profile };
     try {
       await updateSettings(payload);
       setSettings((prev) => (prev ? { ...prev, hasChanges: false } : prev));
@@ -433,8 +756,103 @@ const Settings = () => {
     return () => clearTimeout(timeout);
   }, [success]);
 
+  const profileCompletion = useMemo(() => {
+    const source = settings?.profile;
+    if (!source) return 0;
+    const fields = ['fullName', 'company', 'location', 'phone', 'website', 'bio'];
+    const filled = fields.filter((field) => {
+      const value = source[field];
+      return typeof value === 'string' && value.trim().length > 0;
+    }).length;
+    return Math.round((filled / fields.length) * 100);
+  }, [settings?.profile]);
+
+  const displayName = settings?.profile?.fullName || userProfile?.name || 'Guest user';
+  const profileInitials = useMemo(() => {
+    const source = settings?.profile?.fullName || displayName || 'Builtattic';
+    return source
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || 'BA';
+  }, [settings?.profile?.fullName, displayName]);
+
+  const workspaceShortcuts = useMemo(
+    () => [
+      {
+        title: 'Open my dashboard',
+        description: `Jump back into your ${normalizedRole} workspace`,
+        to: dashboardPath,
+      },
+      {
+        title: 'Switch portal',
+        description: 'Choose a different dashboard or role',
+        to: '/login',
+      },
+      {
+        title: 'Contact support',
+        description: 'Escalate billing, compliance, or access issues',
+        href: 'mailto:support@builtattic.com',
+      },
+    ],
+    [dashboardPath, normalizedRole],
+  );
+
   const authError = typeof error === 'string' && error.toLowerCase().includes('sign in');
   const showAuthNotice = !isAuthenticated || authError;
+
+  const otherSessions = sessions.filter((session) => !session.current);
+
+  const handleSectionNav = useCallback((sectionId) => {
+    if (typeof document === 'undefined') return;
+    const target = document.getElementById(sectionId);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+  const pipelineStages = useMemo(
+    () => [
+      {
+        id: 'profile',
+        label: 'Profile completeness',
+        helper: `${profileCompletion}% filled`,
+        status: profileCompletion >= 80 ? 'done' : profileCompletion >= 40 ? 'progress' : 'todo',
+      },
+      {
+        id: 'security',
+        label: 'Two-step verification',
+        helper: settings?.security?.twoStep ? 'Protected' : 'Enable 2-step for more safety',
+        status: settings?.security?.twoStep ? 'done' : 'todo',
+      },
+      {
+        id: 'notifications',
+        label: 'Digest cadence',
+        helper: `Digest: ${settings?.notifications?.digestFrequency || 'set a cadence'}`,
+        status: settings?.notifications?.digestFrequency ? 'progress' : 'todo',
+      },
+      {
+        id: 'sessions',
+        label: 'Device hygiene',
+        helper: `${sessions.length} active device${sessions.length === 1 ? '' : 's'}`,
+        status: otherSessions.length ? 'progress' : 'done',
+      },
+      {
+        id: 'privacy',
+        label: 'Privacy controls',
+        helper: settings?.privacy?.searchVisibility ? 'Search visibility on' : 'Hidden from search',
+        status: settings?.privacy?.searchVisibility ? 'done' : 'progress',
+      },
+    ],
+    [
+      profileCompletion,
+      settings?.security?.twoStep,
+      settings?.notifications?.digestFrequency,
+      settings?.privacy?.searchVisibility,
+      sessions.length,
+      otherSessions.length,
+    ]
+  );
 
   if (loading) {
     return (
@@ -463,9 +881,7 @@ const Settings = () => {
     );
   }
 
-  const otherSessions = sessions.filter((session) => !session.current);
-  const displayName = userProfile?.name || userProfile?.fullName || 'Guest user';
-  const displayEmail = userProfile?.email || 'Not provided';
+  const displayEmail = settings?.profile?.email || userProfile?.email || 'Not provided';
   const sessionStatus = isAuthenticated ? 'Active session' : 'Signed out';
   const sessionBadgeClass = isAuthenticated
     ? 'inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700'
@@ -473,46 +889,245 @@ const Settings = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <main className="max-w-5xl mx-auto px-4 py-10 space-y-8">
-        <header className="flex flex-col gap-3">
-          <p className="uppercase tracking-[0.35em] text-xs text-slate-400">Settings</p>
-          <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 lg:flex-row lg:px-8">
+        <aside className="lg:w-72 lg:flex-none">
+          <div className="sticky top-6 space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Account & privacy controls</h1>
-              <p className="text-sm text-slate-600 max-w-2xl">
-                Tailor your Builtattic experience with security, notification, and personalization controls.
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Control center</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Jump between sections or finish the pipeline to keep your account healthy.
               </p>
             </div>
-            <div className="flex flex-col items-end gap-1">
+            <nav className="space-y-1">
+              {SETTINGS_SECTIONS.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => handleSectionNav(section.id)}
+                  className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+                >
+                  {section.label}
+                </button>
+              ))}
+            </nav>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">Account pipeline</p>
+              <ul className="mt-3 space-y-2">
+                {pipelineStages.map((stage) => (
+                  <li key={stage.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSectionNav(stage.id)}
+                      className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 px-3 py-2 text-left text-sm text-slate-700 transition hover:border-slate-300"
+                    >
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          stage.status === 'done'
+                            ? 'bg-emerald-500'
+                            : stage.status === 'progress'
+                            ? 'bg-amber-500'
+                            : 'bg-slate-300'
+                        }`}
+                      />
+                      <span className="flex-1">
+                        <span className="block font-semibold text-slate-900">{stage.label}</span>
+                        <span className="text-xs text-slate-500">{stage.helper}</span>
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          stage.status === 'done'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : stage.status === 'progress'
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {stage.status === 'done'
+                          ? 'Done'
+                          : stage.status === 'progress'
+                          ? 'In progress'
+                          : 'To do'}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="space-y-2">
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={saving || !settings?.hasChanges || !isAuthenticated}
-                title={!isAuthenticated ? 'Sign in to save changes' : undefined}
-                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Settings2 size={16} />
-                {saving ? 'Saving.' : 'Save changes'}
+                {saving ? 'Saving…' : 'Save changes'}
               </button>
               {!isAuthenticated && (
-                <span className="text-[11px] font-medium text-amber-600">Sign in to sync these updates</span>
+                <p className="text-center text-[11px] font-medium text-amber-600">Sign in to sync updates</p>
               )}
             </div>
           </div>
-        </header>
+        </aside>
+        <main className="flex-1 space-y-8">
+          <header className="flex flex-col gap-3">
+            <p className="uppercase tracking-[0.35em] text-xs text-slate-400">Settings</p>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-semibold tracking-tight">Account & privacy controls</h1>
+                <p className="text-sm text-slate-600 max-w-2xl">
+                  Tailor your Builtattic experience with security, notification, and personalization controls.
+                </p>
+              </div>
+            </div>
+          </header>
 
-        {(error || success) && (
-          <div className="space-y-3">
-            {error && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-            )}
-            {success && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>
-            )}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:hidden">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Navigate</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {SETTINGS_SECTIONS.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => handleSectionNav(section.id)}
+                  className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                >
+                  {section.label}
+                </button>
+              ))}
+            </div>
           </div>
-        )}
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+          {(error || success) && (
+            <div className="space-y-3">
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+              )}
+              {success && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>
+              )}
+            </div>
+          )}
+
+        <section id="profile" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="h-14 w-14 rounded-full bg-slate-900 text-white flex items-center justify-center text-lg font-semibold">
+                {profileInitials}
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">{displayName}</h2>
+                <p className="text-sm text-slate-600">{displayEmail}</p>
+                <span className={`${sessionBadgeClass} mt-2 inline-flex`}>
+                  <Shield size={14} />
+                  {sessionStatus}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 text-sm w-full max-w-sm">
+              <div className="flex items-center justify-between gap-8">
+                <span className="text-slate-500">Profile completeness</span>
+                <span className="font-semibold">{profileCompletion}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-slate-900 transition-all" style={{ width: `${profileCompletion}%` }} />
+              </div>
+              <button
+                type="button"
+                onClick={handleProfileSync}
+                className="self-end text-xs font-semibold text-slate-600 hover:text-slate-900"
+              >
+                Sync from account
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-sm font-semibold text-slate-900">
+                <User size={16} />
+                Contact details
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {PROFILE_CONTACT_FIELDS.map((field) => (
+                  <label key={field.id} className="text-xs font-medium text-slate-600 space-y-1">
+                    {field.label}
+                    <input
+                      type="text"
+                      value={settings.profile?.[field.id] || ''}
+                      onChange={(event) => updateProfileField(field.id, event.target.value)}
+                      placeholder={field.placeholder}
+                      autoComplete={field.autoComplete}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 text-sm font-semibold text-slate-900">
+                <Briefcase size={16} />
+                Workspace identity
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {PROFILE_WORK_FIELDS.map((field) => (
+                  <label key={field.id} className="text-xs font-medium text-slate-600 space-y-1">
+                    {field.label}
+                    {field.type === 'select' ? (
+                      <select
+                        value={settings.profile?.timezone || ''}
+                        onChange={(event) => updateProfileField('timezone', event.target.value)}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                      >
+                        <option value="">Select timezone</option>
+                        {TIMEZONE_OPTIONS.map((tz) => (
+                          <option key={tz} value={tz}>
+                            {tz}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={settings.profile?.[field.id] || ''}
+                        onChange={(event) => updateProfileField(field.id, event.target.value)}
+                        placeholder={field.placeholder}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            {PROFILE_PUBLIC_FIELDS.map((field) => (
+              <label key={field.id} className="text-xs font-medium text-slate-600 space-y-1">
+                {field.label}
+                {field.type === 'textarea' ? (
+                  <textarea
+                    rows={3}
+                    value={settings.profile?.[field.id] || ''}
+                    onChange={(event) => updateProfileField(field.id, event.target.value)}
+                    placeholder={field.placeholder}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={settings.profile?.[field.id] || ''}
+                    onChange={(event) => updateProfileField(field.id, event.target.value)}
+                    placeholder={field.placeholder}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section id="sessions" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Account session</h2>
@@ -585,7 +1200,9 @@ const Settings = () => {
               return (
                 <div
                   key={session.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3"
+                  className={`rounded-xl border p-4 space-y-3 ${
+                    session.current ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-slate-50/70'
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -594,7 +1211,7 @@ const Settings = () => {
                       </span>
                       <div>
                         <p className="text-sm font-semibold text-slate-900">{session.device}</p>
-                        <p className="text-xs text-slate-500">{session.browser} · {session.ip}</p>
+                        <p className="text-xs text-slate-500">{session.browser} · {session.ip || 'Private'}</p>
                       </div>
                     </div>
                     {session.current && (
@@ -607,7 +1224,18 @@ const Settings = () => {
                     <span>Last active: {session.lastActive}</span>
                     <span>{session.location}</span>
                   </div>
-                  <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!session.current && (
+                      <button
+                        type="button"
+                        onClick={() => handleSessionTrustToggle(session.id)}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          session.trusted ? 'border-emerald-200 text-emerald-700' : 'border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        {session.trusted ? 'Trusted device' : 'Trust this device'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleSessionRevoke(session.id)}
@@ -623,7 +1251,7 @@ const Settings = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+        <section id="workspace" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
           <div className="flex flex-col gap-2">
             <h2 className="text-lg font-semibold text-slate-900">Contributor workspaces</h2>
             <p className="text-sm text-slate-600">
@@ -656,7 +1284,7 @@ const Settings = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+        <section id="security" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Sign-in & security</h2>
@@ -728,9 +1356,10 @@ const Settings = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
-          <div>
+        <section id="notifications" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+          <div className="flex flex-col gap-2">
             <h2 className="text-lg font-semibold text-slate-900">Notifications</h2>
+            <p className="text-sm text-slate-600">Decide what you hear about and set your cadence.</p>
           </div>
           <div className="space-y-3">
             {notificationChannels.map((channel) => {
@@ -738,13 +1367,16 @@ const Settings = () => {
               return (
                 <label
                   key={channel.id}
-                  className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 px-4 py-3"
+                  className="flex flex-col gap-3 rounded-xl border border-slate-200 px-4 py-3 md:flex-row md:items-center md:justify-between"
                 >
-                  <span className="flex items-center gap-3 text-sm text-slate-700">
+                  <span className="flex items-start gap-3 text-sm text-slate-700">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white">
                       <Icon size={18} />
                     </span>
-                    {channel.label}
+                    <span>
+                      <span className="block font-semibold text-slate-900">{channel.label}</span>
+                      <span className="text-xs text-slate-500">{channel.description}</span>
+                    </span>
                   </span>
                   <input
                     type="checkbox"
@@ -756,9 +1388,79 @@ const Settings = () => {
               );
             })}
           </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-900">Digest frequency</p>
+              <p className="text-xs text-slate-500 mb-3">Bundle non-critical updates into a single email.</p>
+              <select
+                value={settings.notifications?.digestFrequency || 'weekly'}
+                onChange={(event) => updateNotificationPreference('digestFrequency', event.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+              >
+                {digestOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500 mt-2">
+                {digestOptions.find((option) => option.value === settings.notifications?.digestFrequency)?.helper}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-900">Preferred channel</p>
+              <p className="text-xs text-slate-500 mb-3">We prioritise this channel for urgent sends.</p>
+              <div className="space-y-2">
+                {preferredChannelOptions.map((option) => (
+                  <label key={option.value} className="flex items-center gap-3 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      name="preferredChannel"
+                      value={option.value}
+                      checked={(settings.notifications?.preferredChannel || 'email') === option.value}
+                      onChange={() => updateNotificationPreference('preferredChannel', option.value)}
+                    />
+                    <span>
+                      <span className="block font-semibold text-slate-900">{option.label}</span>
+                      <span className="text-xs text-slate-500">{option.helper}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+        <section id="shortcuts" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Workspace shortcuts</h2>
+            <p className="text-sm text-slate-600">Quickly jump into the right dashboard or get help.</p>
+          </div>
+          <div className="space-y-3">
+            {workspaceShortcuts.map((shortcut) => (
+              <div
+                key={shortcut.title}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 flex items-center justify-between gap-4"
+              >
+                <div>
+                  <p className="font-semibold text-slate-900">{shortcut.title}</p>
+                  <p className="text-xs text-slate-500">{shortcut.description}</p>
+                </div>
+                {shortcut.href ? (
+                  <a href={shortcut.href} className="text-xs font-semibold text-slate-900 underline-offset-2 hover:underline">
+                    Open
+                  </a>
+                ) : (
+                  <Link to={shortcut.to} className="text-xs font-semibold text-slate-900 underline-offset-2 hover:underline">
+                    Open
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="privacy" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Data & privacy</h2>
           </div>
@@ -803,6 +1505,7 @@ const Settings = () => {
         </section>
       </main>
     </div>
+  </div>
   );
 };
 

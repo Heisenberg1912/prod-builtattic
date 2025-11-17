@@ -1,7 +1,9 @@
 {
   "name": "builtattic-dashboard-monorepo",
   "private": true,
-  "engines": { "node": "20.x" },
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "postinstall": "node scripts/install-subprojects.js",
     "client": "npm --prefix client run dev",
@@ -10,7 +12,8 @@
     "build": "npm --prefix client run build",
     "seed:marketplace": "npm --prefix server run seed:marketplace",
     "seed:users": "npm --prefix server run seed:users",
-    "seed:superadmin": "npm --prefix server run seed:superadmin"
+    "seed:superadmin": "npm --prefix server run seed:superadmin",
+    "cleanup:demo-data": "npm --prefix server run cleanup:demo"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import {
   fetchAssociatePortalProfile,
   upsertAssociatePortalProfile,
   loadAssociateProfileDraft,
+  subscribeToAssociateProfileDraft,
 } from "../../services/portal.js";
+import { uploadStudioAsset } from "../../services/uploads.js";
 import {
   EMPTY_PROFILE_FORM,
   mapProfileToForm,
@@ -12,6 +14,7 @@ import {
   deriveProfileStats,
   formatCurrency,
 } from "../../utils/associateProfile.js";
+import { ASSOCIATE_PORTAL_FALLBACK } from "../../data/portalFallbacks.js";
 
 const Badge = ({ tone = "slate", children }) => {
   const palette = {
@@ -109,21 +112,54 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
   const [offlineMode, setOfflineMode] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [lastSynced, setLastSynced] = useState(null);
+  const [mediaUploadIndex, setMediaUploadIndex] = useState(null);
 
   const hasChanges = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm]);
 
+  const onProfileUpdateRef = useRef(onProfileUpdate);
   useEffect(() => {
+    onProfileUpdateRef.current = onProfileUpdate;
+  }, [onProfileUpdate]);
+
+  const applyResponse = useCallback(
+    (response, origin = "load") => {
+      const mapped = mapProfileToForm(response.profile || {});
+      setForm(mapped);
+      setInitialForm(mapped);
+      setOfflineMode(response.source !== "remote");
+      setAuthRequired(Boolean(response.authRequired));
+      setLastSynced(getLastUpdated(response.profile || {}));
+      setError(response.authRequired ? response.error?.message || "Sign in to sync your profile." : null);
+      onProfileUpdateRef.current?.(response.profile || {}, { ...response, origin });
+    },
+    []
+  );
+
+  useEffect(() => {
+    const hasToken = (() => {
+      if (typeof window === "undefined") return false;
+      const raw = localStorage.getItem("auth_token");
+      return Boolean(raw && raw !== "null" && raw !== "undefined");
+    })();
+
     const load = async () => {
       setLoading(true);
+      if (!hasToken) {
+        setAuthRequired(true);
+        applyResponse({ profile: ASSOCIATE_PORTAL_FALLBACK, source: "fallback", authRequired: true }, "load");
+        setError("Sign in to manage your Skill Studio profile.");
+        setLoading(false);
+        return;
+      }
       try {
         const response = await fetchAssociatePortalProfile({ preferDraft: true });
         if (response.ok || response.profile) {
-          applyResponse(response);
+          applyResponse(response, "load");
         } else if (response.authRequired) {
           setAuthRequired(true);
           const draft = response.profile || loadAssociateProfileDraft();
           if (draft) {
-            applyResponse({ profile: draft, source: "draft" });
+            applyResponse({ profile: draft, source: "draft", authRequired: true }, "load");
           } else {
             setError(response.error?.message || "Sign in to manage your Skill Studio profile.");
           }
@@ -132,7 +168,7 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
         console.error("associate_profile_load_error", err);
         const draft = loadAssociateProfileDraft();
         if (draft) {
-          applyResponse({ profile: draft, source: "draft" });
+          applyResponse({ profile: draft, source: "draft" }, "load");
           toast("Loaded local draft", { icon: "💾" });
         } else {
           setError(err?.message || "Unable to load your Skill Studio profile.");
@@ -142,35 +178,109 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
       }
     };
     load();
-  }, []);
+  }, [applyResponse]);
 
-  const applyResponse = (response) => {
-    const mapped = mapProfileToForm(response.profile || {});
-    setForm(mapped);
-    setInitialForm(mapped);
-    setOfflineMode(response.source !== "remote");
-    setAuthRequired(Boolean(response.authRequired));
-    setLastSynced(getLastUpdated(response.profile || {}));
-    setError(response.authRequired ? response.error?.message || "Sign in to sync your profile." : null);
-    onProfileUpdate?.(response.profile || {});
-  };
+  useEffect(() => {
+    const unsubscribe = subscribeToAssociateProfileDraft((event) => {
+      if (!event || event.source === "local" || !event.profile) return;
+      const incomingUpdatedAt = getLastUpdated(event.profile);
+      if (
+        lastSynced &&
+        incomingUpdatedAt &&
+        new Date(incomingUpdatedAt).getTime() <= new Date(lastSynced).getTime()
+      ) {
+        return;
+      }
+      applyResponse(
+        {
+          profile: event.profile,
+          source: event.source === "remote" ? "remote" : "draft",
+        },
+        event.source || "broadcast"
+      );
+      if (event.source === "broadcast" || event.source === "storage") {
+        toast.success("Pulled the latest changes");
+      }
+    });
+    return unsubscribe;
+  }, [applyResponse, lastSynced]);
 
   const handleInput = (field) => (event) => {
     const value = event.target.value;
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleMediaChange = (index, field, value) => {
+    setForm((prev) => {
+      const nextItems = Array.isArray(prev.portfolioMedia) ? [...prev.portfolioMedia] : [];
+      nextItems[index] = {
+        ...(nextItems[index] || { title: "", description: "", mediaUrl: "", kind: "" }),
+        [field]: value,
+      };
+      return { ...prev, portfolioMedia: nextItems };
+    });
+  };
+
+  const handleMediaAdd = () => {
+    setForm((prev) => ({
+      ...prev,
+      portfolioMedia: [...(prev.portfolioMedia || []), { title: "", description: "", mediaUrl: "", kind: "" }],
+    }));
+  };
+
+  const handleMediaRemove = (index) => {
+    setForm((prev) => {
+      const nextItems = Array.isArray(prev.portfolioMedia) ? [...prev.portfolioMedia] : [];
+      nextItems.splice(index, 1);
+      return { ...prev, portfolioMedia: nextItems };
+    });
+  };
+
+  const detectMediaKind = (file) => {
+    if (!file?.type) return undefined;
+    if (file.type.startsWith("image/")) return "image";
+    if (file.type.startsWith("video/")) return "video";
+    if (file.type === "application/pdf") return "document";
+    if (file.type.includes("presentation") || file.type.includes("powerpoint")) return "document";
+    if (file.type.includes("msword") || file.type.includes("wordprocessingml")) return "document";
+    return undefined;
+  };
+
+  const handleMediaUpload = async (index, file) => {
+    if (!file) return;
+    try {
+      setMediaUploadIndex(index);
+      const { url } = await uploadStudioAsset(file, { kind: "associate_portfolio", secure: true });
+      if (!url) throw new Error("Upload failed. Try another file.");
+      handleMediaChange(index, "mediaUrl", url);
+      const inferredKind = detectMediaKind(file);
+      if (inferredKind) {
+        handleMediaChange(index, "kind", inferredKind);
+      }
+      toast.success("Media uploaded");
+    } catch (error) {
+      console.error("portfolio_media_upload_error", error);
+      toast.error(error?.message || "Unable to upload media");
+    } finally {
+      setMediaUploadIndex(null);
+    }
+  };
+
   const handleSave = async () => {
+    if (authRequired) {
+      toast.error("Sign in to sync your Skill Studio profile");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const payload = formToPayload(form);
       const response = await upsertAssociatePortalProfile(payload);
       if (response.ok) {
-        applyResponse({ profile: response.profile, source: response.source, authRequired: response.authRequired });
+        applyResponse({ profile: response.profile, source: response.source, authRequired: response.authRequired }, "save");
         toast.success(response.source === "remote" ? "Profile saved" : "Draft saved locally");
       } else if (response.profile) {
-        applyResponse({ profile: response.profile, source: response.source, authRequired: response.authRequired });
+        applyResponse({ profile: response.profile, source: response.source, authRequired: response.authRequired }, "save");
         toast("Draft saved locally", { icon: "💾" });
       }
     } catch (err) {
@@ -185,8 +295,12 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
     setForm(initialForm);
   };
 
+  const containerClassName =
+    showPreview ? "grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]" : "";
+  const portfolioMedia = Array.isArray(form.portfolioMedia) ? form.portfolioMedia : [];
+
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+    <div className={containerClassName}>
       <div className="space-y-8">
         <div className="space-y-3">
           {header}
@@ -247,6 +361,38 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
               </div>
             </Section>
 
+            <Section title="Branding & contact" description="Control your hero media, avatar, and how clients should reach out.">
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    Hero / cover image URL
+                    <Input
+                      value={form.heroImage}
+                      onChange={handleInput("heroImage")}
+                      placeholder="https://images.builtattic.com/cover.jpg"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">
+                    Profile image URL
+                    <Input
+                      value={form.profileImage}
+                      onChange={handleInput("profileImage")}
+                      placeholder="https://images.builtattic.com/avatar.png"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Public contact email</span>
+                  <Input
+                    type="email"
+                    value={form.contactEmail}
+                    onChange={handleInput("contactEmail")}
+                    placeholder="you@studio.com"
+                  />
+                </div>
+              </div>
+            </Section>
+
             <Section title="Availability & rates" description="Let the marketplace know how and when you work.">
               <div className="space-y-4">
                 <div className="flex flex-col gap-2">
@@ -281,6 +427,18 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
                   <TextArea value={form.softwares} onChange={handleInput("softwares")} rows={2} placeholder="Revit, AutoCAD, Rhino" />
                 </div>
                 <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Service badges</span>
+                  <TextArea value={form.serviceBadges} onChange={handleInput("serviceBadges")} rows={2} placeholder="Consultant, Remote, $150/hr" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Deliverables / offerings</span>
+                  <TextArea value={form.deliverables} onChange={handleInput("deliverables")} rows={2} placeholder="Concept decks, Construction docs, Costing support" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Expertise tags</span>
+                  <TextArea value={form.expertise} onChange={handleInput("expertise")} rows={2} placeholder="Modern hospitality, BIM coordination, Interior styling" />
+                </div>
+                <div className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-slate-700">Specialisations</span>
                   <TextArea value={form.specialisations} onChange={handleInput("specialisations")} rows={2} placeholder="Hospitality interiors, FF&E strategy, Site coordination" />
                 </div>
@@ -303,6 +461,75 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
                 rows={4}
                 placeholder="The Gilded Acorn | Hospitality refresh | 2023 | FF&E lead"
               />
+            </Section>
+
+            <Section title="Portfolio media" description="Add image or video URLs. These power the carousel on your public card.">
+              <div className="space-y-4">
+                {portfolioMedia.length === 0 ? (
+                  <p className="text-sm text-slate-500">No media yet. Add screenshots, renders, or hosted videos.</p>
+                ) : (
+                  portfolioMedia.map((item, index) => (
+                    <div key={`media-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-slate-900">Media #{index + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() => handleMediaRemove(index)}
+                          className="text-xs font-semibold text-rose-600 hover:text-rose-500"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <label className="text-xs font-medium text-slate-600 space-y-1 block">
+                        Title / context
+                        <Input
+                          value={item.title}
+                          onChange={(event) => handleMediaChange(index, "title", event.target.value)}
+                          placeholder="Hospitality concept – The Gilded Acorn"
+                        />
+                      </label>
+                      <label className="text-xs font-medium text-slate-600 space-y-1 block">
+                        Description
+                        <TextArea
+                          rows={2}
+                          value={item.description}
+                          onChange={(event) => handleMediaChange(index, "description", event.target.value)}
+                          placeholder="Lead FF&E design, procurement, and installation."
+                        />
+                      </label>
+                      <label className="text-xs font-medium text-slate-600 space-y-1 block">
+                        Image / video / document URL
+                        <Input
+                          value={item.mediaUrl}
+                          onChange={(event) => handleMediaChange(index, "mediaUrl", event.target.value)}
+                          placeholder="https://images.builtattic.com/portfolio.jpg"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/*,video/*,.pdf,.ppt,.pptx,.doc,.docx"
+                              className="hidden"
+                              onChange={(event) => handleMediaUpload(index, event.target.files?.[0])}
+                            />
+                            Upload file
+                          </label>
+                          {mediaUploadIndex === index ? (
+                            <span className="text-xs text-slate-500">Uploading…</span>
+                          ) : null}
+                        </div>
+                      </label>
+                    </div>
+                  ))
+                )}
+                <button
+                  type="button"
+                  onClick={handleMediaAdd}
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+                >
+                  Add media block
+                </button>
+              </div>
             </Section>
 
             <div className="flex flex-wrap items-center gap-3">

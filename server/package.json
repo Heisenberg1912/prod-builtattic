@@ -11,7 +11,9 @@
     "seed:users": "node src/seed/seedUsers.js",
     "seed:marketplace": "node src/seed/seedMarketplace.js",
     "seed:json": "node src/seed/seedFromJson.js",
-    "test": "echo \"(tests pending)\" && exit 0"
+    "test": "echo \"(tests pending)\" && exit 0",
+    "reset:data": "node src/scripts/resetData.js",
+    "cleanup:demo": "node src/scripts/cleanupDemoData.js"
   },
   "dependencies": {
     "@google-cloud/secret-manager": "^5.3.0",
@@ -24,13 +26,15 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",
+    "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "express-rate-limit": "^7.1.5",
+    "google-auth-library": "^9.0.0",
     "helmet": "^7.1.0",
     "ioredis": "^5.4.1",
-    "google-auth-library": "^9.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.20.0",
+    "mongodb-memory-server": "^10.3.0",
     "mongoose": "^8.18.2",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",

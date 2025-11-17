@@ -5,8 +5,10 @@ import { toast } from "react-hot-toast";
 import { AiFillStar } from "react-icons/ai";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
+import RatingModal from "../components/RatingModal.jsx";
 import { createEmptyFilterState, FILTER_SETS } from "../constants/designFilters.js";
 import { fetchMarketplaceAssociates } from "../services/marketplace.js";
+import { submitRating, fetchRatingSnapshot } from "../services/ratings.js";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import {
@@ -67,6 +69,8 @@ const DEFAULT_RANGES = {
 
 const VISIBLE_OPTION_LIMIT = 6;
 const QUICK_FILTER_LIMIT = 6;
+const MAX_SEARCH_SUGGESTIONS = 6;
+const SIGNAL_FILTER_STORAGE_KEY = 'associates_signal_filters';
 
 const buildAssociateHaystack = (associate) =>
   [
@@ -204,6 +208,9 @@ const Associates = () => {
   const [collapsed, setCollapsed] = useState({});
   const [filterSearchTerms, setFilterSearchTerms] = useState({});
   const [showAllOptions, setShowAllOptions] = useState({});
+  const [onlyWeb3Verified, setOnlyWeb3Verified] = useState(false);
+  const [onlyOpenForBriefs, setOnlyOpenForBriefs] = useState(false);
+  const [onlyHasPortfolio, setOnlyHasPortfolio] = useState(false);
 
   const [rateRange, setRateRange] = useState(DEFAULT_RANGES.rate);
   const [rateSel, setRateSel] = useState(DEFAULT_RANGES.rate);
@@ -213,6 +220,34 @@ const Associates = () => {
   const [projectsSel, setProjectsSel] = useState(DEFAULT_RANGES.projects);
   const [ratingRange, setRatingRange] = useState(DEFAULT_RANGES.rating);
   const [ratingSel, setRatingSel] = useState(DEFAULT_RANGES.rating);
+
+  const [ratingDialog, setRatingDialog] = useState({ open: false, target: null, targetType: null });
+  const [ratingScore, setRatingScore] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [ratingSnapshot, setRatingSnapshot] = useState(null);
+  const [ratingLoading, setRatingLoading] = useState(false);
+  const [ratingSaving, setRatingSaving] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SIGNAL_FILTER_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed !== 'object' || !parsed) return;
+      if (typeof parsed.web3 === 'boolean') setOnlyWeb3Verified(parsed.web3);
+      if (typeof parsed.open === 'boolean') setOnlyOpenForBriefs(parsed.open);
+      if (typeof parsed.portfolio === 'boolean') setOnlyHasPortfolio(parsed.portfolio);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        SIGNAL_FILTER_STORAGE_KEY,
+        JSON.stringify({ web3: onlyWeb3Verified, open: onlyOpenForBriefs, portfolio: onlyHasPortfolio })
+      );
+    } catch {}
+  }, [onlyHasPortfolio, onlyOpenForBriefs, onlyWeb3Verified]);
 
   useEffect(() => {
     let cancelled = false;
@@ -322,19 +357,30 @@ const Associates = () => {
     setCollapsed((prev) => ({ ...prev, [section]: !prev?.[section] }));
   };
 
+  const openExternalResource = (url) => {
+    if (!url || typeof window === "undefined") return;
+    const newWindow = window.open(url, "_blank", "noopener,noreferrer");
+    if (newWindow) newWindow.opener = null;
+  };
+
+  const handleExternalLinkClick = (event, url) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openExternalResource(url);
+  };
+
   const renderProofLink = (associate) => {
     const proof = associate?.web3Proof;
     if (!proof?.explorerUrl) return null;
     return (
-      <a
-        href={proof.explorerUrl}
-        target="_blank"
-        rel="noreferrer"
+      <button
+        type="button"
+        onClick={(event) => handleExternalLinkClick(event, proof.explorerUrl)}
         className="inline-flex items-center gap-2 text-xs font-medium text-emerald-600 hover:text-emerald-500"
       >
         <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        On-chain proof · {proof.anchor}
-      </a>
+        On-chain proof - {proof.anchor}
+      </button>
     );
   };
 
@@ -407,6 +453,68 @@ const Associates = () => {
     }
   };
 
+  const closeRatingDialog = () => {
+    setRatingDialog({ open: false, target: null, targetType: null });
+    setRatingSnapshot(null);
+    setRatingComment('');
+    setRatingScore(5);
+    setRatingLoading(false);
+  };
+
+  const loadRatingSnapshot = async (targetType, targetId) => {
+    setRatingLoading(true);
+    try {
+      const response = await fetchRatingSnapshot(targetType, targetId);
+      setRatingSnapshot(response.snapshot);
+      if (response.userRating?.score != null) {
+        setRatingScore(Number(response.userRating.score) || 5);
+      }
+      setRatingComment(response.userRating?.comment || '');
+    } catch (err) {
+      toast.error(err?.message || 'Unable to load rating details');
+    } finally {
+      setRatingLoading(false);
+    }
+  };
+
+  const handleRateAssociate = (associate) => {
+    if (!associate?._id) {
+      toast.error('Associate reference missing');
+      return;
+    }
+    setRatingScore(5);
+    setRatingComment('');
+    setRatingSnapshot(null);
+    setRatingDialog({ open: true, target: associate, targetType: 'associate' });
+    loadRatingSnapshot('associate', associate._id);
+  };
+
+  const handleSubmitRating = async () => {
+    if (!ratingDialog.target?._id) return;
+    try {
+      setRatingSaving(true);
+      const response = await submitRating({
+        targetType: ratingDialog.targetType,
+        targetId: ratingDialog.target._id,
+        score: ratingScore,
+        comment: ratingComment?.trim() ? ratingComment.trim() : undefined,
+      });
+      setAssociates((prev) =>
+        prev.map((item) =>
+          item._id === ratingDialog.target._id
+            ? { ...item, rating: response.snapshot?.average, ratingsCount: response.snapshot?.count }
+            : item
+        )
+      );
+      toast.success('Thanks for the feedback!');
+      closeRatingDialog();
+    } catch (err) {
+      toast.error(err?.message || 'Unable to save rating');
+    } finally {
+      setRatingSaving(false);
+    }
+  };
+
   const handleFilterToggle = useCallback(
     (section, option) => {
       setFilters((prev) => {
@@ -475,6 +583,10 @@ const Associates = () => {
     resetRatingFilter();
     setFilterSearchTerms({});
     setShowAllOptions({});
+    setOnlyWeb3Verified(false);
+    setOnlyOpenForBriefs(false);
+    setOnlyHasPortfolio(false);
+    setQuery('');
   }, [resetExperienceFilter, resetProjectsFilter, resetRateFilter, resetRatingFilter, setFilters]);
 
   const filteredAssociates = useMemo(() => {
@@ -497,14 +609,25 @@ const Associates = () => {
       const experience = extractExperience(associate);
       const projects = extractProjects(associate);
       const rating = extractRating(associate);
+      const hasWeb3Proof = Boolean(associate.web3Proof?.explorerUrl);
+      const hasPortfolioLink = Array.isArray(associate.portfolioLinks)
+        ? associate.portfolioLinks.some(Boolean)
+        : Boolean(associate.keyProjects?.length);
+      const isOpenForBriefs = typeof associate.availability === 'string'
+        ? associate.availability.toLowerCase().includes('open')
+        : Boolean(associate.booking?.slots?.length);
 
       const matchesRanges =
         withinRange(rate, rateSel) &&
         withinRange(experience, experienceSel) &&
         withinRange(projects, projectsSel) &&
         withinRange(rating, ratingSel);
+      const matchesSignals =
+        (!onlyWeb3Verified || hasWeb3Proof) &&
+        (!onlyOpenForBriefs || isOpenForBriefs) &&
+        (!onlyHasPortfolio || hasPortfolioLink);
 
-      if (matchesRanges) {
+      if (matchesRanges && matchesSignals) {
         baseIndexes.push(index);
       }
     });
@@ -538,7 +661,70 @@ const Associates = () => {
     experienceSel,
     projectsSel,
     ratingSel,
+    onlyHasPortfolio,
+    onlyOpenForBriefs,
+    onlyWeb3Verified,
   ]);
+
+  const searchSuggestions = useMemo(() => {
+    if (!associates.length) return [];
+    const counts = new Map();
+    associates.forEach((associate) => {
+      const tokens = [
+        associate.focus,
+        associate.location,
+        ...(associate.specialisations || []),
+        ...(associate.skills || []),
+        ...(associate.languages || []),
+      ];
+      tokens.forEach((token) => {
+        const value = (token || '').toString().trim();
+        if (!value) return;
+        if (query && value.toLowerCase() === query.toLowerCase()) return;
+        counts.set(value, (counts.get(value) || 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_SEARCH_SUGGESTIONS)
+      .map(([token, count]) => ({ token, count }));
+  }, [associates, query]);
+
+  const visibleAssociateCount = filteredAssociates.length;
+  const resultSummaryLabel = useMemo(() => {
+    if (!associates.length) {
+      return 'No associates published yet.';
+    }
+    if (!visibleAssociateCount) {
+      return 'No associates match your filters yet.';
+    }
+    return 'Showing ' + visibleAssociateCount + ' of ' + associates.length + ' associates';
+  }, [associates.length, visibleAssociateCount]);
+
+  const signalFilters = [
+    {
+      id: 'web3',
+      label: 'Web3 verified',
+      description: 'On-chain proof',
+      active: onlyWeb3Verified,
+      onToggle: () => setOnlyWeb3Verified((prev) => !prev),
+    },
+    {
+      id: 'briefs',
+      label: 'Open for briefs',
+      description: 'Actively taking new work',
+      active: onlyOpenForBriefs,
+      onToggle: () => setOnlyOpenForBriefs((prev) => !prev),
+    },
+    {
+      id: 'portfolio',
+      label: 'Portfolio link',
+      description: 'Has live case studies',
+      active: onlyHasPortfolio,
+      onToggle: () => setOnlyHasPortfolio((prev) => !prev),
+    },
+  ];
+
 
   const activeFilterChips = useMemo(() => {
     const chips = [];
@@ -609,6 +795,16 @@ const Associates = () => {
         });
       });
     });
+    if (onlyWeb3Verified) {
+      chips.push({ key: 'signal-web3', label: 'Signal: On-chain proof', onRemove: () => setOnlyWeb3Verified(false) });
+    }
+    if (onlyOpenForBriefs) {
+      chips.push({ key: 'signal-open', label: 'Signal: Open for briefs', onRemove: () => setOnlyOpenForBriefs(false) });
+    }
+    if (onlyHasPortfolio) {
+      chips.push({ key: 'signal-portfolio', label: 'Signal: Portfolio link', onRemove: () => setOnlyHasPortfolio(false) });
+    }
+
 
     return chips;
   }, [
@@ -626,6 +822,9 @@ const Associates = () => {
     resetProjectsFilter,
     resetRateFilter,
     resetRatingFilter,
+    onlyHasPortfolio,
+    onlyOpenForBriefs,
+    onlyWeb3Verified,
   ]);
 
   const hasActiveFilters = activeFilterChips.length > 0;
@@ -1148,24 +1347,81 @@ const Associates = () => {
               </div>
             )}
 
-            <section className={`${listingContainerClass} flex flex-col md:flex-row gap-3 md:items-center`}>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search associates, tools, or locations..."
-                className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
-              />
-              <select
-                value={selectedSpecialisation}
-                onChange={(event) => setSelectedSpecialisation(event.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
-              >
-                {specialisations.map((specialisation) => (
-                  <option key={specialisation} value={specialisation}>
-                    {specialisation}
-                  </option>
+            <section className={`${listingContainerClass} space-y-3`}>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="relative flex-1">
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search associates, tools, or locations..."
+                    className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  />
+                  {query ? (
+                    <button
+                      type="button"
+                      onClick={() => setQuery('')}
+                      className="absolute inset-y-0 right-2 inline-flex items-center text-xs font-medium text-slate-500 hover:text-slate-800"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+                <select
+                  value={selectedSpecialisation}
+                  onChange={(event) => setSelectedSpecialisation(event.target.value)}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+                >
+                  {specialisations.map((specialisation) => (
+                    <option key={specialisation} value={specialisation}>
+                      {specialisation}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                <span className="font-semibold text-slate-900">{resultSummaryLabel}</span>
+                {hasActiveFilters ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                    {activeFilterChips.length} filters applied
+                  </span>
+                ) : null}
+              </div>
+              {searchSuggestions.length ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span className="uppercase tracking-[0.2em] text-slate-400">Try</span>
+                  {searchSuggestions.map(({ token, count }) => (
+                    <button
+                      key={token}
+                      type="button"
+                      onClick={() => setQuery(token)}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      <span>{token}</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{count}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                {signalFilters.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    aria-pressed={filter.active}
+                    onClick={filter.onToggle}
+                    className={`inline-flex flex-col rounded-lg border px-3 py-2 text-left text-xs font-semibold transition ${
+                      filter.active
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <span>{filter.label}</span>
+                    <span className={`text-[11px] font-normal ${filter.active ? 'text-slate-200' : 'text-slate-500'}`}>
+                      {filter.description}
+                    </span>
+                  </button>
                 ))}
-              </select>
+              </div>
             </section>
 
             {!loading && web3Meta && (
@@ -1205,6 +1461,7 @@ const Associates = () => {
                   const formattedRate = formatMoney(hourlyRate, associate.rates?.currency || "USD");
                   const dailyRate = Number(associate.rates?.daily);
                   const ratingValue = extractRating(associate);
+                  const ratingCount = Number(associate.ratingsCount) || 0;
                   const avatarImage = getAssociateAvatar(associate) || getAssociateFallback(associate);
                   const specializationChips = (associate.specialisations || []).slice(0, 3);
                   const softwareChips = (associate.softwares || []).slice(0, 3);
@@ -1221,6 +1478,11 @@ const Associates = () => {
                   const availabilityLabel = availabilityWindow
                     ? formatAvailabilityWindow(availabilityWindow)
                     : null;
+                  const hasWeb3Proof = Boolean(associate.web3Proof?.explorerUrl);
+                  const isOpenForBriefs = typeof associate.availability === 'string'
+                    ? associate.availability.toLowerCase().includes('open')
+                    : Boolean(associate.booking?.slots?.length);
+                  const hasPortfolioLink = Boolean(primaryPortfolio);
 
                   return (
                     <motion.article
@@ -1276,14 +1538,14 @@ const Associates = () => {
                                   <p className="text-[11px] text-slate-400">Updated {updatedLabel}</p>
                                 )}
                               </div>
-                              {Number.isFinite(ratingValue) && (
+                              {(Number.isFinite(ratingValue) || ratingCount > 0) && (
                                 <div className="flex flex-col items-end gap-1 text-amber-500">
                                   <div className="flex items-center gap-1">
                                     {Array.from({ length: 5 }).map((_, index) => (
                                       <AiFillStar
                                         key={index}
                                         className={`h-4 w-4 ${
-                                          index < Math.round(ratingValue ?? 0)
+                                          Number.isFinite(ratingValue) && index < Math.round(ratingValue ?? 0)
                                             ? "text-amber-500"
                                             : "text-slate-300"
                                         }`}
@@ -1291,7 +1553,10 @@ const Associates = () => {
                                     ))}
                                   </div>
                                   <span className="text-xs font-medium text-slate-500">
-                                    {ratingValue.toFixed(1)}
+                                    {Number.isFinite(ratingValue) ? ratingValue.toFixed(1) : '�'}
+                                  </span>
+                                  <span className="text-[11px] text-slate-400">
+                                    {ratingCount > 0 ? `${ratingCount} review${ratingCount === 1 ? '' : 's'}` : 'New'}
                                   </span>
                                 </div>
                               )}
@@ -1300,6 +1565,23 @@ const Associates = () => {
                             <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
                               {associate.summary || "Specialist ready to deploy on remote and hybrid engagements."}
                             </p>
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                              {formattedRate ? (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5">{formattedRate}/hr</span>
+                              ) : null}
+                              {dailyRate ? (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">Daily {formatMoney(dailyRate, associate.rates?.currency || 'USD')}</span>
+                              ) : null}
+                              {hasWeb3Proof ? (
+                                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">On-chain proof</span>
+                              ) : null}
+                              {isOpenForBriefs ? (
+                                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">Open for briefs</span>
+                              ) : null}
+                              {availabilityLabel ? (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">Next window: {availabilityLabel}</span>
+                              ) : null}
+                            </div>
 
                             <div className="grid grid-cols-2 gap-4 text-xs text-slate-600">
                               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -1377,52 +1659,65 @@ const Associates = () => {
                               </div>
                             ) : null}
 
-                            <div className="mt-auto flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleAddAssociateToCart(associate);
-                                }}
-                                className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
-                              >
-                                Add to cart
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleBookCall(associate);
-                                }}
-                                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300"
-                              >
-                                Book discovery call
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleToggleWishlist(associate);
-                                }}
-                                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300"
-                              >
-                                {wishlistActive ? "Remove from wishlist" : "Save to wishlist"}
-                              </button>
-                              {primaryPortfolio ? (
-                                <a
-                                  href={primaryPortfolio}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(event) => event.stopPropagation()}
-                                  className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300"
+                            <div className="mt-auto space-y-2">
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleAddAssociateToCart(associate);
+                                  }}
+                                  className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                                 >
-                                  View portfolio
-                                </a>
-                              ) : null}
-                              {renderProofLink(associate)}
+                                  Add to cart
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleBookCall(associate);
+                                  }}
+                                  className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+                                >
+                                  Book discovery call
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-600">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleToggleWishlist(associate);
+                                  }}
+                                  className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:border-slate-300"
+                                >
+                                  {wishlistActive ? "Remove from wishlist" : "Save to wishlist"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleRateAssociate(associate);
+                                  }}
+                                  className="rounded-full border border-amber-200 px-3 py-1.5 text-amber-700 transition hover:border-amber-300"
+                                >
+                                  Rate associate
+                                </button>
+                                {primaryPortfolio ? (
+                                  <button
+                                    type="button"
+                                    onClick={(event) => handleExternalLinkClick(event, primaryPortfolio)}
+                                    className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:border-slate-300"
+                                  >
+                                    View portfolio
+                                  </button>
+                                ) : null}
+                                {renderProofLink(associate)}
+                              </div>
                             </div>
                           </div>
                         </Link>
@@ -1442,11 +1737,25 @@ const Associates = () => {
       </main>
 
       <Footer />
+      <RatingModal
+        open={ratingDialog.open}
+        targetLabel={ratingDialog.target?.title || ratingDialog.target?.name || 'Marketplace profile'}
+        score={ratingScore}
+        comment={ratingComment}
+        onScoreChange={setRatingScore}
+        onCommentChange={setRatingComment}
+        onClose={closeRatingDialog}
+        onSubmit={handleSubmitRating}
+        saving={ratingSaving || ratingLoading}
+        snapshot={ratingSnapshot}
+      />
     </div>
   );
 };
 
 export default Associates;
+
+
 
 
 

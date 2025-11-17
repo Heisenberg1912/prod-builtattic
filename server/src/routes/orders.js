@@ -7,6 +7,7 @@ import Product from '../models/Product.js';
 import Cart from '../models/Cart.js';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
+import { sendAdminNotificationEmail } from '../services/email/emailService.js';
 
 const router = Router();
 
@@ -159,6 +160,43 @@ async function removeItemsFromCart(userId, items, options = {}) {
   await cart.save();
 }
 
+
+async function notifyAdminOfOrder(orderDoc, actor) {
+  const actorLabel = actor?.email || actor?.contactEmail || ('user:' + String(actor?._id || 'unknown'));
+  const amountValue = orderDoc.amounts?.grand ?? orderDoc.amounts?.subtotal ?? 0;
+  const amount = Number.isFinite(amountValue) ? Number(amountValue).toFixed(2) : String(amountValue || '0');
+  const currency = (orderDoc.items && orderDoc.items[0]?.currency) || 'USD';
+  const summaryRows = (orderDoc.items || [])
+    .map((item) => {
+      const title = item.title || 'Item';
+      const qty = item.qty || item.quantity || 1;
+      const unit = item.unitPrice != null ? Number(item.unitPrice).toFixed(2) : 'n/a';
+      const line = item.unitPrice != null ? Number(item.unitPrice * qty).toFixed(2) : 'n/a';
+      return '<tr><td style="padding:4px 8px;border:1px solid #e2e8f0;">' + title + '</td>' +
+        '<td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;">' + qty + '</td>' +
+        '<td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;">' + unit + ' ' + currency + '</td>' +
+        '<td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;">' + line + ' ' + currency + '</td></tr>';
+    })
+    .join('');
+  try {
+    await sendAdminNotificationEmail({
+      subject: 'Builtattic order ' + String(orderDoc._id || ''),
+      html:
+        '<p>' + actorLabel + ' placed a new order.</p>' +
+        '<p>Total: <strong>' + amount + ' ' + currency + '</strong></p>' +
+        '<table style="border-collapse:collapse;border:1px solid #e2e8f0;"><thead><tr>' +
+        '<th style="padding:4px 8px;border:1px solid #e2e8f0;text-align:left;">Item</th>' +
+        '<th style="padding:4px 8px;border:1px solid #e2e8f0;">Qty</th>' +
+        '<th style="padding:4px 8px;border:1px solid #e2e8f0;">Unit</th>' +
+        '<th style="padding:4px 8px;border:1px solid #e2e8f0;">Line total</th>' +
+        '</tr></thead><tbody>' + summaryRows + '</tbody></table>',
+      text: actorLabel + ' placed order ' + String(orderDoc._id || '') + ' totaling ' + amount + ' ' + currency + '.',
+    });
+  } catch (error) {
+    logger.warn('order_notification_email_failed', { order: String(orderDoc?._id), error: error.message });
+  }
+}
+
 async function createOrder(actor, items, options = {}) {
   if (!actor?._id) {
     throw new OrderError('Actor missing', 401, 'unauthorized');
@@ -250,6 +288,8 @@ async function createOrder(actor, items, options = {}) {
       });
     }
   }
+
+  await notifyAdminOfOrder(order, actor);
 
   return order;
 }

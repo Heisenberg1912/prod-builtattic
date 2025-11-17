@@ -47,6 +47,15 @@ const ratesSchema = z
   })
   .partial();
 
+const urlishString = z.string().trim().min(4).max(2048);
+
+const portfolioMediaItemSchema = z.object({
+  title: z.string().trim().max(160).optional(),
+  description: z.string().trim().max(600).optional(),
+  mediaUrl: urlishString,
+  kind: z.string().trim().max(48).optional(),
+});
+
 const profileInputSchema = z
   .object({
     title: z.string().trim().min(2).max(160).optional(),
@@ -62,11 +71,18 @@ const profileInputSchema = z
     languages: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
     completedProjects: z.number().min(0).max(2000).optional(),
     rating: z.number().min(0).max(5).optional(),
-    avatar: z.string().trim().url().optional(),
+    avatar: urlishString.optional(),
+    heroImage: urlishString.optional(),
+    profileImage: urlishString.optional(),
     summary: z.string().trim().max(1200).optional(),
     certifications: z.array(z.string().trim().min(1).max(140)).max(20).optional(),
     portfolioLinks: z.array(z.string().trim().url()).max(15).optional(),
     keyProjects: z.array(keyProjectSchema).max(12).optional(),
+    contactEmail: z.string().trim().email().optional(),
+    serviceBadges: z.array(z.string().trim().min(1).max(80)).max(24).optional(),
+    deliverables: z.array(z.string().trim().min(1).max(160)).max(40).optional(),
+    expertise: z.array(z.string().trim().min(1).max(160)).max(40).optional(),
+    portfolioMedia: z.array(portfolioMediaItemSchema).max(20).optional(),
   })
   .partial();
 
@@ -94,13 +110,28 @@ const normaliseProjectArray = (projects) => {
   return cleaned;
 };
 
+const normaliseMediaArray = (media) => {
+  if (!Array.isArray(media)) return undefined;
+  return media
+    .map((item) => ({
+      title: item.title?.trim(),
+      description: item.description?.trim(),
+      mediaUrl: item.mediaUrl?.trim(),
+      kind: item.kind?.trim(),
+    }))
+    .filter((item) => item.mediaUrl);
+};
+
 const compactObject = (input) => {
   if (!input || typeof input !== "object") return input;
   if (Array.isArray(input)) {
     return input
       .map(compactObject)
-      .filter((value) =>
-        value !== undefined && value !== null && (typeof value !== "object" || (Array.isArray(value) ? value.length > 0 : Object.keys(value).length > 0))
+      .filter(
+        (value) =>
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "object" || (Array.isArray(value) ? value.length > 0 : Object.keys(value).length > 0))
       );
   }
   return Object.entries(input).reduce((accumulator, [key, value]) => {
@@ -111,8 +142,7 @@ const compactObject = (input) => {
       normalisedValue !== null &&
       !Array.isArray(normalisedValue) &&
       Object.keys(normalisedValue).length === 0;
-    const isEmptyArray = Array.isArray(normalisedValue) && normalisedValue.length === 0;
-    if (isEmptyObject || isEmptyArray) return accumulator;
+    if (isEmptyObject) return accumulator;
     accumulator[key] = normalisedValue;
     return accumulator;
   }, {});
@@ -123,7 +153,9 @@ export const getOwnAssociateProfile = async (req, res, next) => {
     if (!req.user?._id) {
       throw httpError(401, "Unauthorized");
     }
-    const profile = await AssociateProfile.findOne({ user: req.user._id }).lean();
+    const profile = await AssociateProfile.findOne({ user: req.user._id })
+      .populate("user", "email role firstName lastName name")
+      .lean();
     res.json({ ok: true, profile });
   } catch (error) {
     next(error);
@@ -142,9 +174,16 @@ export const upsertOwnAssociateProfile = async (req, res, next) => {
     if (update.softwares) update.softwares = normaliseStringArray(update.softwares) || [];
     if (update.languages) update.languages = normaliseStringArray(update.languages) || [];
     if (update.certifications) update.certifications = normaliseStringArray(update.certifications) || [];
+    if (update.serviceBadges) update.serviceBadges = normaliseStringArray(update.serviceBadges) || [];
+    if (update.deliverables) update.deliverables = normaliseStringArray(update.deliverables) || [];
+    if (update.expertise) update.expertise = normaliseStringArray(update.expertise) || [];
     if (update.portfolioLinks) update.portfolioLinks = normaliseStringArray(update.portfolioLinks) || [];
     if (update.keyProjects) update.keyProjects = normaliseProjectArray(update.keyProjects) || [];
+    if (update.portfolioMedia) update.portfolioMedia = normaliseMediaArray(update.portfolioMedia) || [];
     if (update.rates?.currency) update.rates.currency = update.rates.currency.toUpperCase();
+    if (update.contactEmail) update.contactEmail = update.contactEmail.toLowerCase();
+    if (update.heroImage) update.heroImage = update.heroImage.trim();
+    if (update.profileImage) update.profileImage = update.profileImage.trim();
 
     const cleaned = compactObject(update);
 
@@ -152,7 +191,9 @@ export const upsertOwnAssociateProfile = async (req, res, next) => {
       { user: new Types.ObjectId(req.user._id) },
       { $set: { ...cleaned, user: req.user._id } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).lean();
+    )
+      .populate("user", "email role firstName lastName name")
+      .lean();
 
     res.json({ ok: true, profile });
   } catch (error) {

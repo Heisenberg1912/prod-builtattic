@@ -12,7 +12,7 @@ export const CLIENT_ORIGIN =
 export const PORT = Number(process.env.PORT || 5000);
 
 // Auth
-export const JWT_SECRET = process.env.JWT_SECRET || "change_me_in_env";
+export const JWT_SECRET = process.env.JWT_SECRET;
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 export const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || "30d";
 
@@ -22,10 +22,10 @@ export const MAX_PAGE_SIZE = Number(process.env.MAX_PAGE_SIZE || 100);
 
 // CORS
 export const CORS_ENABLED = (process.env.CORS_ENABLED || "true") === "true";
-export const CORS_ORIGIN = process.env.CORS_ORIGIN || CLIENT_ORIGIN;
+export const CORS_ORIGIN = process.env.CORS_ORIGIN;
 
 // Database (optional, for convenience)
-export const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || "";
+export const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 export const MONGODB_DB = process.env.MONGODB_DB || "";
 
 // Roles used across the app

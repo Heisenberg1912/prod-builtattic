@@ -1,23 +1,32 @@
-const toLineString = (value) => (Array.isArray(value) ? value.join("\n") : value || "");
-const toCommaString = (value) => (Array.isArray(value) ? value.join(", ") : value || "");
-
-const splitLines = (value, limit) => {
-  if (!value) return [];
-  const entries = value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return typeof limit === "number" ? entries.slice(0, limit) : entries;
-};
-
-const splitComma = (value, limit) => {
-  if (!value) return [];
-  const entries = value
-    .split(/[,\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return typeof limit === "number" ? entries.slice(0, limit) : entries;
-};
+const toLineString = (value) => (Array.isArray(value) ? value.join("\n") : value || "");
+const toCommaString = (value) => (Array.isArray(value) ? value.join(", ") : value || "");
+
+const normaliseEntries = (value, splitter) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => (item == null ? "" : String(item))).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(splitter).map((item) => item.trim()).filter(Boolean);
+  }
+  if (value instanceof Set) {
+    return Array.from(value).map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "object") {
+    return Object.values(value).map((item) => String(item).trim()).filter(Boolean);
+  }
+  return [String(value).trim()].filter(Boolean);
+};
+
+const splitLines = (value, limit) => {
+  const entries = normaliseEntries(value, /\r?\n/);
+  return typeof limit === "number" ? entries.slice(0, limit) : entries;
+};
+
+const splitComma = (value, limit) => {
+  const entries = normaliseEntries(value, /[,\n]/);
+  return typeof limit === "number" ? entries.slice(0, limit) : entries;
+};
 
 export const EMPTY_PROFILE_FORM = {
   title: "",
@@ -30,11 +39,18 @@ export const EMPTY_PROFILE_FORM = {
   hourlyRate: "",
   dailyRate: "",
   currency: "USD",
+  heroImage: "",
+  profileImage: "",
+  contactEmail: "",
+  serviceBadges: "",
+  deliverables: "",
+  expertise: "",
   languages: "",
   softwares: "",
   specialisations: "",
   certifications: "",
   portfolioLinks: "",
+  portfolioMedia: [],
   keyProjects: "",
 };
 
@@ -50,11 +66,27 @@ export const mapProfileToForm = (profile = {}) => ({
   hourlyRate: profile.hourlyRate ?? profile?.rates?.hourly ?? "",
   dailyRate: profile?.rates?.daily ?? "",
   currency: profile?.rates?.currency || "USD",
+  heroImage: profile.heroImage || profile.coverImage || profile.banner || "",
+  profileImage: profile.profileImage || profile.avatar || "",
+  contactEmail: profile.contactEmail || profile.user?.email || "",
+  serviceBadges: toCommaString(profile.serviceBadges),
+  deliverables: toCommaString(profile.deliverables),
+  expertise: toCommaString(profile.expertise),
   languages: toCommaString(profile.languages),
   softwares: toCommaString(profile.softwares),
   specialisations: toCommaString(profile.specialisations),
   certifications: toCommaString(profile.certifications),
   portfolioLinks: toLineString(profile.portfolioLinks),
+  portfolioMedia: Array.isArray(profile.portfolioMedia)
+    ? profile.portfolioMedia.map((item) => ({
+        title: item.title || "",
+        description: item.description || "",
+        mediaUrl: item.mediaUrl || item.url || item.image || "",
+        kind: item.kind || "",
+      }))
+    : (profile.portfolioImages || [])
+        .map((url) => ({ title: "", description: "", mediaUrl: url, kind: "image" }))
+        .slice(0, 6),
   keyProjects: toLineString(
     Array.isArray(profile.keyProjects)
       ? profile.keyProjects.map((project) => {
@@ -85,11 +117,27 @@ export const formToPayload = (form = {}) => {
       daily: sanitiseNumber(form.dailyRate),
       currency: form.currency.trim().toUpperCase() || undefined,
     },
+    heroImage: form.heroImage.trim() || undefined,
+    profileImage: form.profileImage.trim() || undefined,
+    contactEmail: form.contactEmail.trim() || undefined,
+    serviceBadges: splitComma(form.serviceBadges, 12),
+    deliverables: splitComma(form.deliverables, 24),
+    expertise: splitComma(form.expertise, 24),
     languages: splitComma(form.languages, 12),
     softwares: splitComma(form.softwares, 24),
     specialisations: splitComma(form.specialisations, 24),
     certifications: splitComma(form.certifications, 20),
     portfolioLinks: splitLines(form.portfolioLinks, 15),
+    portfolioMedia: Array.isArray(form.portfolioMedia)
+      ? form.portfolioMedia
+          .map((item) => ({
+            title: (item.title || "").trim() || undefined,
+            description: (item.description || "").trim() || undefined,
+            mediaUrl: (item.mediaUrl || "").trim() || undefined,
+            kind: (item.kind || "").trim() || undefined,
+          }))
+          .filter((item) => item.mediaUrl)
+      : undefined,
     keyProjects: splitLines(form.keyProjects, 12)
       .map((entry) => {
         const [title, scope, year, role] = entry.split("|").map((item) => item.trim());

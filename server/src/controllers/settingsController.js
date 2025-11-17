@@ -1,19 +1,28 @@
 import User from "../models/User.js";
 
-const defaultSettings = {
+export const defaultSettings = {
   notifications: {
     orderUpdates: true,
     partnerAnnouncements: true,
     researchBriefs: false,
+    productTips: true,
+    weeklyDigest: true,
+    smsAlerts: false,
+    preferredChannel: 'email',
+    digestFrequency: 'weekly',
   },
   privacy: {
     shareProfile: true,
     shareAnalytics: true,
     retainData: true,
+    searchVisibility: true,
+    profileIndexing: false,
   },
   security: {
     twoStep: false,
     loginAlerts: true,
+    deviceVerification: true,
+    biometricUnlock: false,
   },
   profile: {
     fullName: '',
@@ -21,7 +30,11 @@ const defaultSettings = {
     phone: '',
     location: '',
     company: '',
+    jobTitle: '',
     avatar: '',
+    pronouns: '',
+    timezone: '',
+    website: '',
     bio: '',
   },
 };

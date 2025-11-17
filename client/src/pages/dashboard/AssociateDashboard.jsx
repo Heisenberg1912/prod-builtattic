@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import AssociateProfileEditor from "../../components/associate/AssociateProfileEditor.jsx";
 import { fetchAssociatePortalProfile } from "../../services/portal.js";
+import { fetchAssociateDashboard } from "../../services/dashboard.js";
 import { deriveProfileStats, formatCurrency } from "../../utils/associateProfile.js";
 import { getAssociateAvatar, getAssociateFallback } from "../../utils/imageFallbacks.js";
 
@@ -34,6 +35,13 @@ const STORAGE_KEYS = {
 };
 
 const APPLICATION_STATUSES = ["Draft", "Submitted", "Interview", "Won", "Closed"];
+const normalizeApplicationStatus = (status) => {
+  if (!status) return "Submitted";
+  const lookup = APPLICATION_STATUSES.find(
+    (entry) => entry.toLowerCase() === String(status).toLowerCase()
+  );
+  return lookup || "Submitted";
+};
 
 const DAY_LABELS = {
   mon: "Monday",
@@ -354,6 +362,9 @@ function AssociateDashboard() {
   const [activeView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileState, setProfileState] = useState({ loading: true, error: null, profile: null });
+  const [dashboardState, setDashboardState] = useState({ loading: true, data: null, error: null });
+  const [sectionStatus, setSectionStatus] = useState({});
+  const mountedRef = useRef(true);
   const [applications, setApplications] = useState(() =>
     sanitizeApplications(loadStoredList(STORAGE_KEYS.applications))
   );
@@ -397,20 +408,163 @@ function AssociateDashboard() {
     refreshProfile({ silent: true });
   }, [refreshProfile]);
 
+  const refreshDashboard = useCallback(
+    async (sectionId = null, options = {}) => {
+      if (sectionId) {
+        setSectionStatus((prev) => ({
+          ...prev,
+          [sectionId]: { ...prev[sectionId], loading: true, error: null },
+        }));
+      } else {
+        setDashboardState((prev) => ({ ...prev, loading: true, error: null }));
+      }
+      try {
+        const payload = await fetchAssociateDashboard();
+        if (!mountedRef.current) return payload;
+        setDashboardState({ loading: false, data: payload, error: payload?.error || null });
+        if (sectionId) {
+          setSectionStatus((prev) => ({
+            ...prev,
+            [sectionId]: { loading: false, error: payload?.error || null },
+          }));
+        }
+        if (!options.silent && payload?.fallback) {
+          toast("Showing cached marketplace data", { icon: "ℹ️" });
+        }
+        return payload;
+      } catch (error) {
+        if (!mountedRef.current) return null;
+        const message = error?.message || "Unable to load dashboard";
+        if (sectionId) {
+          setDashboardState((prev) => ({ ...prev, error: prev.error || message }));
+          setSectionStatus((prev) => ({
+            ...prev,
+            [sectionId]: { loading: false, error: message },
+          }));
+        } else {
+          setDashboardState({ loading: false, data: null, error: message });
+        }
+        if (!options.silent) {
+          toast.error(message);
+        }
+        return null;
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    refreshDashboard(null, { silent: true });
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [refreshDashboard]);
+
   const profileMeta = useMemo(
     () => computeProfileMeta(profileState.profile),
     [profileState.profile]
   );
 
-  const opportunityMatches = useMemo(
+  const recommendedMatches = useMemo(
     () => buildOpportunityMatches(profileState.profile),
     [profileState.profile]
   );
+
+  const dashboardData = dashboardState.data || {};
+  const dashboardMetrics = dashboardData.metrics || {};
+  const dashboardLeads = dashboardData.leads || [];
+  const dashboardApplications = dashboardData.applications || [];
+  const dashboardNextActions = dashboardData.nextActions || [];
+  const dashboardFeedback = dashboardData.feedback || {};
+
+  const pipelineMatches = useMemo(() => {
+    if (recommendedMatches.length) return recommendedMatches;
+    if (!dashboardLeads.length) return [];
+    return dashboardLeads.map((lead, index) => {
+      const fallbackRate =
+        profileMeta.stats.hourly ||
+        profileState.profile?.rates?.hourly ||
+        profileState.profile?.rates?.min ||
+        35;
+      const updatedAt = lead.updatedAt || new Date().toISOString();
+      return {
+        id: lead.id || lead.title || `lead-${index}`,
+        title: lead.title || "Marketplace lead",
+        company: lead.contact || dashboardData?.firm?.name || "Skill Studio buyer",
+        description: lead.detail || "Follow up to move this lead forward.",
+        tags: lead.tags && lead.tags.length ? lead.tags : [lead.status || "Lead"],
+        timezone: lead.timezone || profileState.profile?.timezone || "Flexible",
+        budgetHourly: lead.budgetHourly || fallbackRate,
+        responseBy: updatedAt,
+        languages: lead.languages && lead.languages.length ? lead.languages : profileState.profile?.languages || ["English"],
+        format: lead.format || "Remote",
+        score: 1,
+        reasons: [lead.status ? `Status: ${lead.status}` : "Imported from dashboard"],
+      };
+    });
+  }, [recommendedMatches, dashboardLeads, profileMeta.stats.hourly, profileState.profile, dashboardData?.firm?.name]);
 
   const unreadNotifications = useMemo(
     () => activityLog.filter((entry) => !entry.read).length,
     [activityLog]
   );
+
+  const getSectionStatus = (sectionId) => sectionStatus[sectionId] || {};
+  const isSectionRefreshing = (sectionId) => Boolean(getSectionStatus(sectionId).loading);
+
+  const renderRefreshButton = (sectionId, label = "Refresh data") => {
+    const refreshing = isSectionRefreshing(sectionId);
+    return (
+      <button
+        type="button"
+        onClick={() => refreshDashboard(sectionId)}
+        disabled={refreshing}
+        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {refreshing ? (
+          <>
+            <Loader className="h-3.5 w-3.5 animate-spin" /> Refreshing
+          </>
+        ) : (
+          <>
+            <RefreshCcw size={14} /> {label}
+          </>
+        )}
+      </button>
+    );
+  };
+
+  const renderSectionError = (sectionId, helperText) => {
+    const message = getSectionStatus(sectionId).error;
+    if (!message) return null;
+    return (
+      <p className="text-xs text-rose-600">
+        {helperText ? `${message} — ${helperText}` : message}
+      </p>
+    );
+  };
+
+  const fallbackApplications = dashboardApplications.map((application, index) => ({
+    id: application.id || `remote-app-${index}`,
+    title: application.items?.[0]?.title || "Marketplace opportunity",
+    company: application.company || application.contact || "Marketplace lead",
+    status: normalizeApplicationStatus(application.status),
+    trackedAt: application.createdAt || application.updatedAt,
+    readOnly: true,
+  }));
+  const hasLocalApplications = applications.length > 0;
+  const displayApplications = hasLocalApplications ? applications : fallbackApplications;
+
+  const fallbackActivityEntries = dashboardNextActions.map((action, index) => ({
+    id: action.id || `next-action-${index}`,
+    title: action.title,
+    description: action.detail,
+    timestamp: action.updatedAt || new Date().toISOString(),
+    read: false,
+    readOnly: true,
+  }));
+  const hasLocalActivity = activityLog.length > 0;
+  const displayActivity = hasLocalActivity ? activityLog : fallbackActivityEntries;
 
   const pushActivity = useCallback((entry) => {
     setActivityLog((prev) => {
@@ -421,22 +575,24 @@ function AssociateDashboard() {
   }, []);
 
   const handleProfileUpdated = useCallback(
-    (nextProfile) => {
+    (nextProfile, meta = {}) => {
       if (!nextProfile) return;
       const previousProfile = profileState.profile;
       setProfileState((prev) => ({ ...prev, profile: nextProfile, loading: false, error: null }));
       const changes = summariseProfileChanges(previousProfile, nextProfile);
-      pushActivity({
-        id: createId(),
-        timestamp: new Date().toISOString(),
-        kind: "profile.updated",
-        title: "Profile synced to marketplace",
-        description: changes.length
-          ? `Updated ${formatList(changes.slice(0, 4))}`
-          : "Saved without field changes",
-        read: false,
-      });
-      toast.success("Profile saved");
+      if (meta?.origin === "save" && meta?.source === "remote" && !meta?.authRequired) {
+        pushActivity({
+          id: createId(),
+          timestamp: new Date().toISOString(),
+          kind: "profile.updated",
+          title: "Profile synced to marketplace",
+          description: changes.length
+            ? `Updated ${formatList(changes.slice(0, 4))}`
+            : "Saved without field changes",
+          read: false,
+        });
+        toast.success("Profile saved");
+      }
     },
     [profileState.profile, pushActivity]
   );
@@ -575,11 +731,16 @@ function AssociateDashboard() {
             error={profileState.error}
             profile={profileState.profile}
             meta={profileMeta}
-            opportunityMatches={opportunityMatches}
-            applications={applications}
-            activity={activityLog}
+            opportunityMatches={pipelineMatches}
+            applications={displayApplications}
+            activity={displayActivity}
             onNavigateProfile={() => setActiveView("profile")}
-            onRefresh={() => refreshProfile()}
+            onRefreshProfile={() => refreshProfile()}
+            dashboardLoading={(dashboardState.loading && !dashboardState.data) || isSectionRefreshing("overview")}
+            metrics={dashboardMetrics}
+            nextActions={dashboardNextActions}
+            refreshButton={renderRefreshButton("overview", "Refresh insights")}
+            sectionError={renderSectionError("overview", "Some insights might be cached.")}
           />
         );
       case "profile":
@@ -595,10 +756,13 @@ function AssociateDashboard() {
         return (
           <JobsView
             profile={profileState.profile}
-            matches={opportunityMatches}
-            applications={applications}
+            matches={pipelineMatches}
+            applications={displayApplications}
             meta={profileMeta}
             onTrackOpportunity={handleTrackOpportunity}
+            refreshButton={renderRefreshButton("jobs", "Refresh leads")}
+            sectionError={renderSectionError("jobs", "Lead recommendations may be cached.")}
+            loading={(dashboardState.loading && !dashboardState.data) || isSectionRefreshing("jobs")}
           />
         );
       case "earnings":
@@ -606,24 +770,30 @@ function AssociateDashboard() {
           <EarningsView
             profile={profileState.profile}
             meta={profileMeta}
-            applications={applications}
+            applications={displayApplications}
           />
         );
       case "applications":
         return (
           <ApplicationsView
-            applications={applications}
+            applications={displayApplications}
             onUpdateStatus={handleApplicationStatusChange}
             onRemove={handleRemoveApplication}
+            readOnly={!hasLocalApplications}
+            refreshButton={renderRefreshButton("applications", "Refresh applications")}
+            sectionError={renderSectionError("applications", "Pipeline sync may be outdated.")}
           />
         );
       case "notifications":
         return (
           <NotificationsView
-            activity={activityLog}
+            activity={displayActivity}
             onMarkRead={handleMarkActivityRead}
             onDismiss={handleDismissActivity}
             onClear={handleClearActivity}
+            readOnly={!hasLocalActivity}
+            refreshButton={renderRefreshButton("notifications", "Refresh alerts")}
+            sectionError={renderSectionError("notifications", "Sync alerts if this looks off.")}
           />
         );
       default:
@@ -734,23 +904,27 @@ function OverviewView({
   applications,
   activity,
   onNavigateProfile,
-  onRefresh,
+  onRefreshProfile,
+  dashboardLoading,
+  metrics,
+  nextActions,
+  refreshButton,
+  sectionError,
 }) {
-  const listingStatus = meta.completeness >= 80
+  const completenessValue = Number.isFinite(metrics?.profileCompleteness)
+    ? metrics.profileCompleteness
+    : meta.completeness;
+  const listingStatus = completenessValue >= 80
     ? { label: "Marketplace ready", tone: "positive" }
-    : meta.completeness >= 50
+    : completenessValue >= 50
       ? { label: "Needs polish", tone: "warning" }
       : { label: "Draft", tone: "neutral" };
 
-  const hourlyRate = meta.stats.hourly
-    ? formatCurrency(meta.stats.hourly, profile?.rates?.currency || profile?.currency || "USD")
-    : "Add hourly rate";
-
-  const dailyRate = meta.stats.daily
-    ? formatCurrency(meta.stats.daily, profile?.rates?.currency || profile?.currency || "USD")
-    : meta.stats.hourly
-      ? formatCurrency(meta.stats.hourly * 8, profile?.rates?.currency || "USD")
-      : null;
+  const currencyCode = profile?.rates?.currency || profile?.currency || "USD";
+  const derivedHourly = Number.isFinite(metrics?.hourlyRate) ? metrics.hourlyRate : meta.stats.hourly;
+  const derivedDaily = meta.stats.daily || (derivedHourly ? derivedHourly * 8 : null);
+  const hourlyRate = derivedHourly ? formatCurrency(derivedHourly, currencyCode) : "Add hourly rate";
+  const dailyRate = derivedDaily ? formatCurrency(derivedDaily, currencyCode) : null;
 
   const nextOpportunity = opportunityMatches
     .map((opportunity) => ({
@@ -759,6 +933,20 @@ function OverviewView({
     }))
     .filter((entry) => !Number.isNaN(entry.due.getTime()))
     .sort((a, b) => a.due.getTime() - b.due.getTime())[0];
+  const leadsCount = Number.isFinite(metrics?.activeLeads) ? metrics.activeLeads : opportunityMatches.length;
+  const applicationsCount = Number.isFinite(metrics?.applicationsTracked)
+    ? metrics.applicationsTracked
+    : applications.length;
+  const alertsCount = Number.isFinite(metrics?.alerts)
+    ? metrics.alerts
+    : activity.filter((entry) => !entry.read).length;
+  const derivedActions = Array.isArray(nextActions) && nextActions.length
+    ? nextActions.slice(0, 5).map((action, index) => ({
+        id: action.id || action.title || `next-action-${index}`,
+        title: action.title || "Marketplace reminder",
+        detail: action.detail || "Complete this task to stay visible.",
+      }))
+    : [];
 
   return (
     <div className="space-y-6">
@@ -772,12 +960,13 @@ function OverviewView({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {refreshButton}
           <button
             type="button"
-            onClick={onRefresh}
+            onClick={onRefreshProfile}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-400"
           >
-            <RefreshCcw size={16} /> Refresh data
+            Reload profile
           </button>
           <button
             type="button"
@@ -789,6 +978,8 @@ function OverviewView({
         </div>
       </div>
 
+      {sectionError}
+
       {error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           {error}
@@ -797,33 +988,41 @@ function OverviewView({
 
       <div className="grid gap-4 xl:grid-cols-[2fr,1fr]">
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              icon={ShieldCheck}
-              label="Profile completeness"
-              value={`${meta.completeness}%`}
-              helper={listingStatus.label}
-              tone={listingStatus.tone}
-            />
-            <StatCard
-              icon={DollarSign}
-              label="Hourly rate"
-              value={hourlyRate}
-              helper={dailyRate ? `Day rate ${dailyRate}` : "Set your preferred rates"}
-            />
-            <StatCard
-              icon={Target}
-              label="Active leads"
-              value={opportunityMatches.length || "0"}
-              helper={nextOpportunity ? `Next deadline ${nextOpportunity.due.toLocaleDateString()}` : "Keep filling out your profile to unlock matches"}
-            />
-            <StatCard
-              icon={CalendarCheck}
-              label="Applications tracked"
-              value={applications.length || "0"}
-              helper={`${activity.filter((entry) => !entry.read).length} unread alerts`}
-            />
-          </div>
+          {dashboardLoading ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-32 rounded-2xl bg-slate-200/60 animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                icon={ShieldCheck}
+                label="Profile completeness"
+                value={`${completenessValue}%`}
+                helper={listingStatus.label}
+                tone={listingStatus.tone}
+              />
+              <StatCard
+                icon={DollarSign}
+                label="Hourly rate"
+                value={hourlyRate}
+                helper={dailyRate ? `Day rate ${dailyRate}` : "Set your preferred rates"}
+              />
+              <StatCard
+                icon={Target}
+                label="Active leads"
+                value={leadsCount || "0"}
+                helper={nextOpportunity ? `Next deadline ${nextOpportunity.due.toLocaleDateString()}` : "Keep filling out your profile to unlock matches"}
+              />
+              <StatCard
+                icon={CalendarCheck}
+                label="Applications tracked"
+                value={applicationsCount || "0"}
+                helper={`${alertsCount} unread alerts`}
+              />
+            </div>
+          )}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6">
             <div className="flex items-start justify-between gap-4">
@@ -842,7 +1041,17 @@ function OverviewView({
               </button>
             </div>
             <ul className="mt-4 space-y-2">
-              {meta.pendingFields.length ? (
+              {derivedActions.length ? (
+                derivedActions.map((action) => (
+                  <li
+                    key={action.id}
+                    className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-700"
+                  >
+                    <p className="font-semibold">{action.title}</p>
+                    {action.detail ? <p className="text-xs text-indigo-600">{action.detail}</p> : null}
+                  </li>
+                ))
+              ) : meta.pendingFields.length ? (
                 meta.pendingFields.slice(0, 5).map((field) => (
                   <li
                     key={field}
@@ -861,23 +1070,31 @@ function OverviewView({
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6">
             <h3 className="text-lg font-semibold text-slate-900">Pipeline snapshot</h3>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Leads</p>
-                <p className="mt-2 text-xl font-semibold text-slate-900">{opportunityMatches.length || "0"}</p>
-                <p className="text-xs text-slate-500">Matches from your skills & timezone</p>
+            {dashboardLoading ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="h-24 rounded-xl bg-slate-200/60 animate-pulse" />
+                ))}
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Applications</p>
-                <p className="mt-2 text-xl font-semibold text-slate-900">{applications.length || "0"}</p>
-                <p className="text-xs text-slate-500">Opportunities you are tracking</p>
+            ) : (
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Leads</p>
+                  <p className="mt-2 text-xl font-semibold text-slate-900">{leadsCount || "0"}</p>
+                  <p className="text-xs text-slate-500">Matches from your skills & timezone</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Applications</p>
+                  <p className="mt-2 text-xl font-semibold text-slate-900">{applicationsCount || "0"}</p>
+                  <p className="text-xs text-slate-500">Opportunities you are tracking</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Alerts</p>
+                  <p className="mt-2 text-xl font-semibold text-slate-900">{alertsCount}</p>
+                  <p className="text-xs text-slate-500">Profile + pipeline notifications</p>
+                </div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Alerts</p>
-                <p className="mt-2 text-xl font-semibold text-slate-900">{activity.filter((entry) => !entry.read).length}</p>
-                <p className="text-xs text-slate-500">Profile + pipeline notifications</p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -1015,7 +1232,7 @@ function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
   );
 }
 
-function JobsView({ profile, matches, applications, meta, onTrackOpportunity }) {
+function JobsView({ profile, matches, applications, meta, onTrackOpportunity, refreshButton, sectionError, loading }) {
   const trackedIds = new Set(applications.map((item) => item.id));
   const availability = meta.availabilityWindows?.length ? meta.availabilityWindows : [];
 
@@ -1026,7 +1243,10 @@ function JobsView({ profile, matches, applications, meta, onTrackOpportunity }) 
         <p className="text-sm text-slate-600">
           Leads that align with your skills, software stack, and timezone appear here. Add them to your pipeline to start tracking progress.
         </p>
+        <div className="flex flex-wrap gap-2">{refreshButton}</div>
       </div>
+
+      {sectionError}
 
       {!profile && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
@@ -1034,8 +1254,15 @@ function JobsView({ profile, matches, applications, meta, onTrackOpportunity }) 
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {matches.map((opportunity) => {
+      {loading && !matches.length ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-72 rounded-2xl bg-slate-200/60 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {matches.map((opportunity) => {
           const applied = trackedIds.has(opportunity.id);
           const strength = opportunity.score >= 4 ? "High match" : opportunity.score >= 2 ? "Solid match" : "Emerging";
           return (
@@ -1119,7 +1346,8 @@ function JobsView({ profile, matches, applications, meta, onTrackOpportunity }) 
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6">
         <h3 className="text-lg font-semibold text-slate-900">Availability signal</h3>
@@ -1207,7 +1435,7 @@ function EarningsView({ profile, meta, applications }) {
   );
 }
 
-function ApplicationsView({ applications, onUpdateStatus, onRemove }) {
+function ApplicationsView({ applications, onUpdateStatus, onRemove, readOnly, refreshButton, sectionError }) {
   const statusIcon = {
     Draft: Clock,
     Submitted: Loader,
@@ -1223,7 +1451,10 @@ function ApplicationsView({ applications, onUpdateStatus, onRemove }) {
         <p className="text-sm text-slate-600">
           Track responses and progression across every opportunity you have added to your pipeline.
         </p>
+        <div className="flex flex-wrap gap-2">{refreshButton}</div>
       </div>
+
+      {sectionError}
 
       {!applications.length ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -1256,7 +1487,8 @@ function ApplicationsView({ applications, onUpdateStatus, onRemove }) {
                         <select
                           value={application.status}
                           onChange={(event) => onUpdateStatus(application.id, event.target.value)}
-                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-slate-500 focus:outline-none"
+                          disabled={readOnly}
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-slate-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                         >
                           {APPLICATION_STATUSES.map((status) => (
                             <option key={status} value={status}>
@@ -1266,21 +1498,22 @@ function ApplicationsView({ applications, onUpdateStatus, onRemove }) {
                         </select>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {formatRelativeTime(application.trackedAt || application.updatedAt)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => onRemove(application.id)}
-                        className="rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+                  <td className="px-4 py-3 text-slate-500">
+                    {formatRelativeTime(application.trackedAt || application.updatedAt)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => onRemove(application.id)}
+                      disabled={readOnly}
+                      className="rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:bg-transparent"
+                    >
+                      {readOnly ? "Sync to edit" : "Remove"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             </tbody>
           </table>
         </div>
@@ -1288,7 +1521,7 @@ function ApplicationsView({ applications, onUpdateStatus, onRemove }) {
     </div>
   );
 }
-function NotificationsView({ activity, onMarkRead, onDismiss, onClear }) {
+function NotificationsView({ activity, onMarkRead, onDismiss, onClear, readOnly, refreshButton, sectionError }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1298,16 +1531,22 @@ function NotificationsView({ activity, onMarkRead, onDismiss, onClear }) {
             Sync events, pipeline updates, and reminders land here. Mark them as read or clear once actioned.
           </p>
         </div>
-        {activity.length ? (
-          <button
-            type="button"
-            onClick={onClear}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
-          >
-            Clear all
-          </button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {refreshButton}
+          {activity.length ? (
+            <button
+              type="button"
+              onClick={onClear}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={readOnly}
+            >
+              Clear all
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {sectionError}
 
       {!activity.length ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -1315,6 +1554,11 @@ function NotificationsView({ activity, onMarkRead, onDismiss, onClear }) {
         </div>
       ) : (
         <div className="space-y-3">
+          {readOnly ? (
+            <p className="text-xs text-slate-500">
+              These are synced reminders from the dashboard. Refresh your workspace to manage real-time alerts.
+            </p>
+          ) : null}
           {activity.map((entry) => (
             <div
               key={entry.id}
@@ -1335,7 +1579,7 @@ function NotificationsView({ activity, onMarkRead, onDismiss, onClear }) {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  {!entry.read && (
+                  {!entry.read && !readOnly && (
                     <button
                       type="button"
                       onClick={() => onMarkRead(entry.id)}
@@ -1347,7 +1591,8 @@ function NotificationsView({ activity, onMarkRead, onDismiss, onClear }) {
                   <button
                     type="button"
                     onClick={() => onDismiss(entry.id)}
-                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-slate-400"
+                    disabled={readOnly}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Dismiss
                   </button>

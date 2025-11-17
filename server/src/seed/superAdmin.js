@@ -8,11 +8,11 @@ function getArg(name, fallback) {
   return arg ? arg.split('=')[1] : fallback;
 }
 
-const email = getArg('email', process.env.SEED_SUPERADMIN_EMAIL || 'arnav@builtattic.com');
-const password = getArg('password', process.env.SEED_SUPERADMIN_PASSWORD || 'built2025attic');
+const email = getArg('email', process.env.SEED_SUPERADMIN_EMAIL);
+const password = getArg('password', process.env.SEED_SUPERADMIN_PASSWORD);
 
 if (!email || !password) {
-  console.error('Provide --email and --password');
+  console.error('Provide --email and --password or configure SEED_SUPERADMIN_EMAIL/SEED_SUPERADMIN_PASSWORD');
   process.exit(1);
 }
 
@@ -26,7 +26,16 @@ async function main() {
   const passHash = await argon2.hash(password);
   const res = await User.findOneAndUpdate(
     { email },
-    { $set: { email, passHash, rolesGlobal: ['superadmin'] } },
+    {
+      $set: {
+        email,
+        passHash,
+        role: 'superadmin',
+        rolesGlobal: ['superadmin'],
+        isEmailVerified: true,
+        twoFactorEnabled: true,
+      },
+    },
     { upsert: true, new: true }
   ).lean();
 

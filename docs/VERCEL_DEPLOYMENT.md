@@ -13,7 +13,7 @@ This repository is configured so both the Vite client and the Express API deploy
 
 - **Node runtime**: Vercel Node.js 20 (set in `vercel.json`).
 - **MongoDB**: Provide a reachable MongoDB connection string.
-- **Environment variables**: Configure at least the following in the Vercel dashboard:
+- **Environment variables**: Configure at least the following in the Vercel dashboard (see `docs/VERCEL_ENV.md` for the full matrix):
   - `MONGO_URI`
   - `MONGO_DBNAME`
   - `JWT_ACCESS_SECRET`

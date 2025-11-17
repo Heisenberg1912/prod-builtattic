@@ -17,6 +17,8 @@ const UserSchema = new mongoose.Schema({
   },
   rolesGlobal: [{ type:String, enum:['superadmin','admin'] }],
   memberships: [MembershipSchema],
+  isEmailVerified: { type:Boolean, default:false },
+  twoFactorEnabled: { type:Boolean, default:true },
   settings: {
     notifications: { type: Map, of: Boolean, default: {} },
     privacy: { type: Map, of: Boolean, default: {} },
@@ -27,7 +29,9 @@ const UserSchema = new mongoose.Schema({
     tokenHash: { type:String, select:false },
     expiresAt: { type:Date },
   },
-  isClient: { type:Boolean, default:true }
+  isClient: { type:Boolean, default:true },
+  isSuspended: { type:Boolean, default:false, index:true },
+  lastLoginAt: { type:Date },
 }, { timestamps:true });
 
 // single unique index definition

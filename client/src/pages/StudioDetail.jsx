@@ -10,11 +10,15 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "react-hot-toast";
 import Footer from "../components/Footer";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, PenSquare } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
-import { fallbackStudios } from "../data/marketplace.js";
 import { fetchStudioBySlug } from "../services/marketplace.js";
+import { submitStudioRequest } from "../services/studioRequests.js";
+import { formatRequestError } from "../utils/httpErrors.js";
+import { applyFallback, getStudioFallback } from "../utils/imageFallbacks.js";
+import { readStoredUser } from "../services/auth.js";
+import { inferRoleFromUser } from "../constants/roles.js";
 
 const number = (v, dp = 0) =>
   typeof v === "number" && isFinite(v)
@@ -28,6 +32,9 @@ const startCase = (value = "") =>
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+
+const formatAreaUnit = (unit) =>
+  typeof unit === "string" && unit.trim().toLowerCase() === "m2" ? "m²" : "sq ft";
 
 const getSpecValue = (studio, labels = []) => {
   const inSpecs =
@@ -84,10 +91,108 @@ const resolveStyle = (s) => {
   return arr.length ? arr[0] : null;
 };
 
+const SERVICE_KEYWORDS = {
+  architectural: ["architectural", "architecture", "blueprint", "plan set", "concept design", "ifc", "bim"],
+  interior: ["interior", "space planning", "ff&e", "finishes", "furniture"],
+  urban: ["urban", "infrastructure", "masterplan", "transit", "civic", "sceneography", "broadcast"],
+  sustainable: ["sustainable", "net zero", "passive", "low carbon", "green building", "energy model"],
+  planCatalogue: ["catalogue", "plan set", "pre-designed", "builder set", "kit of parts"],
+  designBuild: ["design-build", "turnkey", "build partner", "construction", "delivery"],
+};
+
+const gatherServiceText = (studio) =>
+  [
+    studio?.title,
+    studio?.summary,
+    studio?.description,
+    studio?.bio,
+    studio?.story,
+    studio?.programType,
+    studio?.studioType,
+    studio?.offerType,
+    ...(studio?.programs || []),
+    ...(studio?.features || []),
+    ...(studio?.tags || []),
+    ...(studio?.services || []),
+    ...(studio?.metadata?.keywords || []),
+    studio?.firm?.bio,
+    ...(studio?.firm?.services || []).map((service) =>
+      typeof service === "string" ? service : service?.title || service?.description
+    ),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase())
+    .join(" ");
+
+const deriveServiceProfile = (studio) => {
+  if (!studio) {
+    return {
+      architectural: false,
+      interior: false,
+      urban: false,
+      sustainable: false,
+      planCatalogue: false,
+      designBuild: false,
+    };
+  }
+  const text = gatherServiceText(studio);
+  const tokens = new Set(
+    [
+      ...(studio.programs || []),
+      ...(studio.services || []),
+      ...(studio.tags || []),
+      ...(studio.features || []),
+      studio.programType,
+      studio.offerType,
+      studio.catalogType,
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+  );
+  const hasKeyword = (bucket) =>
+    SERVICE_KEYWORDS[bucket].some((needle) => text.includes(needle) || tokens.has(needle));
+
+  return {
+    architectural: hasKeyword("architectural"),
+    interior: hasKeyword("interior"),
+    urban: hasKeyword("urban"),
+    sustainable: hasKeyword("sustainable"),
+    planCatalogue: hasKeyword("planCatalogue") || studio.catalogType === "plan",
+    designBuild: hasKeyword("designBuild") || /turnkey|build partner|construction/.test(text),
+  };
+};
+
 const resolveCategory = (s) =>
-  s?.primaryCategory || (Array.isArray(s?.categories) ? s.categories[0] : null);
+  s?.primaryCategory || s?.category || (Array.isArray(s?.categories) ? s.categories[0] : null);
 
 const currencyOf = (s) => s?.currency || s?.pricing?.currency || "USD";
+
+const normaliseId = (value) => {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  if (typeof value === "object") {
+    if (value._id) return String(value._id);
+    if (value.id) return String(value.id);
+    if (typeof value.toString === "function") {
+      const text = value.toString();
+      if (text && text !== "[object Object]") {
+        return text;
+      }
+    }
+  }
+  return null;
+};
+
+const normaliseSlug = (value) =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
+
+const buildEditorLink = (slug, section) => {
+  const base = slug ? `/portal/studio?edit=${encodeURIComponent(slug)}` : "/portal/studio";
+  if (!section) return base;
+  const joinChar = base.includes("?") ? "&" : "?";
+  return `${base}${joinChar}section=${encodeURIComponent(section)}`;
+};
 
 const StudioDetail = () => {
   const { id } = useParams();
@@ -98,6 +203,11 @@ const StudioDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [requestForm, setRequestForm] = useState({ name: '', email: '', company: '', message: '' });
+  const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [requestSuccess, setRequestSuccess] = useState(false);
+  const [requestError, setRequestError] = useState(null);
+  const [viewer] = useState(() => readStoredUser());
 
   const galleryImages = useMemo(() => {
     if (!studio) return [];
@@ -108,6 +218,42 @@ const StudioDetail = () => {
     ].filter(Boolean);
     return Array.from(new Set(sources));
   }, [studio]);
+
+  const viewerRole = useMemo(() => inferRoleFromUser(viewer), [viewer]);
+
+  const viewerFirmIds = useMemo(() => {
+    if (!viewer?.memberships) return [];
+    return viewer.memberships
+      .map((membership) => normaliseId(membership?.firm))
+      .filter(Boolean);
+  }, [viewer]);
+
+  const viewerFirmSlugs = useMemo(() => {
+    if (!viewer?.memberships) return [];
+    return viewer.memberships
+      .map((membership) => normaliseSlug(membership?.firm?.slug || membership?.firmSlug || membership?.slug))
+      .filter(Boolean);
+  }, [viewer]);
+
+  const canEditStudio = useMemo(() => {
+    if (!viewer || !studio) return false;
+    if (viewerRole === "superadmin" || viewerRole === "admin") return true;
+    const firmId = normaliseId(studio?.firm?._id ?? studio?.firm?.id ?? studio?.firm);
+    const firmSlug = normaliseSlug(studio?.firm?.slug);
+    const idMatch = firmId && viewerFirmIds.includes(firmId);
+    const slugMatch = firmSlug && viewerFirmSlugs.includes(firmSlug);
+    return Boolean(idMatch || slugMatch);
+  }, [studio, viewer, viewerRole, viewerFirmIds, viewerFirmSlugs]);
+
+  const editorShortcuts = useMemo(() => {
+    const base = buildEditorLink(studio?.slug);
+    return [
+      { label: "Open workspace", href: base, primary: true },
+      { label: "Hero & gallery", href: buildEditorLink(studio?.slug, "gallery") },
+      { label: "Details & specs", href: buildEditorLink(studio?.slug, "details") },
+      { label: "Pricing & CTA", href: buildEditorLink(studio?.slug, "pricing") },
+    ];
+  }, [studio?.slug]);
 
   useEffect(() => {
     setActiveImageIndex(0);
@@ -131,25 +277,32 @@ const StudioDetail = () => {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
+
     (async () => {
       setLoading(true);
       setError(null);
       try {
         const item = await fetchStudioBySlug(id);
-        if (!cancelled) setStudio(item || null);
-        if (!item && !cancelled) setError("Studio not found.");
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err?.response?.status === 404
-              ? "Studio not found."
-              : err?.message || "We could not load this studio right now."
-          );
+        if (cancelled) return;
+        if (item) {
+          setStudio(item);
+        } else {
+          setStudio(null);
+          setError("Studio not found.");
         }
+      } catch (err) {
+        if (cancelled) return;
+        setStudio(null);
+        setError(
+          err?.response?.status === 404
+            ? "Studio not found."
+            : err?.message || "We could not load this studio right now."
+        );
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
+
     return () => {
       cancelled = true;
     };
@@ -165,6 +318,8 @@ const StudioDetail = () => {
   }, [pricePerSqft, areaSqft, plotAreaSqft]);
 
   const currency = currencyOf(studio);
+  const areaUnitValue = studio?.areaUnit || studio?.metrics?.areaUnit || 'sq ft';
+  const areaUnitLabel = formatAreaUnit(areaUnitValue);
 
   const bedroomCount =
     getSpecValue(studio, ["bedrooms", "number of bedrooms"]) ??
@@ -228,7 +383,7 @@ const StudioDetail = () => {
     };
     push("Style", style);
     push("Primary Category", category);
-    push("Plot Size", number(plotAreaSqft || areaSqft), "sq ft");
+    push("Plot Size", number(plotAreaSqft || areaSqft), areaUnitLabel);
     push("Bedrooms", bedroomCount);
     push("Bathrooms", bathroomCount);
     push("Number of Rooms", roomsCount);
@@ -239,22 +394,7 @@ const StudioDetail = () => {
     push("Interior Layout", studio?.interiorLayout || studio?.metadata?.interiorLayout);
     push("Material", studio?.material || (studio?.materials || [])[0]);
     return derived;
-  }, [studio, style, category, plotAreaSqft, areaSqft, bedroomCount, bathroomCount, roomsCount, floorsCount]);
-
-  const recommendations = useMemo(() => {
-    const pool = fallbackStudios.filter(
-      (item) =>
-        item.slug !== studio?.slug &&
-        item._id !== studio?._id &&
-        item.kind === "studio"
-    );
-    const preferred = category;
-    if (preferred) {
-      const matches = pool.filter((it) => (it.categories || []).includes(preferred));
-      if (matches.length >= 5) return matches.slice(0, 6);
-    }
-    return pool.slice(0, 6);
-  }, [studio, category]);
+  }, [studio, style, category, plotAreaSqft, areaSqft, bedroomCount, bathroomCount, roomsCount, floorsCount, areaUnitLabel]);
 
   const deliveryDetails = useMemo(() => {
     const info = studio?.delivery;
@@ -281,37 +421,56 @@ const StudioDetail = () => {
       note: instructions || null,
     };
   }, [studio]);
+  const serviceProfile = useMemo(() => deriveServiceProfile(studio), [studio]);
+  const heroFallback = useMemo(() => getStudioFallback(studio), [studio]);
 
-  const buildCartPayload = () => {
-    if (!studio) return null;
-    const productId = studio._id ?? studio.slug ?? id;
-    const priceValue = Number(totalPrice ?? pricePerSqft ?? 0);
+  const buildCartPayload = (entry = studio) => {
+    if (!entry) return null;
+    const entryGallery = Array.isArray(entry.gallery)
+      ? entry.gallery
+      : Array.isArray(entry.images)
+      ? entry.images
+      : [];
+    const primaryImage = entryGallery[0] || entry.heroImage || galleryImages[0] || "";
+    const entryCurrency = currencyOf(entry);
+    const entryPricePerSqft = resolvePricePerSqft(entry);
+    const entryAreaSqft = resolveAreaSqft(entry);
+    const entryPlotAreaSqft = resolvePlotAreaSqft(entry);
+    const entryTotalPrice = (() => {
+      const area = entryPlotAreaSqft || entryAreaSqft;
+      if (entryPricePerSqft != null && area != null) return entryPricePerSqft * Number(area);
+      return entry.price ?? entry.pricing?.total ?? null;
+    })();
+    const productId = entry._id ?? entry.slug ?? id;
     return {
       productId,
       id: productId,
-      title: studio.title,
-      image: studio.heroImage || studio.gallery?.[0] || "",
-      price: priceValue,
+      title: entry.title,
+      image: primaryImage,
+      price: Number(entryTotalPrice ?? entryPricePerSqft ?? 0),
       quantity: 1,
-      seller: studio.firm?.name || studio.studio || "Studio partner",
+      seller: entry.firm?.name || entry.studio || "Studio partner",
       source: "Studio",
       kind: "studio",
+      currency: entryCurrency,
       metadata: {
-        category,
-        style,
-        areaSqft: areaSqft ?? plotAreaSqft,
+        category: resolveCategory(entry),
+        style: resolveStyle(entry),
+        areaSqft: entryAreaSqft ?? entryPlotAreaSqft,
+        pricePerSqft: entryPricePerSqft,
       },
     };
   };
 
-  const buildWishlistPayload = () => {
-    const cartPayload = buildCartPayload();
+  const buildWishlistPayload = (entry = studio) => {
+    const cartPayload = buildCartPayload(entry);
     if (!cartPayload) return null;
     return {
       productId: cartPayload.productId,
       title: cartPayload.title,
       image: cartPayload.image,
       price: cartPayload.price,
+      currency: cartPayload.currency,
       source: cartPayload.source,
     };
   };
@@ -343,8 +502,8 @@ const StudioDetail = () => {
     }
   };
 
-  const handleAddStudioToWishlist = async () => {
-    const payload = buildWishlistPayload();
+  const handleAddStudioToWishlist = async (entry = studio) => {
+    const payload = buildWishlistPayload(entry);
     if (!payload) return;
     try {
       await addToWishlist(payload);
@@ -354,6 +513,92 @@ const StudioDetail = () => {
       toast.error("Could not add studio to wishlist");
     }
   };
+  const recommendedStudios = useMemo(() => [], [studio]);
+
+  const handleAddRecommendedToCart = async (entry) => {
+    const payload = buildCartPayload(entry);
+    if (!payload) return;
+    try {
+      await addToCart(payload);
+      toast.success(entry.title + ' added to cart');
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not add studio to cart");
+    }
+  };  const hostingConfig = studio?.firm?.hosting;
+  const tileConfig = useMemo(() => {
+    if (!hostingConfig) return null;
+    const summary = hostingConfig.serviceSummary?.trim() || "";
+    const services = Array.isArray(hostingConfig.services) ? hostingConfig.services : [];
+    const products = Array.isArray(hostingConfig.products) ? hostingConfig.products : [];
+    if (!summary && !services.length && !products.length) {
+      return null;
+    }
+    return { summary, services, products };
+  }, [hostingConfig?.serviceSummary, hostingConfig?.services, hostingConfig?.products]);
+  const serviceTiles = tileConfig?.services || [];
+  const productTiles = tileConfig?.products || [];
+  const serviceSummary = tileConfig?.summary || "";
+  const hasServiceSummary = Boolean(serviceSummary && serviceSummary.trim());
+  const hasServiceTiles = serviceTiles.length > 0;
+  const hasProductTiles = productTiles.length > 0;
+  const contactEmail =
+    studio?.firm?.contact?.email ||
+    studio?.contactEmail ||
+    studio?.inquiriesEmail ||
+    studio?.pointOfContact?.email ||
+    null;
+
+
+  const handleRequestFieldChange = (field) => (event) => {
+    const value = event.target.value;
+    setRequestForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmitStudioRequest = async (event) => {
+    event.preventDefault();
+    if (!studio) return;
+    const trimmed = {
+      name: (requestForm.name || '').trim(),
+      email: (requestForm.email || '').trim(),
+      company: (requestForm.company || '').trim(),
+      message: (requestForm.message || '').trim(),
+    };
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (trimmed.name.length < 2) {
+      setRequestError('Please share your name (at least 2 characters).');
+      return;
+    }
+    if (!emailPattern.test(trimmed.email)) {
+      setRequestError('Enter a valid email address.');
+      return;
+    }
+    if (trimmed.message.length < 20) {
+      setRequestError('Project overview must be at least 20 characters.');
+      return;
+    }
+    setRequestSubmitting(true);
+    setRequestSuccess(false);
+    setRequestError(null);
+    try {
+      await submitStudioRequest({
+        studioId: studio._id,
+        studioSlug: studio.slug,
+        firmId: studio.firm?._id || studio.firm?.id || studio.firm,
+        name: trimmed.name,
+        email: trimmed.email,
+        company: trimmed.company || undefined,
+        message: trimmed.message,
+      });
+      setRequestSubmitting(false);
+      setRequestSuccess(true);
+      setRequestForm({ name: '', email: '', company: '', message: '' });
+    } catch (err) {
+      setRequestSubmitting(false);
+      setRequestError(formatRequestError(err, 'Unable to send request right now'));
+    }
+  };
+
 
   if (loading) {
     return (
@@ -369,26 +614,201 @@ const StudioDetail = () => {
   }
 
   if (error || !studio) {
+    const troubleshooting = [
+      {
+        title: "The link is stale",
+        detail: "Studios evolve quickly. A partner may have archived or renamed this slug.",
+      },
+      {
+        title: "Private catalog item",
+        detail: "Some enterprise programmes stay invitation-only. Ask your Builtattic rep to unlock access.",
+      },
+      {
+        title: "Typo in the URL",
+        detail: "Double-check the slug or jump into the marketplace search to pick a live listing.",
+      },
+    ];
+    const supportEmail = "studios@builtattic.com";
+    const quickShortcuts = [
+      { label: "Residential kits", href: "/studio?category=Residential" },
+      { label: "Design-build partners", href: "/studio?focus=designBuild" },
+      { label: "Plan catalogues", href: "/studio?focus=plans" },
+    ];
+
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-800 px-4">
-        <h2 className="text-2xl font-semibold mb-3">{error || "Studio not found"}</h2>
-        <p className="text-sm text-slate-600 mb-6 text-center max-w-md">
-          Try returning to the studio marketplace to explore other catalogue-ready systems.
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={() => navigate(-1)}
-            className="px-4 py-2 border border-slate-300 rounded-md text-sm text-slate-700 hover:bg-slate-100"
-          >
-            Go back
-          </button>
-          <Link
-            to="/studio"
-            className="px-4 py-2 bg-slate-900 text-white rounded-md text-sm hover:bg-slate-800"
-          >
-            Studio marketplace
-          </Link>
-        </div>
+      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-10">
+          <section className="mx-auto max-w-6xl">
+            <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white px-6 py-10 lg:px-10 lg:py-12 shadow-xl">
+              <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+                      Studio lookup
+                    </p>
+                    <h1 className="text-3xl sm:text-4xl font-semibold">
+                      {error || "Studio not found."}
+                    </h1>
+                    <p className="text-base text-white/80">
+                      We couldn't find the system you requested. Re-run your search or open a fresh marketplace session—your recommendations below update instantly.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate(-1)}
+                      className="inline-flex items-center justify-center rounded-2xl border border-white/40 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+                    >
+                      Go back
+                    </button>
+                    <Link
+                      to="/studio"
+                      className="inline-flex items-center justify-center rounded-2xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100"
+                    >
+                      Open studio marketplace
+                    </Link>
+                    <a
+                      href={`mailto:${supportEmail}`}
+                      className="inline-flex items-center justify-center rounded-2xl border border-white/40 px-5 py-2.5 text-sm font-semibold text-white/90 hover:bg-white/10"
+                    >
+                      Contact concierge
+                    </a>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {quickShortcuts.map((shortcut) => (
+                      <Link
+                        key={shortcut.label}
+                        to={shortcut.href}
+                        className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/90 hover:bg-white/15"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden="true" />
+                        {shortcut.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+                      Why this happens
+                    </p>
+                    <p className="mt-2 text-sm text-white/80">
+                      It's usually a quick fix. Check these common reasons and retry.
+                    </p>
+                  </div>
+                  <ul className="space-y-3">
+                    {troubleshooting.map((item) => (
+                      <li key={item.title} className="rounded-2xl bg-white/5 px-4 py-3">
+                        <p className="text-sm font-semibold text-white/95">{item.title}</p>
+                        <p className="text-xs text-white/70">{item.detail}</p>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="rounded-2xl bg-white/10 px-4 py-3 text-xs text-white/80">
+                    Need personalised help? Share the slug or screenshot with <a href={`mailto:${supportEmail}`} className="font-semibold text-white">{supportEmail}</a> and we'll surface the closest catalogue-ready pairings.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {recommendedStudios.length > 0 && (
+            <section className="mt-12">
+              <div className="mx-auto max-w-6xl space-y-8">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
+                      You might like
+                    </p>
+                    <h2 className="text-xl font-semibold text-slate-900">Catalogue-ready alternatives</h2>
+                    <p className="text-sm text-slate-500">Pulled from the same category or most active studios this week.</p>
+                  </div>
+                  <Link
+                    to="/studio"
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900"
+                  >
+                    Browse all <span aria-hidden="true">→</span>
+                  </Link>
+                </div>
+
+                <div className="grid gap-5 md:grid-cols-3">
+                  {recommendedStudios.map((item) => {
+                    const image =
+                      item.heroImage || (Array.isArray(item.gallery) ? item.gallery[0] : null) ||
+                      "/assets/studio-fallback.jpg";
+                    const recPricePerSqft = resolvePricePerSqft(item);
+                    const recArea = resolveAreaSqft(item) || resolvePlotAreaSqft(item);
+                    const recCurrency = currencyOf(item);
+                    const recAreaUnitLabel = formatAreaUnit(item.areaUnit || item.metrics?.areaUnit);
+                    const studioHref = '/studio/' + (item.slug || item._id || '');
+
+                    return (
+                      <article
+                        key={item.slug || item._id}
+                        className="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+                      >
+                        <Link to={studioHref} className="block">
+                          <div className="aspect-[4/3] overflow-hidden bg-slate-200">
+                          <img
+                            src={image}
+                            alt={item.title}
+                            className="h-full w-full object-cover transition duration-300 hover:scale-105"
+                            loading="lazy"
+                            onError={(event) => applyFallback(event, getStudioFallback(item))}
+                          />
+                          </div>
+                        </Link>
+                        <div className="flex flex-1 flex-col gap-3 p-5">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                              {item.firm?.name || "Studio"}
+                            </p>
+                            <Link
+                              to={studioHref}
+                              className="mt-1 text-lg font-semibold text-slate-900 line-clamp-2 hover:text-slate-700"
+                            >
+                              {item.title}
+                            </Link>
+                          </div>
+                          <p className="text-sm text-slate-600 line-clamp-2">
+                            {item.summary ||
+                              "Minimalist, catalogue-ready system optimised for fast deployment with modular services."}
+                          </p>
+                          <div className="text-xs text-slate-500 space-y-1">
+                            {recPricePerSqft != null && (
+                              <p>
+                                {recCurrency} {number(recPricePerSqft)} / {recAreaUnitLabel}
+                              </p>
+                            )}
+                            {recArea && <p>{number(recArea)} {recAreaUnitLabel} build area</p>}
+                          </div>
+                          <div className="mt-auto flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAddRecommendedToCart(item)}
+                              className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                            >
+                              Add to cart
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddStudioToWishlist(item)}
+                              className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300"
+                            >
+                              Wishlist
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+        </main>
+        <Footer />
       </div>
     );
   }
@@ -410,22 +830,53 @@ const StudioDetail = () => {
 
   // Title stack meta rows (right column, under title)
   const rightMetaRows = [
-    ["Pricing", pricePerSqft != null ? `${currency} ${number(pricePerSqft)} per sq ft` : "On request"],
+    ["Pricing", pricePerSqft != null ? `${currency} ${number(pricePerSqft)} per ${areaUnitLabel}` : "On request"],
     ["Style", style || "-"],
-    ["Plot Size", (plotAreaSqft || areaSqft) ? `${number(plotAreaSqft || areaSqft)} sq ft` : "-"],
+    ["Plot Size", (plotAreaSqft || areaSqft) ? `${number(plotAreaSqft || areaSqft)} ${areaUnitLabel}` : "-"],
     ["Bedrooms", bedroomCount ?? "-"],
     ["Bathrooms", bathroomCount ?? "-"],
     ["Number of Rooms", roomsCount ?? "-"],
     ["Number of Floors", floorsCount ?? "-"],
   ];
+  const conciergeEmail = studio?.conciergeEmail || "studios@builtattic.com";
 
   return (
     <div className="min-h-screen flex flex-col bg-white text-slate-900">
+      {canEditStudio && studio ? (
+        <div className="border-b border-amber-100 bg-amber-50">
+          <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between sm:text-sm">
+            <div>
+              <p className="font-semibold">You&rsquo;re viewing your live Design Studio tile.</p>
+              <p className="text-amber-900/80">
+                Use the workspace shortcuts to adjust the gallery, copy, or pricing without hunting through menus.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {editorShortcuts
+                .filter((shortcut) => Boolean(shortcut?.href))
+                .map((shortcut) => (
+                  <Link
+                    key={shortcut.label}
+                    to={shortcut.href}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 font-semibold transition ${
+                      shortcut.primary
+                        ? "bg-amber-900 text-white shadow-sm hover:bg-amber-800"
+                        : "border border-amber-200 bg-white text-amber-900 hover:border-amber-300"
+                    }`}
+                  >
+                    {shortcut.primary ? <PenSquare size={14} /> : null}
+                    <span>{shortcut.label}</span>
+                  </Link>
+                ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <main className="flex-1 max-w-7xl mx-auto px-4 lg:px-6 py-8 lg:py-10">
         {/* Top two-column layout */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left: gallery with controls */}
-          <div className="lg:col-span-7">
+          <div className="lg:col-span-7 space-y-4">
             <div className="rounded-xl bg-slate-100 p-2 sm:p-3">
               <div className="relative aspect-[16/10] w-full overflow-hidden rounded-lg bg-slate-200">
                 <AnimatePresence mode="wait">
@@ -436,6 +887,7 @@ const StudioDetail = () => {
                       alt={studio.title}
                       className="h-full w-full object-cover"
                       loading="lazy"
+                      onError={(event) => applyFallback(event, heroFallback)}
                       initial={{ opacity: 0, scale: 1.02 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.98 }}
@@ -489,6 +941,7 @@ const StudioDetail = () => {
                         alt={`${studio.title} preview ${index + 1}`}
                         className="h-full w-full object-cover"
                         loading="lazy"
+                        onError={(event) => applyFallback(event, heroFallback)}
                       />
                     </button>
                   ))}
@@ -539,8 +992,9 @@ const StudioDetail = () => {
                   </div>
                   {pricePerSqft != null && (plotAreaSqft || areaSqft) ? (
                     <div className="text-xs text-slate-500 mt-1">
-                      Calculated by {currency} {number(pricePerSqft)} {" "}
-                      {number(plotAreaSqft || areaSqft)} sq ft
+                      Calculated by {currency} {number(pricePerSqft)} per {areaUnitLabel} ·
+                      {" "}
+                      {number(plotAreaSqft || areaSqft)} {areaUnitLabel}
                     </div>
                   ) : null}
                 </div>
@@ -586,6 +1040,217 @@ const StudioDetail = () => {
                 </p>
               )}
             </div>
+          </div>
+        </section>
+
+        {/* Service & product profile */}
+        <section className="mt-10 grid gap-6 lg:grid-cols-2">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
+                    Service programs
+                  </p>
+                  <h2 className="text-lg font-semibold text-slate-900">What this studio sells</h2>
+                  <p className="text-sm text-slate-600">
+                    {hasServiceSummary
+                      ? serviceSummary
+                      : 'Service programs have not been published yet.'}
+                  </p>
+                </div>
+              </div>
+            <div className="mt-5 space-y-4">
+              {hasServiceTiles ? (
+                serviceTiles.map((tile) => {
+                  const tileKey = tile.id || tile.label;
+                  const inferredActive = tile.id ? serviceProfile[tile.id] : true;
+                  const status = tile.status || (inferredActive ? 'available' : 'on-request');
+                  const badgeLabel = tile.statusLabel || (status === 'available' ? 'Available' : 'On request');
+                  const badgeClass =
+                    status === 'available'
+                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 bg-slate-50 text-slate-500';
+                  return (
+                    <div key={tileKey} className="rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{tile.label}</p>
+                          <p className="text-xs text-slate-600">{tile.description}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass}`}>
+                          {badgeLabel}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500">
+                  Service programs will appear here once the studio publishes them.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col gap-5">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
+                Products & delivery
+              </p>
+              <h2 className="text-lg font-semibold text-slate-900">How they package the work</h2>
+              <p className="text-sm text-slate-600">
+                {hasProductTiles
+                  ? 'Some studios ship ready-to-license plan sets, others run end-to-end design-build programmes.'
+                  : 'Catalogue details have not been shared yet.'}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {hasProductTiles ? (
+                productTiles.map((tile) => {
+                  const tileKey = tile.id || tile.label;
+                  const inferredActive = tile.id ? serviceProfile[tile.id] : true;
+                  const status = tile.status || (inferredActive ? 'available' : 'on-request');
+                  const badgeLabel = tile.statusLabel || (status === 'available' ? 'In catalogue' : 'Available on request');
+                  const badgeClass =
+                    status === 'available'
+                      ? 'text-indigo-700 bg-indigo-50'
+                      : 'text-slate-500 bg-slate-100';
+                  const defaultExtra = (() => {
+                    if (tile.id === 'planCatalogue') {
+                      if (serviceProfile.planCatalogue) {
+                        if (pricePerSqft != null) return `${currency} ${number(pricePerSqft)} per ${areaUnitLabel}`;
+                        return 'Catalogue pricing shared on brief';
+                      }
+                      return 'Ask for catalogue access';
+                    }
+                    if (tile.id === 'designBuild') {
+                      if (serviceProfile.designBuild) {
+                        if (studio?.delivery?.leadTimeWeeks)
+                          return `${studio.delivery.leadTimeWeeks} week lead time`;
+                        return deliveryDetails.points[0] || 'Active design-build pipeline';
+                      }
+                      return 'Introduce a build partner to activate';
+                    }
+                    return inferredActive ? 'Active programme' : 'Enable via Studio portal';
+                  })();
+                  const extraCopy = tile.extra || defaultExtra;
+                  return (
+                    <div key={tileKey} className="rounded-2xl border border-slate-100 px-4 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-slate-900">{tile.label}</p>
+                          <p className="text-xs text-slate-600">{tile.description}</p>
+                          <p className="text-xs font-semibold text-slate-900">{extraCopy}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${badgeClass}`}>
+                          {badgeLabel}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500">
+                  The seller has not published catalogue bundles yet.
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => handleAddStudioToWishlist()}
+                className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-300"
+              >
+                Save studio
+              </button>
+              {(contactEmail || conciergeEmail) && (
+                <a
+                  href={`mailto:${contactEmail || conciergeEmail}`}
+                  className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                >
+                  Share project brief
+                </a>
+              )}
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Studio inquiries</p>
+              <h3 className="text-lg font-semibold text-slate-900">Share your project brief</h3>
+              <p className="text-sm text-slate-600">
+                Send a short note directly to the {firmName} team. Each submission is tracked on their dashboard so they can follow up with you.
+              </p>
+            </div>
+            <form className="mt-4 space-y-4" onSubmit={handleSubmitStudioRequest}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-500">
+                  Full name
+                  <input
+                    required
+                    value={requestForm.name}
+                    onChange={handleRequestFieldChange('name')}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                    placeholder="Jane Doe"
+                  />
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Email
+                  <input
+                    required
+                    type="email"
+                    value={requestForm.email}
+                    onChange={handleRequestFieldChange('email')}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                    placeholder="you@company.com"
+                  />
+                </label>
+              </div>
+              <label className="text-xs font-semibold text-slate-500">
+                Company or organisation
+                <input
+                  value={requestForm.company}
+                  onChange={handleRequestFieldChange('company')}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-500">
+                Project overview
+                <textarea
+                  required
+                  minLength={20}
+                  value={requestForm.message}
+                  onChange={handleRequestFieldChange('message')}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                  rows={4}
+                  placeholder="Tell us about the site, budget, and delivery goals."
+                />
+              </label>
+              {requestError && <p className="text-xs font-semibold text-rose-600">{requestError}</p>}
+              {requestSuccess && !requestError && (
+                <p className="text-xs font-semibold text-emerald-600">Thanks! The studio has received your request.</p>
+              )}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="submit"
+                  disabled={requestSubmitting}
+                  className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {requestSubmitting ? 'Sending…' : 'Send request'}
+                </button>
+                <button
+                  type="button"
+                  disabled={requestSubmitting}
+                  onClick={() => setRequestForm({ name: '', email: '', company: '', message: '' })}
+                  className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Clear form
+                </button>
+              </div>
+            </form>
           </div>
         </section>
 
@@ -649,11 +1314,11 @@ const StudioDetail = () => {
         </section>
 
         {/* Similar Designs */}
-        {recommendations.length > 0 && (
+        {recommendedStudios.length > 0 && (
           <section className="mt-10">
             <h2 className="text-base font-semibold text-slate-900 mb-4">Similar Designs:</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {recommendations.map((item) => {
+              {recommendedStudios.map((item) => {
                 const perSqft =
                   item.priceSqft ?? item.pricing?.basePrice ?? item.price ?? null;
                 const curr = item.currency || item.pricing?.currency || "USD";
@@ -669,6 +1334,7 @@ const StudioDetail = () => {
                         alt={item.title}
                         className="w-full h-28 object-cover"
                         loading="lazy"
+                        onError={(event) => applyFallback(event, getStudioFallback(item))}
                       />
                     )}
                     <div className="p-3">
@@ -702,13 +1368,6 @@ const StudioDetail = () => {
 };
 
 export default StudioDetail;
-
-
-
-
-
-
-
 
 
 

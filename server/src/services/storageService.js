@@ -11,14 +11,32 @@ function ensureDirs() {
   if (!fs.existsSync(SECURE_DIR)) fs.mkdirSync(SECURE_DIR);
 }
 
+let cachedEncryptionKey;
+const HEX_64 = /^[0-9a-f]{64}$/i;
+
 function getEncryptionKey() {
-  const key = process.env.FILE_ENCRYPTION_KEY;
-  if (key && key.length === 64) {
-    return Buffer.from(key, 'hex');
+  if (cachedEncryptionKey) {
+    return cachedEncryptionKey;
   }
-  // fallback demo key (32 bytes zero padded) – in production require env
-  return crypto.createHash('sha256').update(process.env.FILE_ENCRYPTION_KEY || 'builtattic-demo-key').digest();
+  const key = process.env.FILE_ENCRYPTION_KEY;
+  if (!key || !key.trim()) {
+    throw new Error('FILE_ENCRYPTION_KEY is not configured');
+  }
+  if (HEX_64.test(key.trim())) {
+    cachedEncryptionKey = Buffer.from(key.trim(), 'hex');
+    return cachedEncryptionKey;
+  }
+  cachedEncryptionKey = crypto.createHash('sha256').update(key).digest();
+  return cachedEncryptionKey;
 }
+
+const getAssetTokenSecret = () => {
+  const secret = process.env.ASSET_TOKEN_SECRET;
+  if (!secret || !secret.trim()) {
+    throw new Error('ASSET_TOKEN_SECRET is not configured');
+  }
+  return secret;
+};
 
 export async function storeEncryptedBuffer(buffer, { filename }) {
   ensureDirs();
@@ -42,12 +60,12 @@ export async function storeEncryptedBuffer(buffer, { filename }) {
 }
 
 export function generateDownloadToken(assetId, { expiresIn = '10m' } = {}) {
-  const secret = process.env.ASSET_TOKEN_SECRET || 'builtattic-asset-secret';
+  const secret = getAssetTokenSecret();
   return jwt.sign({ sub: String(assetId) }, secret, { expiresIn });
 }
 
 export function verifyDownloadToken(token) {
-  const secret = process.env.ASSET_TOKEN_SECRET || 'builtattic-asset-secret';
+  const secret = getAssetTokenSecret();
   return jwt.verify(token, secret);
 }
 
@@ -63,4 +81,3 @@ export function readDecryptedAsset(asset) {
   const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
   return decrypted;
 }
-

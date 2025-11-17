@@ -43,6 +43,18 @@ const OFFLINE_ACCOUNTS = {
   },
 };
 
+const OFFLINE_LOGIN_ENABLED = (import.meta?.env?.VITE_ENABLE_OFFLINE_ACCOUNTS || 'false').toLowerCase() === 'true';
+
+const hasStoredAuthToken = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const token = window.localStorage.getItem('auth_token');
+    return Boolean(token && token !== 'undefined' && token !== 'null');
+  } catch {
+    return false;
+  }
+};
+
 const pickTokenPayload = (payload = {}) => ({
   ok: payload.ok ?? true,
   token: payload.token || payload.accessToken || null,
@@ -71,6 +83,7 @@ const buildOfflineUser = (email, account) => {
 };
 
 const tryOfflineLogin = (email, password, err) => {
+  if (!OFFLINE_LOGIN_ENABLED) return null;
   const account = OFFLINE_ACCOUNTS[normaliseEmail(email)];
   const isNetworkError = err?.code === "ERR_NETWORK" || !err?.response;
   if (!account || password !== account.password || !isNetworkError) return null;
@@ -116,6 +129,36 @@ export async function login(email, password) {
   }
 }
 
+export async function loginWithOtpStep1({ email, password }) {
+  const { data } = await client.post('/auth-otp/login', { email, password });
+  return data;
+}
+
+export async function loginWithOtpStep2({ email, otp, userId }) {
+  const { data } = await client.post('/auth-otp/login/verify', { email, otp, userId });
+  return data;
+}
+
+export async function registerWithOtpStep1(payload) {
+  const { data } = await client.post('/auth-otp/register', payload);
+  return data;
+}
+
+export async function registerWithOtpStep2({ email, otp, userId }) {
+  const { data } = await client.post('/auth-otp/register/verify', { email, otp, userId });
+  return data;
+}
+
+export async function resendOtp({ email, purpose, userId, orderId }) {
+  const { data } = await client.post('/auth-otp/otp/resend', {
+    email,
+    purpose,
+    userId,
+    orderId,
+  });
+  return data;
+}
+
 export async function fetchCurrentUser() {
   try {
     const { data } = await client.get("/auth/me");
@@ -130,9 +173,11 @@ export async function fetchCurrentUser() {
   }
 }
 
-export async function loginWithGoogle(idToken) {
+export async function loginWithGoogle(idToken, role) {
   try {
-    const { data } = await client.post("/auth/google", { idToken });
+    const payload = { idToken };
+    if (role) payload.targetRole = role;
+    const { data } = await client.post("/auth/google", payload);
     return pickTokenPayload(data);
   } catch (err) {
     const message =
@@ -169,6 +214,23 @@ export async function resetPassword({ token, password }) {
       err.response?.data?.message ||
       err.message ||
       "Unable to reset password";
+    throw new Error(message);
+  }
+}
+
+export async function loginAsDemo(payload = {}) {
+  try {
+    const { data } = await client.post("/auth/demo-login", payload);
+    return {
+      ...pickTokenPayload(data),
+      firm: data?.firm || null,
+    };
+  } catch (err) {
+    const message =
+      err.response?.data?.error ||
+      err.response?.data?.message ||
+      err.message ||
+      "Unable to start demo workspace";
     throw new Error(message);
   }
 }
@@ -223,13 +285,18 @@ export function readStoredUser() {
 export async function logout(options = {}) {
   const { silent = false } = options;
   let apiError = null;
-  try {
-    await client.post("/auth/logout");
-  } catch (error) {
-    apiError = error;
-    const status = error?.response?.status;
-    if (!silent && status && status >= 500) {
-      console.warn("logout_request_error", error);
+  const shouldCallApi = hasStoredAuthToken();
+  if (shouldCallApi) {
+    try {
+      await client.post("/auth/logout");
+    } catch (error) {
+      const status = error?.response?.status;
+      if (status !== 401 && status !== 403) {
+        apiError = error;
+        if (!silent && status && status >= 500) {
+          console.warn("logout_request_error", error);
+        }
+      }
     }
   }
   if (typeof window !== "undefined") {

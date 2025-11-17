@@ -1,5 +1,3 @@
-const STORAGE_KEY = 'firm_dashboard_profiles_v1';
-
 const toLineString = (value) => (Array.isArray(value) ? value.join("\n") : value || "");
 const toCommaString = (value) => (Array.isArray(value) ? value.join(", ") : value || "");
 
@@ -21,40 +19,21 @@ const splitComma = (value, limit) => {
   return typeof limit === 'number' ? entries.slice(0, limit) : entries;
 };
 
-const safeParseJSON = (value, fallback = {}) => {
+const getNowISO = () => new Date().toISOString();
+
+const safeParseJSON = (value, fallback = null) => {
   if (!value) return fallback;
   try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? parsed : fallback;
+    return JSON.parse(value);
   } catch {
     return fallback;
   }
 };
 
-const getNowISO = () => new Date().toISOString();
+const FIRM_PROFILE_CACHE_KEY = 'firm_profile_cache_v1';
+const firmProfileStorageKey = (firmId) =>
+  firmId ? `${FIRM_PROFILE_CACHE_KEY}::${firmId}` : FIRM_PROFILE_CACHE_KEY;
 
-const readStoredProfiles = () => {
-  if (typeof window === 'undefined') return {};
-  return safeParseJSON(localStorage.getItem(STORAGE_KEY), {});
-};
-
-const writeStoredProfiles = (profiles) => {
-  if (typeof window === 'undefined') return profiles;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
-  } catch (error) {
-    console.warn('firm_profile_storage_error', error);
-  }
-  return profiles;
-};
-
-const normaliseKey = (firmId, firm) => {
-  if (firmId) return String(firmId);
-  if (firm?._id) return String(firm._id);
-  if (firm?.slug) return String(firm.slug);
-  if (firm?.name) return firm.name.toLowerCase().replace(/\s+/g, '-');
-  return 'local-firm-profile';
-};
 
 export const EMPTY_FIRM_PROFILE_FORM = {
   name: '',
@@ -104,9 +83,9 @@ export const mapFirmProfileToForm = (profile = {}) => ({
   heroImage: normaliseString(profile.heroImage || profile.coverImage),
   gallery: toLineString(profile.gallery),
   certifications: toCommaString(profile.certifications),
-  billingCurrency: normaliseString(profile.billingCurrency || profile.currency || 'USD'),
+  billingCurrency: normaliseString(profile.billingCurrency || profile.currency || 'USD') || 'USD',
   averageFee: profile.averageFee ?? profile.priceSqft ?? '',
-  partnerNetwork: toLineString(profile.partners || profile.partnerNetwork),
+  partnerNetwork: toLineString(profile.partnerNetwork || profile.partners),
   languages: toCommaString(profile.languages),
   sustainability: normaliseString(profile.sustainability || profile.initiatives),
   secretCode: normaliseString(profile.secretCode),
@@ -183,69 +162,53 @@ export const deriveFirmProfileStats = (profile = {}) => {
   };
 };
 
-export const loadFirmProfile = (firmId, firm) => {
-  const key = normaliseKey(firmId, firm);
-  const stored = readStoredProfiles();
-  return stored[key] || null;
-};
-
-export const saveFirmProfile = (firmId, profile, firm) => {
-  const key = normaliseKey(firmId, profile || firm);
-  const stored = readStoredProfiles();
-  stored[key] = {
-    ...(stored[key] || {}),
-    ...profile,
-    updatedAt: profile?.updatedAt || getNowISO(),
-  };
-  writeStoredProfiles(stored);
-  return stored[key];
-};
-
-export const clearFirmProfile = (firmId, firm) => {
-  const key = normaliseKey(firmId, firm);
-  const stored = readStoredProfiles();
-  if (stored[key]) {
-    delete stored[key];
-    writeStoredProfiles(stored);
-  }
-};
-
 export const mapFirmToProfile = (firm = {}, owner = null) => {
-  const locationParts = [firm.location?.city, firm.location?.country].filter(Boolean);
-  const fee = firm.priceSqft != null ? Number(firm.priceSqft) : undefined;
-
+  const source = firm.profile || {};
+  const locationFallback = [firm.location?.city, firm.location?.country].filter(Boolean).join(', ');
   return {
-    name: firm.name || firm.title || owner?.firmName || '',
-    tagline: firm.tagline || '',
-    summary: firm.bio || firm.description || '',
-    foundedYear: firm.foundedYear || undefined,
-    teamSize: firm.teamSize || undefined,
-    headquarters: locationParts.join(', '),
-    regions: firm.operatingRegions || [],
-    services: Array.isArray(firm.services) ? firm.services : [],
-    specialisations: Array.isArray(firm.styles) ? firm.styles : [],
-    notableProjects: Array.isArray(firm.notableProjects) ? firm.notableProjects : [],
-    awards: Array.isArray(firm.awards) ? firm.awards : [],
-    contactEmail: firm.contact?.email || firm.email || owner?.email || '',
-    contactPhone: firm.contact?.phone || firm.phone || '',
-    website: firm.website || '',
-    heroImage: firm.coverImage || firm.heroImage || '',
-    gallery: Array.isArray(firm.gallery) ? firm.gallery : [],
-    certifications: Array.isArray(firm.certifications) ? firm.certifications : [],
-    billingCurrency: firm.currency || firm.pricing?.currency || 'USD',
-    averageFee: fee,
-    partnerNetwork: Array.isArray(firm.partners) ? firm.partners : [],
-    languages: Array.isArray(firm.languages) ? firm.languages : [],
-    sustainability: firm.sustainability || '',
-    secretCode: firm.secretCode || '',
-    letterOfIntent: firm.letterOfIntent || firm.loi || '',
-    updatedAt: firm.updatedAt || firm.createdAt || getNowISO(),
+    name: source.name || firm.name || firm.title || owner?.firmName || '',
+    tagline: source.tagline || firm.tagline || '',
+    summary: source.summary || firm.bio || firm.description || '',
+    foundedYear: source.foundedYear ?? firm.foundedYear ?? undefined,
+    teamSize: source.teamSize ?? firm.teamSize ?? undefined,
+    headquarters: source.headquarters || locationFallback,
+    regions: Array.isArray(source.regions) ? source.regions : firm.operatingRegions || [],
+    services: Array.isArray(source.services) ? source.services : firm.services || [],
+    specialisations: Array.isArray(source.specialisations) ? source.specialisations : firm.styles || [],
+    notableProjects: Array.isArray(source.notableProjects) ? source.notableProjects : firm.notableProjects || [],
+    awards: Array.isArray(source.awards) ? source.awards : firm.awards || [],
+    contactEmail: source.contactEmail || firm.contact?.email || firm.email || owner?.email || '',
+    contactPhone: source.contactPhone || firm.contact?.phone || firm.phone || '',
+    website: source.website || firm.contact?.website || firm.website || '',
+    heroImage: source.heroImage || firm.coverImage || firm.heroImage || '',
+    gallery: Array.isArray(source.gallery) ? source.gallery : firm.gallery || [],
+    certifications: Array.isArray(source.certifications) ? source.certifications : firm.certifications || [],
+    billingCurrency: source.billingCurrency || firm.currency || firm.pricing?.currency || 'USD',
+    averageFee:
+      source.averageFee !== undefined
+        ? source.averageFee
+        : firm.priceSqft != null
+        ? Number(firm.priceSqft)
+        : undefined,
+    partnerNetwork: Array.isArray(source.partnerNetwork) ? source.partnerNetwork : firm.partners || [],
+    languages: Array.isArray(source.languages) ? source.languages : firm.languages || [],
+    sustainability: source.sustainability || firm.sustainability || '',
+    secretCode: source.secretCode || firm.secretCode || '',
+    letterOfIntent: source.letterOfIntent || firm.letterOfIntent || firm.loi || '',
+    leadTimeDays: source.leadTimeDays ?? undefined,
+    minOrderQuantity: source.minOrderQuantity ?? undefined,
+    shippingRegions: Array.isArray(source.shippingRegions) ? source.shippingRegions : [],
+    catalogCategories: Array.isArray(source.catalogCategories) ? source.catalogCategories : [],
+    catalogHighlights: Array.isArray(source.catalogHighlights) ? source.catalogHighlights : [],
+    catalogSkus: Array.isArray(source.catalogSkus) ? source.catalogSkus : [],
+    updatedAt: source.updatedAt || firm.updatedAt || firm.createdAt || getNowISO(),
   };
 };
 
-export const decorateFirmWithProfile = (firm = {}, profile = null) => {
-  if (!profile) return firm;
-  const enriched = { ...firm };
+export const decorateFirmWithProfile = (firm = {}, profileOverride = null) => {
+  const profile = profileOverride || firm.profile || null;
+  if (!profile) return { ...firm };
+  const enriched = { ...firm, profile: { ...profile } };
   if (profile.name) enriched.name = profile.name;
   if (profile.summary) enriched.bio = profile.summary;
   if (profile.specialisations?.length) enriched.styles = profile.specialisations;
@@ -260,31 +223,63 @@ export const decorateFirmWithProfile = (firm = {}, profile = null) => {
   if (profile.awards?.length) enriched.awards = profile.awards;
   if (profile.headquarters) {
     const [city, country] = profile.headquarters.split(',').map((part) => part.trim());
-    enriched.location = enriched.location || {};
-    if (city) enriched.location.city = city;
-    if (country) enriched.location.country = country;
+    if (city || country) {
+      enriched.location = enriched.location || {};
+      if (city) enriched.location.city = city;
+      if (country) enriched.location.country = country;
+    }
   }
-  if (profile.averageFee) enriched.priceSqft = profile.averageFee;
+  if (profile.averageFee !== undefined) enriched.priceSqft = profile.averageFee;
   if (profile.billingCurrency) enriched.currency = profile.billingCurrency;
   if (profile.certifications?.length) enriched.certifications = profile.certifications;
   if (profile.sustainability) enriched.sustainability = profile.sustainability;
   if (profile.secretCode) enriched.secretCode = profile.secretCode;
   if (profile.letterOfIntent) enriched.letterOfIntent = profile.letterOfIntent;
-  if (profile.contactEmail || profile.contactPhone) {
+  if (profile.contactEmail || profile.contactPhone || profile.website) {
     enriched.contact = { ...(enriched.contact || {}) };
     if (profile.contactEmail) enriched.contact.email = profile.contactEmail;
     if (profile.contactPhone) enriched.contact.phone = profile.contactPhone;
+    if (profile.website) enriched.contact.website = profile.website;
   }
-  if (profile.website) enriched.website = profile.website;
   if (profile.updatedAt) enriched.profileUpdatedAt = profile.updatedAt;
   return enriched;
 };
 
-export const decorateFirmsWithProfiles = (firms = []) => {
-  const stored = readStoredProfiles();
-  return firms.map((firm) => {
-    const key = normaliseKey(firm?._id, firm);
-    const profile = stored[key] || null;
-    return decorateFirmWithProfile(firm, profile);
-  });
+export const decorateFirmsWithProfiles = (firms = []) => firms.map((firm) => decorateFirmWithProfile(firm));
+
+const readCachedFirmProfile = (firmId) => {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null;
+  }
+  try {
+    return safeParseJSON(window.localStorage.getItem(firmProfileStorageKey(firmId)));
+  } catch (error) {
+    console.warn('firm_profile_cache_read_error', error);
+    return null;
+  }
 };
+
+export const cacheFirmProfile = (profile, firmId) => {
+  if (!profile || typeof window === 'undefined' || !window.localStorage) {
+    return profile || null;
+  }
+  try {
+    window.localStorage.setItem(firmProfileStorageKey(firmId), JSON.stringify(profile));
+  } catch (error) {
+    console.warn('firm_profile_cache_write_error', error);
+  }
+  return profile || null;
+};
+
+export const loadFirmProfile = (firmId, fallbackFirm = null) => {
+  const cached = readCachedFirmProfile(firmId);
+  if (cached) {
+    return cached;
+  }
+  const profile = fallbackFirm?.profile || null;
+  if (profile) {
+    cacheFirmProfile(profile, firmId);
+  }
+  return profile;
+};
+

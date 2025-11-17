@@ -287,7 +287,10 @@ async function ensureDb() {
     );
     return;
   }
-  const uri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/builtattic";
+  const uri = process.env.MONGO_URI;
+  if (!uri) {
+    throw new Error('MONGO_URI is not configured');
+  }
   await mongoose.connect(uri, { autoIndex: true });
 }
 

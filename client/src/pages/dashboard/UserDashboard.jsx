@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 
 import { loadUserProfile, saveUserProfile } from '../../services/userProfile.js';
+import CartPanel from '../../components/dashboard/CartPanel.jsx';
 import { getSettings } from '../../services/settings.js';
 import { fetchOrders } from '../../services/orders.js';
 import { useWishlist } from '../../context/WishlistContext.jsx';
+import { useCart } from '../../context/CartContext.jsx';
 
 const EMPTY_PROFILE = {
   fullName: '',
@@ -13,10 +15,33 @@ const EMPTY_PROFILE = {
   phone: '',
   location: '',
   company: '',
+  jobTitle: '',
+  pronouns: '',
+  timezone: '',
+  website: '',
   bio: '',
 };
 
 const PROFILE_FIELDS = Object.keys(EMPTY_PROFILE);
+
+const DASHBOARD_TIMEZONE_OPTIONS = [
+  'UTC',
+  'America/Los_Angeles',
+  'America/New_York',
+  'Europe/London',
+  'Europe/Berlin',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Australia/Sydney',
+];
+
+const detectBrowserTimezone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch (error) {
+    return '';
+  }
+};
 
 const STATUS_LABELS = {
   created: 'Pending',
@@ -83,14 +108,21 @@ const timeAgo = (value) => {
   }
 };
 
-const normalizeProfileForForm = (profile = {}) => ({
-  fullName: profile.fullName || profile.name || EMPTY_PROFILE.fullName,
-  email: profile.email || EMPTY_PROFILE.email,
-  phone: profile.phone || EMPTY_PROFILE.phone,
-  location: profile.location || EMPTY_PROFILE.location,
-  company: profile.company || EMPTY_PROFILE.company,
-  bio: profile.bio || EMPTY_PROFILE.bio,
-});
+const normalizeProfileForForm = (profile = {}) => {
+  const timezone = profile.timezone || detectBrowserTimezone() || EMPTY_PROFILE.timezone;
+  return {
+    fullName: profile.fullName || profile.name || EMPTY_PROFILE.fullName,
+    email: profile.email || EMPTY_PROFILE.email,
+    phone: profile.phone || EMPTY_PROFILE.phone,
+    location: profile.location || EMPTY_PROFILE.location,
+    company: profile.company || EMPTY_PROFILE.company,
+    jobTitle: profile.jobTitle || profile.title || EMPTY_PROFILE.jobTitle,
+    pronouns: profile.pronouns || EMPTY_PROFILE.pronouns,
+    timezone,
+    website: profile.website || profile.portfolio || EMPTY_PROFILE.website,
+    bio: profile.bio || EMPTY_PROFILE.bio,
+  };
+};
 
 const profilePayloadFromForm = (form = {}) => ({
   name: form.fullName || '',
@@ -99,6 +131,10 @@ const profilePayloadFromForm = (form = {}) => ({
   phone: form.phone || '',
   location: form.location || '',
   company: form.company || '',
+  jobTitle: form.jobTitle || '',
+  pronouns: form.pronouns || '',
+  timezone: form.timezone || '',
+  website: form.website || '',
   bio: form.bio || '',
 });
 
@@ -152,6 +188,7 @@ export default function UserDashboard() {
   const [ordersError, setOrdersError] = useState(null);
 
   const { wishlistItems, fetchWishlist } = useWishlist();
+  const { cartItems, removeFromCart } = useCart();
 
   const profileRequestRef = useRef(0);
   const ordersRequestRef = useRef(0);
@@ -268,6 +305,8 @@ export default function UserDashboard() {
   }, [orders]);
 
   const savedStudios = useMemo(() => (wishlistItems || []).slice(0, 4), [wishlistItems]);
+  const readyCartItems = useMemo(() => (Array.isArray(cartItems) ? cartItems : []), [cartItems]);
+  const cartItemCount = readyCartItems.length;
 
   const handleSave = async () => {
     setProfileMeta((prev) => ({ ...prev, saving: true, error: null }));
@@ -303,7 +342,19 @@ export default function UserDashboard() {
     fetchWishlistRef.current?.();
   };
 
+  const handleRemoveCartItem = useCallback(async (item) => {
+    try {
+      await removeFromCart?.(item);
+      toast.success('Removed from cart');
+    } catch (error) {
+      console.error('dashboard_cart_remove_error', error);
+      toast.error('Unable to remove item');
+    }
+  }, [removeFromCart]);
+
   const lastSyncedLabel = profileMeta.lastSync ? timeAgo(profileMeta.lastSync) : null;
+  const roleSummary = [profileForm.jobTitle, profileForm.company].filter(Boolean).join(' • ');
+  const timezoneSummary = profileForm.timezone || '';
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -321,6 +372,13 @@ export default function UserDashboard() {
                 ? `Last synced ${lastSyncedLabel}`
                 : 'Keeping your profile in sync.'}
             </p>
+            {(roleSummary || timezoneSummary) && (
+              <p className="text-xs text-slate-500">
+                {roleSummary}
+                {roleSummary && timezoneSummary ? ' · ' : ''}
+                {timezoneSummary}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -348,6 +406,9 @@ export default function UserDashboard() {
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600">
                   {wishlistItems?.length || 0} saved studios
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600">
+                  {cartItemCount || 0} cart item{cartItemCount === 1 ? '' : 's'}
                 </span>
               </div>
             </div>
@@ -381,6 +442,28 @@ export default function UserDashboard() {
                 <Field label="Phone" type="tel" value={profileForm.phone} onChange={handleField('phone')} placeholder="+1 555 010 2024" autoComplete="tel" />
               </div>
               <Field label="Company" value={profileForm.company} onChange={handleField('company')} placeholder="Builtattic Ltd" autoComplete="organization" />
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Job title" value={profileForm.jobTitle} onChange={handleField('jobTitle')} placeholder="Design Lead" autoComplete="organization-title" />
+                <Field label="Pronouns" value={profileForm.pronouns} onChange={handleField('pronouns')} placeholder="She / Her" />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-slate-700">Timezone</span>
+                  <select
+                    value={profileForm.timezone || ''}
+                    onChange={handleField('timezone')}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  >
+                    <option value="">Select timezone</option>
+                    {DASHBOARD_TIMEZONE_OPTIONS.map((tz) => (
+                      <option key={tz} value={tz}>
+                        {tz}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Field label="Website / portfolio" type="url" value={profileForm.website} onChange={handleField('website')} placeholder="https://builtattic.com/you" autoComplete="url" />
+              </div>
               <Field label="Location" value={profileForm.location} onChange={handleField('location')} placeholder="San Francisco, CA" autoComplete="address-level2" />
               <Field label="Bio" multiline value={profileForm.bio} onChange={handleField('bio')} placeholder="Tell us the kind of work you are focusing on." />
 
@@ -463,6 +546,12 @@ export default function UserDashboard() {
         </section>
 
         <aside className="space-y-6">
+          <CartPanel
+            title="Buying pipeline"
+            description="Review the services and materials you're about to checkout."
+            items={readyCartItems}
+            onRemove={readyCartItems.length ? handleRemoveCartItem : undefined}
+          />
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-900">Saved studios</h2>

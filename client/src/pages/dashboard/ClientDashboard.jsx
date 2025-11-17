@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   User,
   ShoppingCart,
@@ -12,6 +12,9 @@ import {
   X,
 } from "lucide-react";
 import { fetchCatalog } from "../../services/marketplace.js";
+import { useCart } from "../../context/CartContext.jsx";
+import CartPanel from "../../components/dashboard/CartPanel.jsx";
+import { toast } from "react-hot-toast";
 
 const sidebarItems = [
   { id: "profile", label: "Profile", icon: <User size={18} /> },
@@ -23,7 +26,7 @@ const sidebarItems = [
 
 const formatCurrency = (amount, currency = "USD") => {
   const value = Number(amount);
-  if (!Number.isFinite(value)) return "GÇö";
+  if (!Number.isFinite(value)) return "G";
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -42,6 +45,7 @@ export default function ClientDashboard() {
   const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { cartItems, removeFromCart } = useCart();
 
   useEffect(() => {
     let isMounted = true;
@@ -75,6 +79,23 @@ export default function ClientDashboard() {
     () => catalog.reduce((sum, item) => sum + Number(item.price || 0), 0),
     [catalog]
   );
+  const readyCartItems = useMemo(
+    () => (Array.isArray(cartItems) ? cartItems : []),
+    [cartItems]
+  );
+
+  const handleRemoveCartItem = useCallback(
+    async (item) => {
+      try {
+        await removeFromCart?.(item);
+        toast.success("Removed from cart");
+      } catch (err) {
+        console.error("cart_remove_failed", err);
+        toast.error("Unable to remove item");
+      }
+    },
+    [removeFromCart]
+  );
 
   const renderContent = () => {
     switch (activeView) {
@@ -86,6 +107,8 @@ export default function ClientDashboard() {
             error={error}
             totalValue={totalCatalogValue}
             currency={catalogCurrency}
+            cartItems={readyCartItems}
+            onRemoveCartItem={handleRemoveCartItem}
           />
         );
       case "orders":
@@ -115,6 +138,7 @@ export default function ClientDashboard() {
             loading={loading}
             currency={catalogCurrency}
             totalValue={totalCatalogValue}
+            cartItems={readyCartItems}
           />
         );
       case "notifications":
@@ -127,6 +151,8 @@ export default function ClientDashboard() {
             error={error}
             totalValue={totalCatalogValue}
             currency={catalogCurrency}
+            cartItems={readyCartItems}
+            onRemoveCartItem={handleRemoveCartItem}
           />
         );
     }
@@ -199,13 +225,14 @@ export default function ClientDashboard() {
 //
 // --- Views ---
 //
-function ProfileView({ catalog, loading, error, totalValue, currency }) {
+function ProfileView({ catalog, loading, error, totalValue, currency, cartItems = [], onRemoveCartItem }) {
   const published = catalog.filter((item) => item.status === "published");
   const featured = catalog.slice(0, 3);
+  const cartCount = Array.isArray(cartItems) ? cartItems.length : 0;
   return (
     <>
         <section className="mb-8">
-        <h2 className="text-2xl font-bold mb-4">Welcome back =ƒæï</h2>
+        <h2 className="text-2xl font-bold mb-4">Welcome back =</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             icon={<CheckCircle />}
@@ -219,8 +246,8 @@ function ProfileView({ catalog, loading, error, totalValue, currency }) {
           />
           <StatCard
             icon={<ShoppingCart />}
-            label="Wishlist Ready"
-            value={loading ? "GÇª" : featured.length}
+            label="In Cart"
+            value={loading ? "GÇª" : cartCount}
           />
           <StatCard
             icon={<DollarSign />}
@@ -233,6 +260,14 @@ function ProfileView({ catalog, loading, error, totalValue, currency }) {
             {error}
           </div>
         )}
+      </section>
+      <section className="mb-8">
+        <CartPanel
+          title="Buying & cart"
+          description="Services and materials you have queued for checkout."
+          items={cartItems}
+          onRemove={cartCount ? onRemoveCartItem : undefined}
+        />
       </section>
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-4">Featured Marketplace Files</h2>
@@ -269,7 +304,7 @@ function ProfileView({ catalog, loading, error, totalValue, currency }) {
           ) : published.length ? (
             published.map((item) => (
               <p key={item._id || item.slug}>
-                =ƒôî <strong>{item.title}</strong> now available for{" "}
+                = <strong>{item.title}</strong> now available for{" "}
                 {formatCurrency(item.price || 0, item.currency || "USD")}.
               </p>
             ))
@@ -287,7 +322,7 @@ function OrdersView({ catalog, loading, error, currency }) {
     name: item.title,
     status: item.status === "published" ? "Delivered" : "Draft",
     provider: item.firm?.name || "Marketplace",
-    date: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "GÇö",
+    date: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "G",
     price: formatCurrency(item.price || 0, item.currency || currency),
   }));
 
@@ -310,7 +345,7 @@ function OrdersView({ catalog, loading, error, currency }) {
               <div>
                 <p className="font-medium text-base">{order.name}</p>
                 <p className="text-gray-500">
-                  Provider: {order.provider} GÇó Date: {order.date}
+                  Provider: {order.provider} G Date: {order.date}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -417,12 +452,20 @@ function WishlistView({ catalog, wishlist, setWishlist, loading, currency }) {
   );
 }
 
-function PaymentsView({ catalog, wishlist, loading, currency, totalValue }) {
+function PaymentsView({ catalog, wishlist, loading, currency, totalValue, cartItems = [] }) {
   const wishlistTotal = wishlist.reduce(
     (sum, item) => sum + Number(item.price || 0),
     0
   );
-  const items = wishlist.length > 0 ? wishlist : catalog.slice(0, 3);
+  const safeCartItems = Array.isArray(cartItems) ? cartItems : [];
+  const cartSubtotal = safeCartItems.reduce((sum, item) => {
+    const price = Number(item?.totalPrice ?? item?.price ?? 0);
+    const qtyValue = Number(item?.quantity);
+    const qty = Number.isFinite(qtyValue) && qtyValue > 0 ? Math.round(qtyValue) : 1;
+    return sum + price * Math.max(1, qty);
+  }, 0);
+  const readyItems = safeCartItems.length > 0 ? safeCartItems : wishlist.length > 0 ? wishlist : catalog.slice(0, 3);
+  const hasCart = safeCartItems.length > 0;
 
   return (
     <section>
@@ -430,11 +473,16 @@ function PaymentsView({ catalog, wishlist, loading, currency, totalValue }) {
       <div className="bg-white border rounded-xl p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div className="rounded-lg border bg-gray-50 p-4">
-            <p className="text-gray-500">Wishlist Total</p>
+            <p className="text-gray-500">{hasCart ? "Cart subtotal" : "Wishlist total"}</p>
             <p className="text-lg font-semibold text-gray-900">
               {loading
-                ? "GÇª"
-                : formatCurrency(wishlistTotal, wishlist[0]?.currency || currency)}
+                ? "GO"
+                : formatCurrency(
+                    hasCart ? cartSubtotal : wishlistTotal,
+                    hasCart
+                      ? safeCartItems[0]?.currency || currency
+                      : wishlist[0]?.currency || currency,
+                  )}
             </p>
           </div>
           <div className="rounded-lg border bg-gray-50 p-4">
@@ -446,33 +494,38 @@ function PaymentsView({ catalog, wishlist, loading, currency, totalValue }) {
           <div className="rounded-lg border bg-gray-50 p-4">
             <p className="text-gray-500">Designs Selected</p>
             <p className="text-lg font-semibold text-gray-900">
-              {loading ? "GÇª" : wishlist.length || catalog.length}
+              {loading ? "GO" : hasCart ? safeCartItems.length : wishlist.length || catalog.length}
             </p>
           </div>
         </div>
 
         <h3 className="font-semibold">Ready for Checkout</h3>
         {loading ? (
-          <p className="text-sm text-gray-500">Preparing payment summaryGÇª</p>
-        ) : items.length === 0 ? (
+          <p className="text-sm text-gray-500">Preparing payment summaryGO</p>
+        ) : readyItems.length === 0 ? (
           <p className="text-sm text-gray-500">
             Add designs to your wishlist to prepare a payment.
           </p>
         ) : (
           <ul className="space-y-3 text-sm">
-            {items.map((item) => (
+            {readyItems.map((item) => (
               <li
-                key={item._id || item.slug}
+                key={item._id || item.slug || item.id}
                 className="flex items-center justify-between rounded-lg border px-4 py-3"
               >
                 <div>
                   <p className="font-medium">{item.title}</p>
                   <p className="text-xs text-gray-500">
-                    {item.status === "published" ? "Available instantly" : "Draft"}
+                    {hasCart
+                      ? `Qty ${Math.max(1, Number(item.quantity) || 1)}  ${item.source || "Marketplace"}`
+                      : item.status === "published" ? "Available instantly" : "Draft"}
                   </p>
                 </div>
                 <span className="font-semibold text-gray-800">
-                  {formatCurrency(item.price || 0, item.currency || currency)}
+                  {formatCurrency(
+                    (item.totalPrice ?? item.price ?? 0),
+                    item.currency || currency,
+                  )}
                 </span>
               </li>
             ))}
@@ -481,14 +534,14 @@ function PaymentsView({ catalog, wishlist, loading, currency, totalValue }) {
 
         <button
           type="button"
-          disabled={loading || items.length === 0}
+          disabled={loading || readyItems.length === 0}
           className={`w-full rounded-lg border px-4 py-3 text-sm font-semibold transition ${
-            items.length === 0
+            readyItems.length === 0
               ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
               : "border-gray-900 bg-gray-900 text-white hover:bg-gray-800"
           }`}
         >
-          Proceed to Payment
+          {hasCart ? "Go to checkout" : "Proceed to payment"}
         </button>
       </div>
     </section>
@@ -509,7 +562,7 @@ function NotificationsView({ catalog, loading }) {
       <h2 className="text-2xl font-bold mb-4">Notifications</h2>
       <div className="bg-gray-50 border rounded-xl p-6 space-y-4">
         {loading ? (
-          <p className="text-sm text-gray-500">Loading notificationsà</p>
+          <p className="text-sm text-gray-500">Loading notifications</p>
         ) : notifications.length === 0 ? (
           <p className="text-sm text-gray-500">
             No notifications yet. Uploads will appear here as they go live.

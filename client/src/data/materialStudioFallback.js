@@ -270,4 +270,5 @@ const sortedRecords = [...materialStudioRecords].sort(
   (a, b) => Number(a["S.no"] || 0) - Number(b["S.no"] || 0),
 );
 
-export const materialStudioFallback = sortedRecords.map(buildMaterial);
+const materialStudioFallbackAll = sortedRecords.map(buildMaterial);
+export const materialStudioFallback = materialStudioFallbackAll.slice(0, 6);

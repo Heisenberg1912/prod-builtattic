@@ -1,0 +1,2445 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Inbox, Plus, Sparkles } from "lucide-react";
+
+
+
+import StudioDashboardCard from "../../components/studio/StudioDashboardCard.jsx";
+
+
+
+import HostingTilesEditor from "../../components/studio/HostingTilesEditor.jsx";
+
+
+
+import StudioLookupEditor from "../../components/studio/StudioLookupEditor.jsx";
+
+
+
+import {
+
+
+
+  fetchFirmDashboard,
+
+
+
+  fetchFirmStudioRequests,
+
+
+
+  fetchFirmHostingConfig,
+
+
+
+  updateFirmHostingConfig,
+
+
+
+  fetchFirmLookupConfig,
+
+
+
+  updateFirmLookupConfig,
+
+
+
+} from "../../services/dashboard.js";
+
+
+
+import { toast } from "react-hot-toast";
+
+
+
+import { DEFAULT_STUDIO_LOOKUP, ACCESS_LOOKUP_REASONS, normalizeLookupConfig } from "../../utils/studioLookup.js";
+
+
+
+
+
+
+
+const StatCard = ({ value, label, helper }) => (
+
+
+
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+
+
+
+    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">{label}</p>
+
+
+
+    <p className="mt-2 text-2xl font-semibold text-slate-900">{value ?? "-"}</p>
+
+
+
+    {helper ? <p className="text-sm text-slate-500">{helper}</p> : null}
+
+
+
+  </div>
+
+
+
+);
+
+
+
+
+
+
+
+const Section = ({ id, title, description, children, action }) => (
+
+
+
+  <section id={id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+
+
+
+    <div className="flex flex-wrap items-center justify-between gap-3">
+
+
+
+      <div>
+
+
+
+        {description ? (
+
+
+
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">{description}</p>
+
+
+
+        ) : null}
+
+
+
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+
+
+
+      </div>
+
+
+
+      {action || null}
+
+
+
+    </div>
+
+
+
+    {children}
+
+
+
+  </section>
+
+
+
+);
+
+
+
+
+
+
+
+const ActionCard = ({ icon, title, description, cta }) => (
+
+
+
+  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700 flex items-start gap-3">
+
+
+
+    <div className="rounded-xl bg-white p-2 text-slate-900 shadow-sm">{icon}</div>
+
+
+
+    <div className="space-y-1">
+
+
+
+      <p className="font-semibold text-slate-900">{title}</p>
+
+
+
+      <p>{description}</p>
+
+
+
+      {cta}
+
+
+
+    </div>
+
+
+
+  </div>
+
+
+
+);
+
+
+
+
+
+
+
+const RequestRow = ({ request }) => (
+
+
+
+  <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm">
+
+
+
+    <div className="flex flex-wrap items-center justify-between gap-2">
+
+
+
+      <div>
+
+
+
+        <p className="font-semibold text-slate-900">{request.contactName || "Unknown contact"}</p>
+
+
+
+        <p className="text-xs text-slate-500">{request.contactEmail || "-"}</p>
+
+
+
+      </div>
+
+
+
+      <span className="rounded-full bg-slate-900/5 px-2 py-0.5 text-xs font-semibold text-slate-700">
+
+
+
+        {request.status || "new"}
+
+
+
+      </span>
+
+
+
+    </div>
+
+
+
+    <p className="mt-2 text-xs text-slate-500">{new Date(request.createdAt || Date.now()).toLocaleString()}</p>
+
+
+
+    {request.message ? <p className="mt-2 text-slate-700 line-clamp-2">{request.message}</p> : null}
+
+
+
+  </div>
+
+
+
+);
+
+
+
+
+
+
+
+const formatCurrency = (value) => {
+
+
+
+  if (value == null) return "-";
+
+
+
+  try {
+
+
+
+    return new Intl.NumberFormat(undefined, {
+
+
+
+      style: "currency",
+
+
+
+      currency: "USD",
+
+
+
+      maximumFractionDigits: 0,
+
+
+
+    }).format(Number(value));
+
+
+
+  } catch {
+
+
+
+    return `$${value}`;
+
+
+
+  }
+
+
+
+};
+
+
+
+
+
+
+
+const StudioLookupEmptyState = ({ config, overrides = {}, actions = [] }) => {
+
+
+
+  const normalized = normalizeLookupConfig(config || DEFAULT_STUDIO_LOOKUP);
+
+
+
+  const headline = overrides.headline || normalized.headline;
+
+
+
+  const description = overrides.description || normalized.description;
+
+
+
+  const helper = overrides.helper === null ? null : overrides.helper || normalized.helper;
+
+
+
+  const safeReasons = (overrides.reasons && overrides.reasons.length ? overrides.reasons : normalized.reasons).slice(0, 4);
+
+
+
+  const safeTags = overrides.tags && overrides.tags.length ? overrides.tags : normalized.tags;
+
+
+
+  const actionable = actions.filter(Boolean);
+
+
+
+
+
+
+
+  const baseButton = "inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-semibold transition";
+
+
+
+  const variantClass = {
+
+
+
+    primary: "bg-white text-slate-900 shadow-sm hover:bg-white/90",
+
+
+
+    secondary: "border border-white/40 text-white hover:bg-white/10",
+
+
+
+    ghost: "border border-white/20 text-white hover:bg-white/10",
+
+
+
+  };
+
+
+
+
+
+
+
+  const renderAction = (action) => {
+
+
+
+    const { key, label, href, onClick, variant = "ghost", external, newTab } = action;
+
+
+
+    if (!label) return null;
+
+
+
+    const className = `${baseButton} ${variantClass[variant] || variantClass.ghost}`;
+
+
+
+    const id = key || `${label}`;
+
+
+
+    if (typeof onClick === "function") {
+
+
+
+      return (
+
+
+
+        <button key={id} type="button" onClick={onClick} className={className}>
+
+
+
+          {label}
+
+
+
+        </button>
+
+
+
+      );
+
+
+
+    }
+
+
+
+    if (href) {
+
+
+
+      const isExternal = external || href.startsWith("http") || href.startsWith("mailto:");
+
+
+
+      if (isExternal) {
+
+
+
+        const target = newTab === false ? undefined : "_blank";
+
+
+
+        const rel = target ? "noreferrer" : undefined;
+
+
+
+        return (
+
+
+
+          <a key={id} href={href} className={className} target={target} rel={rel}>
+
+
+
+            {label}
+
+
+
+          </a>
+
+
+
+        );
+
+
+
+      }
+
+
+
+      return (
+
+
+
+        <Link key={id} to={href} className={className}>
+
+
+
+          {label}
+
+
+
+        </Link>
+
+
+
+      );
+
+
+
+    }
+
+
+
+    return null;
+
+
+
+  };
+
+
+
+
+
+
+
+  return (
+
+
+
+    <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-900 text-white shadow-xl">
+
+
+
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-indigo-900/80 to-slate-900" aria-hidden="true" />
+
+
+
+      <div className="relative grid gap-6 lg:grid-cols-[1.5fr,1fr] p-6 md:p-10">
+
+
+
+        <div className="space-y-6">
+
+
+
+          <div className="space-y-3">
+
+
+
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/60">Studio lookup</p>
+
+
+
+            <h1 className="text-3xl sm:text-4xl font-semibold">{headline}</h1>
+
+
+
+            <p className="text-base text-white/80 max-w-2xl">{description}</p>
+
+
+
+          </div>
+
+
+
+          {actionable.length ? <div className="flex flex-wrap gap-3">{actionable.map(renderAction)}</div> : null}
+
+
+
+          {safeTags.length ? (
+
+
+
+            <div className="flex flex-wrap gap-2">
+
+
+
+              {safeTags.map((tag, index) => (
+
+
+
+                <span key={`${tag}-${index}`} className="inline-flex items-center gap-2 rounded-2xl border border-white/15 px-3 py-1 text-xs text-white/80">
+
+
+
+                  <span className="text-white/40">&bull;</span>
+
+
+
+                  {tag}
+
+
+
+                </span>
+
+
+
+              ))}
+
+
+
+            </div>
+
+
+
+          ) : null}
+
+
+
+        </div>
+
+
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+
+
+
+          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/70">Why this happens</p>
+
+
+
+          <div className="mt-4 space-y-3">
+
+
+
+            {safeReasons.map((reason, index) => (
+
+
+
+              <div key={`${reason.title}-${index}`} className="rounded-xl border border-white/10 bg-slate-900/30 p-4">
+
+
+
+                <p className="text-sm font-semibold text-white">{reason.title}</p>
+
+
+
+                <p className="mt-1 text-sm text-white/70">{reason.detail}</p>
+
+
+
+              </div>
+
+
+
+            ))}
+
+
+
+          </div>
+
+
+
+          {helper ? <p className="mt-4 text-xs text-white/70">{helper}</p> : null}
+
+
+
+        </div>
+
+
+
+      </div>
+
+
+
+    </section>
+
+
+
+  );
+
+
+
+};
+
+
+
+
+
+
+
+export default function FirmDashboard() {
+
+
+
+  const [state, setState] = useState({ loading: true, data: null, error: null, authRequired: false, fallback: false });
+
+
+
+  const [requestsState, setRequestsState] = useState({ loading: true, data: [], error: null });
+
+
+
+  const [hostingState, setHostingState] = useState({ loading: true, hosting: null, error: null, saving: false });
+
+
+
+  const [lookupState, setLookupState] = useState({ loading: true, config: DEFAULT_STUDIO_LOOKUP, error: null, saving: false });
+
+
+
+  const navigate = useNavigate();
+
+
+
+
+
+
+
+  useEffect(() => {
+
+
+
+    let active = true;
+
+
+
+    const load = async () => {
+
+
+
+      try {
+
+
+
+        const payload = await fetchFirmDashboard();
+
+
+
+        if (!active) return;
+
+
+
+        const fallback = Boolean(payload?.fallback);
+
+
+
+        const requiresAuth = Boolean(payload?.authRequired && !fallback);
+
+
+
+        if (requiresAuth) {
+
+
+
+          setState({ loading: false, data: null, error: null, authRequired: true, fallback: false });
+
+
+
+        } else {
+
+
+
+          setState({
+
+
+
+            loading: false,
+
+
+
+            data: payload,
+
+
+
+            error: fallback ? null : payload?.error || null,
+
+
+
+            authRequired: false,
+
+
+
+            fallback,
+
+
+
+          });
+
+
+
+        }
+
+
+
+      } catch (err) {
+
+
+
+        if (!active) return;
+
+
+
+        setState({ loading: false, data: null, error: err.message || "Unable to load dashboard", authRequired: false, fallback: false });
+
+
+
+      }
+
+
+
+    };
+
+
+
+    load();
+
+
+
+    return () => {
+
+
+
+      active = false;
+
+
+
+    };
+
+
+
+  }, []);
+
+
+
+
+
+
+
+  useEffect(() => {
+
+
+
+    let active = true;
+
+
+
+    const loadHosting = async () => {
+
+
+
+      try {
+
+
+
+        const response = await fetchFirmHostingConfig();
+
+
+
+        if (!active) return;
+
+
+
+        setHostingState({ loading: false, hosting: response?.hosting || null, error: response?.error || null, saving: false });
+
+
+
+      } catch (err) {
+
+
+
+        if (!active) return;
+
+
+
+        setHostingState({ loading: false, hosting: null, error: err?.message || "Unable to load hosting", saving: false });
+
+
+
+      }
+
+
+
+    };
+
+
+
+    loadHosting();
+
+
+
+    return () => {
+
+
+
+      active = false;
+
+
+
+    };
+
+
+
+  }, []);
+
+
+
+
+
+
+
+  useEffect(() => {
+
+
+
+    let active = true;
+
+
+
+    const loadLookup = async () => {
+
+
+
+      try {
+
+
+
+        const response = await fetchFirmLookupConfig();
+
+
+
+        if (!active) return;
+
+
+
+        setLookupState({
+
+
+
+          loading: false,
+
+
+
+          config: response?.lookup || DEFAULT_STUDIO_LOOKUP,
+
+
+
+          error: response?.error || null,
+
+
+
+          saving: false,
+
+
+
+        });
+
+
+
+      } catch (err) {
+
+
+
+        if (!active) return;
+
+
+
+        setLookupState({ loading: false, config: DEFAULT_STUDIO_LOOKUP, error: err?.message || "Unable to load lookup copy", saving: false });
+
+
+
+      }
+
+
+
+    };
+
+
+
+    loadLookup();
+
+
+
+    return () => {
+
+
+
+      active = false;
+
+
+
+    };
+
+
+
+  }, []);
+
+
+
+
+
+
+
+  useEffect(() => {
+
+
+
+    let active = true;
+
+
+
+    const loadRequests = async () => {
+
+
+
+      try {
+
+
+
+        const response = await fetchFirmStudioRequests();
+
+
+
+        if (!active) return;
+
+
+
+        const requests = (response?.requests || []).map((item) => ({ id: item._id || item.id, ...item }));
+
+
+
+        setRequestsState({ loading: false, data: requests, error: null });
+
+
+
+      } catch (err) {
+
+
+
+        if (!active) return;
+
+
+
+        setRequestsState({ loading: false, data: [], error: err?.message || "Unable to load studio requests" });
+
+
+
+      }
+
+
+
+    };
+
+
+
+    loadRequests();
+
+
+
+    return () => {
+
+
+
+      active = false;
+
+
+
+    };
+
+
+
+  }, []);
+
+
+
+
+
+
+
+  const { loading, data, error, authRequired, fallback } = state;
+
+
+
+  const metrics = data?.metrics || {};
+
+
+
+  const firm = data?.firm || {};
+
+
+
+  const heroTitle = firm.name || "Design Studio workspace";
+
+
+
+  const heroTagline = firm.tagline || "Keep your catalogue current and respond to briefs quickly.";
+
+
+
+  const heroLocation = [firm.location?.city, firm.location?.country].filter(Boolean).join(", ");
+
+
+
+  const studioHref = firm.slug ? `/studio/${firm.slug}` : "/studio";
+
+
+
+  const statCards = useMemo(
+
+
+
+    () => [
+
+
+
+      { label: "Published studios", value: metrics.studiosPublished ?? "-" },
+
+
+
+      { label: "Drafts", value: metrics.draftStudios ?? "-" },
+
+
+
+      { label: "Published value", value: formatCurrency(metrics.publishedValue) },
+
+
+
+      { label: "Documents", value: metrics.documents ?? "-", helper: "Ready for QA" },
+
+
+
+    ],
+
+
+
+    [metrics]
+
+
+
+  );
+
+
+
+  const heroHighlights = [
+
+    metrics.studiosPublished ? `${metrics.studiosPublished} live` : null,
+
+    metrics.draftStudios ? `${metrics.draftStudios} drafts` : null,
+
+    heroLocation || null,
+
+  ].filter(Boolean);
+
+
+
+
+
+
+
+  const editingShortcuts = useMemo(
+
+
+
+    () => [
+
+
+
+      {
+
+
+
+        key: "studio-bundles",
+
+
+
+        title: "Studio bundles",
+
+
+
+        description: "Use the cards below to edit hero images, pricing, specs, or open the full workspace.",
+
+
+
+        href: "#studio-bundles",
+
+
+
+        cta: "Jump to bundle manager",
+
+
+
+        isAnchor: true,
+
+
+
+      },
+
+
+
+      {
+
+
+
+        key: "firm-profile",
+
+
+
+        title: "Firm profile card",
+
+
+
+        description: "Change the firm hero image, summary, gallery, and contact info that appear across Builtattic.",
+
+
+
+        href: "/portal/firm",
+
+
+
+        cta: "Edit firm profile",
+
+
+
+      },
+
+
+
+      {
+
+
+
+        key: "hosting-tiles",
+
+
+
+        title: "Service tiles (below)",
+
+
+
+        description: 'Rewrite the "What this studio sells" section using the editor in this dashboard. It updates instantly.',
+
+
+
+        href: "#hosting-editor",
+
+
+
+        cta: "Jump to tiles editor",
+
+
+
+        isAnchor: true,
+
+
+
+      },
+
+
+
+      {
+
+
+
+        key: "lookup",
+
+
+
+        title: "Studio lookup card",
+
+
+
+        description: "Control the empty-state copy buyers see when a slug is missing or private.",
+
+
+
+        href: "#lookup-editor",
+
+
+
+        cta: "Jump to lookup editor",
+
+
+
+        isAnchor: true,
+
+
+
+      },
+
+
+
+      {
+
+
+
+        key: "requests",
+
+
+
+        title: "Incoming briefs",
+
+
+
+        description: "Reply to studio requests and leads inside the workspace inbox so your badge stays active.",
+
+
+
+        href: "/portal/studio?section=requests",
+
+
+
+        cta: "Open requests inbox",
+
+
+
+      },
+
+
+
+    ],
+
+
+
+    []
+
+
+
+  );
+
+
+
+
+
+
+
+  const handleHostingSave = async (payload) => {
+
+
+
+    setHostingState((prev) => ({ ...prev, saving: true, error: null }));
+
+
+
+    try {
+
+
+
+      const response = await updateFirmHostingConfig(payload);
+
+
+
+      const nextHosting = response?.hosting || {
+
+
+
+        enabled: true,
+
+
+
+        serviceSummary: response?.hosting?.serviceSummary || payload?.serviceSummary,
+
+
+
+        services: response?.hosting?.services || payload?.services,
+
+
+
+        products: response?.hosting?.products || payload?.products,
+
+
+
+        updatedAt: new Date().toISOString(),
+
+
+
+      };
+
+
+
+      setHostingState({ loading: false, hosting: nextHosting, error: response?.error || null, saving: false });
+
+
+
+      toast.success(response?.fallback ? "Saved locally. Changes will sync once the API is back." : "Studio programs updated.");
+
+
+
+    } catch (err) {
+
+
+
+      console.error("hosting_update_failed", err);
+
+
+
+      setHostingState((prev) => ({ ...prev, saving: false, error: err?.message || prev.error }));
+
+
+
+      toast.error(err?.message || "Unable to save hosting tiles.");
+
+
+
+    }
+
+
+
+  };
+
+
+
+
+
+
+
+  const handleLookupSave = async (payload) => {
+
+
+
+    setLookupState((prev) => ({ ...prev, saving: true, error: null }));
+
+
+
+    try {
+
+
+
+      const response = await updateFirmLookupConfig(payload);
+
+
+
+      setLookupState({
+
+
+
+        loading: false,
+
+
+
+        config: response?.lookup || payload || DEFAULT_STUDIO_LOOKUP,
+
+
+
+        error: response?.error || null,
+
+
+
+        saving: false,
+
+
+
+      });
+
+
+
+      toast.success(response?.fallback ? "Saved locally. We'll sync once online." : "Studio lookup updated.");
+
+
+
+    } catch (err) {
+
+
+
+      console.error("lookup_update_failed", err);
+
+
+
+      setLookupState((prev) => ({ ...prev, saving: false, error: err?.message || prev.error }));
+
+
+
+      toast.error(err?.message || "Unable to save studio lookup copy.");
+
+
+
+    }
+
+
+
+  };
+
+
+
+
+
+
+
+  const hosting = hostingState.hosting;
+
+
+
+  const lookupConfig = normalizeLookupConfig(lookupState.config);
+
+
+
+
+
+
+
+  if (loading) {
+
+
+
+    return (
+
+
+
+      <div className="min-h-screen bg-slate-50 px-4 py-10 md:px-8">
+
+
+
+        <section className="rounded-3xl border border-slate-200 bg-white/70 p-6 shadow-sm">
+
+
+
+          <p className="text-sm text-slate-600">Loading Design Studio workspace...</p>
+
+
+
+        </section>
+
+
+
+      </div>
+
+
+
+    );
+
+
+
+  }
+
+
+
+
+
+
+
+  const hasStudios = Boolean(data?.studios?.length);
+  const showLookup = authRequired || (!data && !fallback) || (!hasStudios && !fallback);
+
+
+
+
+
+
+
+  if (showLookup) {
+
+
+
+    const overrides = authRequired
+
+
+
+      ? {
+
+
+
+          headline: "Studio workspace locked.",
+
+
+
+          description: "We could not open this dashboard because your login is not linked to a Design Studio membership yet.",
+
+
+
+          reasons: ACCESS_LOOKUP_REASONS,
+
+
+
+        }
+
+
+
+      : {
+
+
+
+          headline: error || lookupConfig.headline,
+
+
+
+          description: "We couldn't find the system you requested. Re-run your search or open a fresh marketplace session--your recommendations update instantly.",
+
+
+
+        };
+
+
+
+
+
+
+
+    return (
+
+
+
+      <div className="min-h-screen bg-slate-50 px-4 py-10 md:px-8">
+
+
+
+        <StudioLookupEmptyState
+
+
+
+          config={lookupConfig}
+
+
+
+          overrides={overrides}
+
+
+
+          actions={[
+
+
+
+            { key: "back", label: "Go back", onClick: () => navigate(-1), variant: "ghost" },
+
+
+
+            { key: "market", label: "Open studio marketplace", href: "/studio", variant: "primary" },
+
+
+
+            {
+
+
+
+              key: "support",
+
+
+
+              label: authRequired ? "Request access" : "Contact concierge",
+
+
+
+              href: "mailto:studios@builtattic.com",
+
+
+
+              variant: "secondary",
+
+
+
+            },
+
+
+
+          ]}
+
+
+
+        />
+
+
+
+      </div>
+
+
+
+    );
+
+
+
+  }
+
+
+
+
+
+
+
+  return (
+
+
+
+    <div className="min-h-screen bg-slate-50 px-4 py-6 md:px-8 space-y-6">
+
+
+
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-900 text-white shadow-sm">
+
+
+
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" aria-hidden="true" />
+
+
+
+        <div className="relative flex flex-wrap items-start justify-between gap-6 p-6 md:p-8">
+
+
+
+          <div className="max-w-2xl">
+
+
+
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-300">Design Studio workspace</p>
+
+
+
+            <h1 className="mt-2 text-3xl font-semibold">{heroTitle}</h1>
+
+
+
+            <p className="mt-3 text-sm text-slate-200">{heroTagline}</p>
+
+
+
+            {heroHighlights.length ? (
+
+
+
+              <p className="mt-3 text-xs uppercase tracking-[0.3em] text-slate-300 space-x-2">
+
+
+
+                {heroHighlights.map((item, index) => (
+
+
+
+                  <span key={`${item}-${index}`}>
+
+
+
+                    {item}
+
+
+
+                    {index < heroHighlights.length - 1 ? " * " : ""}
+
+
+
+                  </span>
+
+
+
+                ))}
+
+
+
+              </p>
+
+
+
+            ) : null}
+
+
+
+          </div>
+
+
+
+          <div className="flex flex-wrap items-center gap-3">
+
+
+
+            <Link to={studioHref} className="rounded-2xl bg-white/90 px-5 py-2.5 text-sm font-semibold text-slate-900 shadow hover:bg-white">
+
+
+
+              View listing
+
+
+
+            </Link>
+
+
+
+            <Link to="/portal/studio" className="rounded-2xl border border-white/40 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10">
+
+
+
+              Open workspace
+
+
+
+            </Link>
+
+
+
+          </div>
+
+
+
+        </div>
+
+
+
+      </section>
+
+
+
+
+
+
+
+      {fallback ? (
+
+
+
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+
+
+
+          Demo data is shown while your firm membership syncs. Connect your Design Studio portal to replace this snapshot with live stats.
+
+
+
+        </div>
+
+
+
+      ) : null}
+
+
+
+
+
+
+
+      <Section title="Editing shortcuts" description="Where each part of your listing is edited">
+
+
+
+        <div className="grid gap-4 md:grid-cols-2">
+
+
+
+          {editingShortcuts.map((shortcut, index) => (
+
+
+
+            <div key={shortcut.key || `${shortcut.title}-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700 space-y-2">
+
+
+
+              <p className="text-sm font-semibold text-slate-900">{shortcut.title}</p>
+
+
+
+              <p>{shortcut.description}</p>
+
+
+
+              {shortcut.isAnchor ? (
+
+
+
+                <a href={shortcut.href} className="inline-flex text-xs font-semibold text-slate-900 underline">
+
+
+
+                  {shortcut.cta}
+
+
+
+                </a>
+
+
+
+              ) : (
+
+
+
+                <Link to={shortcut.href} className="inline-flex text-xs font-semibold text-slate-900 underline">
+
+
+
+                  {shortcut.cta}
+
+
+
+                </Link>
+
+
+
+              )}
+
+
+
+            </div>
+
+
+
+          ))}
+
+
+
+        </div>
+
+
+
+      </Section>
+
+
+
+
+
+
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+
+
+
+        {statCards.map((card, index) => (
+
+
+
+          <StatCard key={`${card.label}-${index}`} {...card} />
+
+
+
+        ))}
+
+
+
+      </div>
+
+
+
+
+
+
+
+      <Section title="Today's focus" description="Start here">
+
+
+
+        <div className="grid gap-4 md:grid-cols-2">
+
+
+
+          <ActionCard
+
+
+
+            icon={<Plus className="h-5 w-5" />}
+
+
+
+            title="Publish a new studio"
+
+
+
+            description="Add imagery, specs, and pricing so buyers can shortlist you."
+
+
+
+            cta={
+
+
+
+              <Link to="/portal/studio?section=details" className="inline-flex text-xs font-semibold text-slate-900 underline">
+
+
+
+                Open editor
+
+
+
+              </Link>
+
+
+
+            }
+
+
+
+          />
+
+
+
+          <ActionCard
+
+
+
+            icon={<Sparkles className="h-5 w-5" />}
+
+
+
+            title="Refresh your story"
+
+
+
+            description="Update the firm summary and hero assets to stay featured."
+
+
+
+            cta={
+
+
+
+              <Link to="/portal/firm" className="inline-flex text-xs font-semibold text-slate-900 underline">
+
+
+
+                Edit profile
+
+
+
+              </Link>
+
+
+
+            }
+
+
+
+          />
+
+
+
+          <ActionCard
+
+
+
+            icon={<Inbox className="h-5 w-5" />}
+
+
+
+            title="Answer leads"
+
+
+
+            description="Reply within 1 day to keep your Design Studio badge active."
+
+
+
+            cta={
+
+
+
+              <a href="#requests" className="inline-flex text-xs font-semibold text-slate-900 underline">
+
+
+
+                View inbox
+
+
+
+              </a>
+
+
+
+            }
+
+
+
+          />
+
+
+
+        </div>
+
+
+
+      </Section>
+
+
+
+
+
+
+
+      <Section
+
+
+
+        id="studio-bundles"
+
+
+
+        title="Studio bundles"
+
+
+
+        description="Listings"
+
+
+
+        action={<Link to="/portal/studio?section=details" className="text-sm font-semibold text-slate-900 underline">Open Studio Workspace</Link>}
+
+
+
+      >
+
+
+
+        {data?.studios?.length ? (
+
+
+
+          <div className="space-y-4">
+
+
+
+            {data.studios.map((studio) => (
+
+
+
+              <StudioDashboardCard key={studio._id || studio.slug} studio={studio} />
+
+
+
+            ))}
+
+
+
+          </div>
+
+
+
+        ) : (
+
+
+
+          <p className="text-sm text-slate-500">Publish your first studio to unlock pricing, media, and catalogue controls.</p>
+
+
+
+        )}
+
+
+
+      </Section>
+
+
+
+
+
+
+
+      <Section
+
+
+
+        id="hosting-editor"
+
+
+
+        title="Design Studio programs"
+
+
+
+        description="Hosting tiles"
+
+
+
+        action={<Link to="/portal/studio?section=services" className="text-sm font-semibold text-slate-900 underline">Open full workspace</Link>}
+
+
+
+      >
+
+
+
+        {hostingState.loading ? (
+
+
+
+          <p className="text-sm text-slate-500">Loading hosting snapshot...</p>
+
+
+
+        ) : (
+
+
+
+          <>
+
+
+
+            {hostingState.error ? (
+
+
+
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+
+
+
+                {hostingState.error}
+
+
+
+                <br />
+
+
+
+                <span className="font-semibold">Showing the last saved tiles until the API responds.</span>
+
+
+
+              </div>
+
+
+
+            ) : null}
+
+
+
+            <HostingTilesEditor hosting={hosting} saving={hostingState.saving} onSave={handleHostingSave} />
+
+
+
+          </>
+
+
+
+        )}
+
+
+
+      </Section>
+
+
+
+
+
+
+
+      <Section id="lookup-editor" title="Studio lookup copy" description="Empty-state card">
+
+
+
+        {lookupState.loading ? (
+
+
+
+          <p className="text-sm text-slate-500">Loading lookup copy...</p>
+
+
+
+        ) : (
+
+
+
+          <>
+
+
+
+            {lookupState.error ? (
+
+
+
+              <p className="mb-3 text-sm text-amber-700">{lookupState.error}</p>
+
+
+
+            ) : null}
+
+
+
+            <StudioLookupEditor config={lookupConfig} saving={lookupState.saving} error={lookupState.error} onSave={handleLookupSave} />
+
+
+
+          </>
+
+
+
+        )}
+
+
+
+      </Section>
+
+
+
+
+
+
+
+      <div className="grid gap-6 lg:grid-cols-2">
+
+
+
+        <Section
+
+
+
+          id="requests"
+
+
+
+          title="Studio requests"
+
+
+
+          description="Inbox"
+
+
+
+          action={
+
+
+
+            requestsState.loading ? (
+
+
+
+              <span className="text-xs text-slate-500">Loading...</span>
+
+
+
+            ) : requestsState.data.length > 4 ? (
+
+
+
+              <Link to="/portal/studio?section=requests" className="text-xs font-semibold text-slate-900 underline">
+
+
+
+                View all
+
+
+
+              </Link>
+
+
+
+            ) : null
+
+
+
+          }
+
+
+
+        >
+
+
+
+          {requestsState.loading ? (
+
+
+
+            <p className="text-sm text-slate-500">Fetching requests...</p>
+
+
+
+          ) : requestsState.error ? (
+
+
+
+            <p className="text-sm text-rose-600">{requestsState.error}</p>
+
+
+
+          ) : requestsState.data.length === 0 ? (
+
+
+
+            <p className="text-sm text-slate-500">No requests yet. Responses will appear here.</p>
+
+
+
+          ) : (
+
+
+
+            <div className="space-y-3">
+
+
+
+              {requestsState.data.slice(0, 4).map((request) => (
+
+
+
+                <RequestRow key={request.id} request={request} />
+
+
+
+              ))}
+
+
+
+            </div>
+
+
+
+          )}
+
+
+
+        </Section>
+
+
+
+
+
+
+
+        <Section title="Next actions" description="Suggested">
+
+
+
+          <ul className="space-y-3">
+
+
+
+            {(data?.nextActions || []).map((action, index) => (
+
+
+
+              <li key={`${action.title}-${index}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+
+
+
+                <p className="font-semibold text-slate-900">{action.title}</p>
+
+
+
+                <p className="text-sm text-slate-600">{action.detail}</p>
+
+
+
+              </li>
+
+
+
+            ))}
+
+
+
+            {!data?.nextActions?.length ? (
+
+
+
+              <li className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-500">
+
+
+
+                Keep publishing new work to unlock more visibility.
+
+
+
+              </li>
+
+
+
+            ) : null}
+
+
+
+          </ul>
+
+
+
+        </Section>
+
+
+
+      </div>
+
+
+
+    </div>
+
+
+
+  );
+
+
+
+}
+
+
+
+
+

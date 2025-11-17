@@ -24,8 +24,8 @@ const AssetSchema = new mongoose.Schema(
     order: { type: mongoose.Types.ObjectId, ref: 'Order', index: true },
     kind: {
       type: String,
-      enum: ['deliverable', 'preview', 'spec', 'marketing'],
       default: 'preview',
+      trim: true,
     },
     status: {
       type: String,

@@ -28,11 +28,26 @@ const AssociateProfileSchema = new mongoose.Schema(
     softwares: [String],
     languages: [String],
     completedProjects: Number,
+    heroImage: String,
+    profileImage: String,
+    contactEmail: String,
+    serviceBadges: [String],
+    deliverables: [String],
+    expertise: [String],
     rating: Number,
+    ratingsCount: { type: Number, default: 0 },
     avatar: String,
     summary: String,
     certifications: [String],
     portfolioLinks: [String],
+    portfolioMedia: [
+      {
+        title: String,
+        description: String,
+        mediaUrl: String,
+        kind: String,
+      },
+    ],
     keyProjects: [
       {
         title: String,
@@ -50,3 +65,4 @@ AssociateProfileSchema.index({ location: 1 });
 AssociateProfileSchema.index({ timezone: 1 });
 
 export default mongoose.model('AssociateProfile', AssociateProfileSchema);
+

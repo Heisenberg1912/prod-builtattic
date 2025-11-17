@@ -1,13 +1,16 @@
-﻿import '../config/hardcodedEnv.js';
+import '../config/hardcodedEnv.js';
 import mongoose from 'mongoose';
 import argon2 from 'argon2';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import User from '../models/User.js';
 import Firm from '../models/Firm.js';
 import Product from '../models/Product.js';
 import AssociateProfile from '../models/AssociateProfile.js';
 import Asset from '../models/Asset.js';
+import StudioRequest from '../models/StudioRequest.js';
 
-const USERS = [
+export const USERS = [
   { email: 'superadmin@builtattic.com', password: 'Super#123', role: 'superadmin' },
   { email: 'admin@builtattic.com', password: 'Admin#123', role: 'admin' },
   { email: 'vendor@builtattic.com', password: 'Vendor#123', role: 'vendor' },
@@ -19,7 +22,68 @@ const USERS = [
   { email: 'user@builtattic.com', password: 'User#123', role: 'user' },
 ];
 
-const FIRMS = [
+const HOSTING_SUMMARY =
+  'An architecture studio sells professional services—architectural design, planning, interior systems, and sustainable consultancy—rather than boxed products. Studio teams create residential and commercial blueprints, manage delivery, and specify low-carbon solutions so clients can build with confidence.';
+
+const HOSTING_SERVICE_TILES = [
+  {
+    id: 'architectural',
+    label: 'Architectural design',
+    description:
+      'Creating plans and BIM-ready blueprints for residential, commercial, institutional, and mixed-use programmes.',
+    status: 'available',
+  },
+  {
+    id: 'interior',
+    label: 'Interior design',
+    description:
+      'Space planning, furniture and FF&E schedules, finish palettes, and experiential styling for hospitality and workplace briefs.',
+    status: 'available',
+  },
+  {
+    id: 'urban',
+    label: 'Urban & infrastructure',
+    description:
+      'Transit-oriented masterplans, civic decks, scenography, and broadcast-grade environments across public infrastructure.',
+    status: 'available',
+  },
+  {
+    id: 'sustainable',
+    label: 'Sustainable & green solutions',
+    description:
+      'Passive design moves, energy modelling, low-carbon materials, and regenerative water/landscape systems for resilient builds.',
+    status: 'available',
+  },
+];
+
+const HOSTING_PRODUCT_TILES = [
+  {
+    id: 'planCatalogue',
+    label: 'Pre-designed plans',
+    description:
+      'Builder-ready catalogues with adaptable residential modules, allowing teams to licence a plan set and move straight to permitting.',
+    status: 'available',
+    extra: 'Catalogue pricing shared on brief',
+  },
+  {
+    id: 'designBuild',
+    label: 'Design-build projects',
+    description:
+      'Turnkey delivery where the studio designs, procures, and constructs the asset—selling the completed project as a productized outcome.',
+    status: 'available',
+    extra: 'Active design-build pipeline',
+  },
+];
+
+const buildHostingConfig = () => ({
+  enabled: true,
+  serviceSummary: HOSTING_SUMMARY,
+  services: HOSTING_SERVICE_TILES.map((tile) => ({ ...tile })),
+  products: HOSTING_PRODUCT_TILES.map((tile) => ({ ...tile })),
+  updatedAt: new Date(),
+});
+
+const RAW_FIRMS = [
   {
     name: 'Lumen Atelier',
     slug: 'lumen-atelier',
@@ -490,7 +554,12 @@ const FIRMS = [
   },
 ];
 
-const STUDIO_PRODUCTS = [
+export const FIRMS = RAW_FIRMS.map((firm) => ({
+  ...firm,
+  hosting: buildHostingConfig(),
+}));
+
+export const STUDIO_PRODUCTS = [
   {
     title: 'Skyline Loft Residences',
     slug: 'skyline-loft-residences',
@@ -712,7 +781,7 @@ const STUDIO_PRODUCTS = [
   },
 ];
 
-const MATERIAL_PRODUCTS = [
+export const MATERIAL_PRODUCTS = [
   {
     title: 'UltraTech OPC 53 Grade Cement',
     slug: 'ultratech-opc-53',
@@ -868,7 +937,7 @@ const MATERIAL_PRODUCTS = [
   },
 ];
 
-const ASSOCIATE_PROFILES = [
+export const ASSOCIATE_PROFILES = [
     {
       email: 'associate@builtattic.com',
       profile: {
@@ -1003,12 +1072,17 @@ const ASSOCIATE_PROFILES = [
     },
 ];
 
-async function seed() {
+export async function seed() {
   const uri = process.env.MONGO_URI;
-  const dbName = process.env.MONGO_DBNAME || 'builtattic_dev';
+  const dbName = process.env.MONGO_DBNAME;
 
   if (!uri) {
     console.error('❌ Missing MONGO_URI in environment.');
+    process.exit(1);
+  }
+
+  if (!dbName) {
+    console.error('❌ Missing MONGO_DBNAME in environment.');
     process.exit(1);
   }
 
@@ -1032,6 +1106,7 @@ async function seed() {
     await Product.deleteMany({ slug: { $in: productSlugs } });
 
     await AssociateProfile.deleteMany({});
+    await StudioRequest.deleteMany({});
 
     const createdUsers = [];
     for (const user of USERS) {
@@ -1112,6 +1187,7 @@ async function seed() {
 
     let seededProducts = 0;
     const featuredByFirm = new Map();
+    const createdProductsBySlug = {};
 
     for (const product of STUDIO_PRODUCTS) {
       const targetFirm =
@@ -1122,6 +1198,7 @@ async function seed() {
         price: product.priceSqft ?? product.pricing?.basePrice ?? product.price ?? 0,
         inventory: 0,
       });
+      createdProductsBySlug[product.slug] = doc;
       if (Array.isArray(product.assets) && product.assets.length) {
         for (const asset of product.assets) {
           await Asset.updateOne(
@@ -1151,6 +1228,54 @@ async function seed() {
         featuredByFirm.set(product.firmSlug, current);
       }
       seededProducts += 1;
+    }
+
+    const requestSeeds = [
+      {
+        firmSlug: 'lumen-atelier',
+        studioSlug: 'skyline-loft-residences',
+        contactName: 'Sonia Deshpande',
+        contactEmail: 'sonia@seasideholdings.com',
+        contactCompany: 'Seaside Holdings',
+        message:
+          'We are planning a 42-unit coastal development and would like catalogue pricing plus design-build slots for Q3.',
+        status: 'new',
+        source: 'client',
+      },
+      {
+        firmSlug: 'gridline-collective',
+        studioSlug: 'urban-mixed-use-podium',
+        contactName: 'Omar Rahman',
+        contactEmail: 'omar@citybuild.gov',
+        contactCompany: 'CityBuild Authority',
+        message:
+          'Looking for a TOD partner to reprogramme a mall concourse into a mixed-use transit hub. Need proposal within 3 weeks.',
+        status: 'in-progress',
+        source: 'user',
+      },
+    ]
+      .map((seed) => {
+        const firmDoc = createdFirms[seed.firmSlug];
+        if (!firmDoc) return null;
+        const studioDoc = createdProductsBySlug[seed.studioSlug];
+        return {
+          firm: firmDoc._id,
+          studio: studioDoc?._id || null,
+          studioSlug: seed.studioSlug,
+          studioTitle: studioDoc?.title || null,
+          contactName: seed.contactName,
+          contactEmail: seed.contactEmail,
+          contactCompany: seed.contactCompany,
+          message: seed.message,
+          status: seed.status,
+          source: seed.source,
+        };
+      })
+      .filter(Boolean);
+
+    if (requestSeeds.length) {
+      await StudioRequest.insertMany(requestSeeds);
+      console.log(`Seeded ${requestSeeds.length} studio requests.`);
     }
 
     for (const product of MATERIAL_PRODUCTS) {
@@ -1216,5 +1341,11 @@ async function seed() {
   }
 }
 
-seed();
+const __filename = fileURLToPath(import.meta.url);
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
 
+if (invokedPath && invokedPath === __filename) {
+  seed();
+}
+
+export default seed;

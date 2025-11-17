@@ -1,11 +1,8 @@
 /* global google */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { login as apiLogin, loginWithGoogle } from "../services/auth.js";
-import {
-  normalizeRole,
-  resolveDashboardPath,
-} from "../constants/roles.js";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { login as passwordLogin, loginWithGoogle } from "../services/auth.js";
+import { normalizeRole, resolveDashboardPath, inferRoleFromUser } from "../constants/roles.js";
 
 // optional query redirect override (?redirect=/x, ?returnTo=/x, ?next=/x, ?r=/x)
 function getQueryRedirect() {
@@ -27,78 +24,56 @@ function resolveRedirect(role, serverPath, qsPath) {
   return q || s || resolveDashboardPath(norm);
 }
 
-function deriveRole(user) {
-  if (!user) return "user";
-  if (user.role) return normalizeRole(user.role);
-  const globals = user.rolesGlobal || [];
-  if (globals.includes("superadmin")) return "superadmin";
-  if (globals.includes("admin")) return "admin";
-  const membershipRole = user.memberships?.[0]?.role;
-  if (membershipRole === "owner") return "vendor";
-  if (membershipRole === "admin") return "firm";
-  if (membershipRole === "associate") return "associate";
-  return "user";
-}
-
-const PORTAL_COPY = {
-  associate: {
-    badge: "Associate Portal",
-    heading: "Associate workspace sign-in",
-    description: "Keep your Builtattic associate profile up to date with fresh services, rates, and availability.",
-    helper: "Need an invite? Email partnerships@builtattic.com."
-  },
-  studio: {
-    badge: "Studio Portal",
-    heading: "Studio workspace sign-in",
-    description: "Submit new studios, refresh imagery, and highlight your latest projects.",
-    helper: "Need access? Contact studios@builtattic.com."
-  },
+const LOGIN_COPY = {
+  badge: "Builtattic",
+  heading: "Sign in to Builtattic",
+  description: "Access your marketplace account, wishlist, saved studios, and orders.",
+  helper: "Roles are determined by your account—no manual switching needed.",
 };
 
 const LoginPage = ({ onLogin }) => {
-  const location = useLocation();
-  const portalMode = useMemo(() => {
-    try {
-      const params = new URLSearchParams(location?.search || "");
-      const value = params.get("portal");
-      if (!value) return null;
-      const normalized = value.toLowerCase();
-      return normalized === "associate" || normalized === "studio" ? normalized : null;
-    } catch (error) {
-      return null;
-    }
-  }, [location?.search]);
-  const portalCopy = portalMode ? PORTAL_COPY[portalMode] : null;
+  const navigate = useNavigate();
+  const roleCopy = LOGIN_COPY;
+
+  const completeLogin = useCallback(
+    ({ token, user, role, dashboardPath }) => {
+      if (!token || !user) {
+        throw new Error("Invalid login response (missing session)");
+      }
+      const resolvedRole = inferRoleFromUser(user) || role || "user";
+      const qsPath = getQueryRedirect();
+      const dest = resolveRedirect(resolvedRole, dashboardPath, qsPath);
+      try {
+        localStorage.setItem("auth_token", token);
+        localStorage.setItem("role", resolvedRole);
+        localStorage.setItem("user", JSON.stringify(user));
+      } catch {}
+      if (typeof onLogin === "function") {
+        onLogin({ token, role: resolvedRole, user, redirectPath: dest });
+      }
+      navigate(dest, { replace: true });
+    },
+    [navigate, onLogin]
+  );
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const navigate = useNavigate();
   const googleButtonRef = useRef(null);
   const [googleInitialized, setGoogleInitialized] = useState(false);
-
-  useEffect(() => {
-    if (!portalMode) return;
-    try {
-      localStorage.setItem("last_login_portal", portalMode);
-    } catch {}
-  }, [portalMode]);
 
   const handleGoogleCredential = useCallback(async (response) => {
     try {
       if (!response?.credential) throw new Error("Google credential missing");
       const { token, user } = await loginWithGoogle(response.credential);
       if (!token) throw new Error("Invalid Google login response");
-      const resolvedRole = deriveRole(user);
+      const resolvedRole = inferRoleFromUser(user) || "user";
       const qsPath = getQueryRedirect();
       const dest = resolveRedirect(resolvedRole, null, qsPath);
       try { localStorage.setItem("auth_token", token); } catch {}
       try { localStorage.setItem("role", resolvedRole); } catch {}
       try { localStorage.setItem("user", JSON.stringify(user || {})); } catch {}
-      if (portalMode) {
-        try { localStorage.setItem("login_portal_hint", portalMode); } catch {}
-      }
       if (typeof onLogin === "function") {
         onLogin({ token, role: resolvedRole, user, redirectPath: dest });
       }
@@ -107,7 +82,7 @@ const LoginPage = ({ onLogin }) => {
       console.error("[GOOGLE LOGIN]", err);
       setError(err.message || "Google sign-in failed");
     }
-  }, [navigate, onLogin, portalMode]);
+  }, [navigate, onLogin]);
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -137,7 +112,7 @@ const LoginPage = ({ onLogin }) => {
       window.google.accounts.id.renderButton(googleButtonRef.current, {
         theme: "outline",
         size: "large",
-        width: "100%",
+        width: 320,
       });
     } catch (err) {
       console.error("[GOOGLE INIT]", err);
@@ -149,25 +124,16 @@ const LoginPage = ({ onLogin }) => {
     setError("");
     setLoading(true);
     try {
-      const { token, user } = await apiLogin(email, password);
-      if (!token) throw new Error("Invalid login response (missing token)");
-
-      const resolvedRole = deriveRole(user);
-      const qsPath = getQueryRedirect();
-      const dest = resolveRedirect(resolvedRole, null, qsPath);
-
-      try { localStorage.setItem("auth_token", token); } catch {}
-      try { localStorage.setItem("role", resolvedRole); } catch {}
-      try { localStorage.setItem("user", JSON.stringify(user || {})); } catch {}
-
-      if (typeof onLogin === "function") {
-        onLogin({ token, role: resolvedRole, user, redirectPath: dest });
-      }
-
-      navigate(dest, { replace: true });
+      const data = await passwordLogin(email, password);
+      completeLogin({
+        token: data.token,
+        user: data.user,
+        role: data.role || data.user?.role,
+        dashboardPath: data.dashboardPath,
+      });
     } catch (err) {
       console.error("[LOGIN] error", err);
-      setError(err?.response?.data?.message || err.message || "Login failed");
+      setError(err?.response?.data?.error || err?.response?.data?.message || err.message || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -175,23 +141,19 @@ const LoginPage = ({ onLogin }) => {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
-        {portalCopy?.badge && (
+      <div className="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-xl">
+        <div className="text-center mb-6">
           <span className="mx-auto mb-3 inline-flex items-center rounded-full bg-[#EEF2FF] px-3 py-1 text-xs font-semibold uppercase tracking-widest text-[#4338CA]">
-            {portalCopy.badge}
+            {roleCopy.badge}
           </span>
-        )}
-        <h2 className="text-2xl font-bold text-center text-[#1D1D1F] mb-2">
-          {portalCopy?.heading || "Sign in to your account"}
-        </h2>
-        {portalCopy?.description && (
-          <p className="mb-8 text-center text-sm text-[#6E6E73]">
-            {portalCopy.description}
+          <h2 className="text-3xl font-bold text-[#1D1D1F] mb-2">{roleCopy.heading}</h2>
+          <p className="text-sm text-[#6E6E73]">{roleCopy.description}</p>
+          <p className="text-xs text-[#9F9FA3] mt-1">
+            Sign in once and we'll route you to the correct workspace automatically.
           </p>
-        )}
+        </div>
 
         <form onSubmit={handleSubmit}>
-          {/* Email */}
           <div>
             <label
               htmlFor="email"
@@ -210,7 +172,6 @@ const LoginPage = ({ onLogin }) => {
             />
           </div>
 
-          {/* Password */}
           <div>
             <label
               htmlFor="password"
@@ -229,24 +190,16 @@ const LoginPage = ({ onLogin }) => {
             />
           </div>
 
-          {/* Error message */}
           {error && (
-            <div className="text-red-500 text-sm mt-2">
-              {error}
-            </div>
+            <div className="text-red-500 text-sm mt-2">{error}</div>
           )}
 
-          {/* Forgot password */}
           <div className="flex items-center justify-between text-sm">
-            <Link
-              to="/forgot-password"
-              className="text-[#0071E3] hover:underline"
-            >
+            <Link to="/forgot-password" className="text-[#0071E3] hover:underline">
               Forgot password?
             </Link>
           </div>
 
-          {/* Button */}
           <button
             type="submit"
             disabled={loading}
@@ -256,24 +209,22 @@ const LoginPage = ({ onLogin }) => {
           </button>
         </form>
 
-        {/* Divider */}
         <div className="my-6 flex items-center">
           <div className="flex-grow border-t border-gray-300"></div>
           <span className="px-3 text-[#6E6E73] text-sm">OR</span>
           <div className="flex-grow border-t border-gray-300"></div>
         </div>
 
-        {/* Social Login */}
-        <div ref={googleButtonRef} className="flex justify-center" />
-        {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+        {Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID) ? (
+          <div ref={googleButtonRef} className="flex justify-center" />
+        ) : (
           <p className="text-xs text-gray-400 mt-2 text-center">
-            
+            Add <code>VITE_GOOGLE_CLIENT_ID</code> to your environment to enable Google sign-in.
           </p>
         )}
-
-        {portalCopy?.helper && (
+        {roleCopy?.helper && (
           <p className="mt-4 text-center text-sm text-[#6E6E73]">
-            {portalCopy.helper}
+            {roleCopy.helper}
           </p>
         )}
 

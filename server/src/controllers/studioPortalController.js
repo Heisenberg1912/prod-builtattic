@@ -72,10 +72,17 @@ const studioPayloadSchema = z
     priceSqft: z.number().min(0).optional(),
     pricing: pricingSchema.optional(),
     currency: z.string().trim().length(3).optional(),
+    category: z.string().trim().max(120).optional(),
     categories: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
     tags: z.array(z.string().trim().min(1).max(120)).max(30).optional(),
     style: z.string().trim().max(120).optional(),
     highlights: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
+    areaSqft: z.number().min(0).max(1_000_000).optional(),
+    plotAreaSqft: z.number().min(0).max(2_000_000).optional(),
+    areaUnit: z.enum(["sq ft", "m2"]).optional(),
+    bedrooms: z.number().min(0).max(50).optional(),
+    bathrooms: z.number().min(0).max(50).optional(),
+    floors: z.number().min(0).max(25).optional(),
     specs: z
       .array(
         z.object({
@@ -192,8 +199,28 @@ const prepareStudioUpdate = (payload) => {
   if (update.tags) update.tags = sanitiseArray(update.tags) || [];
   if (update.highlights) update.highlights = sanitiseArray(update.highlights) || [];
   if (update.gallery) update.gallery = sanitiseArray(update.gallery) || [];
+  if (update.category) {
+    update.category = update.category.trim();
+    update.primaryCategory = update.category;
+  }
   if (update.currency) update.currency = update.currency.toUpperCase();
   if (update.pricing?.currency) update.pricing.currency = update.pricing.currency.toUpperCase();
+
+  const metrics = {};
+  if (typeof update.areaSqft === 'number') metrics.areaSqft = update.areaSqft;
+  if (typeof update.plotAreaSqft === 'number') metrics.plotAreaSqft = update.plotAreaSqft;
+  if (update.areaUnit) metrics.areaUnit = update.areaUnit;
+  if (Object.keys(metrics).length) {
+    update.metrics = { ...(update.metrics || {}), ...metrics };
+  }
+
+  const metadata = {};
+  if (typeof update.bedrooms === 'number') metadata.bedrooms = update.bedrooms;
+  if (typeof update.bathrooms === 'number') metadata.bathrooms = update.bathrooms;
+  if (typeof update.floors === 'number') metadata.floors = update.floors;
+  if (Object.keys(metadata).length) {
+    update.metadata = { ...(update.metadata || {}), ...metadata };
+  }
   return update;
 };
 

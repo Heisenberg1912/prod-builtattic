@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "react-hot-toast";
 import { motion } from "framer-motion";
 import Footer from "../components/Footer";
+import RatingModal from "../components/RatingModal.jsx";
 import RegistrStrip from "../components/registrstrip";
 import { marketplaceFeatures, fallbackStudios } from "../data/marketplace.js";
 import { fetchMarketplaceFirms } from "../services/marketplace.js";
+import { submitRating, fetchRatingSnapshot } from "../services/ratings.js";
 import {
   applyFallback,
   getFirmAvatarFallback,
@@ -21,6 +24,12 @@ const Firms = () => {
   const [web3Meta, setWeb3Meta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [ratingDialog, setRatingDialog] = useState({ open: false, target: null, targetType: null });
+  const [ratingScore, setRatingScore] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [ratingSnapshot, setRatingSnapshot] = useState(null);
+  const [ratingLoading, setRatingLoading] = useState(false);
+  const [ratingSaving, setRatingSaving] = useState(false);
   const fallbackStudioInsights = useMemo(() => {
     const map = new Map();
     fallbackStudios.forEach((studio) => {
@@ -104,6 +113,68 @@ const Firms = () => {
     },
     [getFallbackInsight]
   );
+
+  const closeRatingDialog = () => {
+    setRatingDialog({ open: false, target: null, targetType: null });
+    setRatingSnapshot(null);
+    setRatingComment('');
+    setRatingScore(5);
+    setRatingLoading(false);
+  };
+
+  const loadRatingSnapshot = async (targetId) => {
+    setRatingLoading(true);
+    try {
+      const response = await fetchRatingSnapshot('firm', targetId);
+      setRatingSnapshot(response.snapshot);
+      if (response.userRating?.score != null) {
+        setRatingScore(Number(response.userRating.score) || 5);
+      }
+      setRatingComment(response.userRating?.comment || '');
+    } catch (err) {
+      toast.error(err?.message || 'Unable to load rating details');
+    } finally {
+      setRatingLoading(false);
+    }
+  };
+
+  const handleRateFirm = (firm) => {
+    if (!firm?._id) {
+      toast.error('Firm reference missing');
+      return;
+    }
+    setRatingScore(5);
+    setRatingComment('');
+    setRatingSnapshot(null);
+    setRatingDialog({ open: true, target: firm, targetType: 'firm' });
+    loadRatingSnapshot(firm._id);
+  };
+
+  const handleSubmitRating = async () => {
+    if (!ratingDialog.target?._id) return;
+    try {
+      setRatingSaving(true);
+      const response = await submitRating({
+        targetType: 'firm',
+        targetId: ratingDialog.target._id,
+        score: ratingScore,
+        comment: ratingComment?.trim() ? ratingComment.trim() : undefined,
+      });
+      setFirms((prev) =>
+        prev.map((firm) =>
+          firm._id === ratingDialog.target._id
+            ? { ...firm, rating: response.snapshot?.average, ratingsCount: response.snapshot?.count }
+            : firm
+        )
+      );
+      toast.success('Thanks for the feedback!');
+      closeRatingDialog();
+    } catch (err) {
+      toast.error(err?.message || 'Unable to save rating');
+    } finally {
+      setRatingSaving(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -258,6 +329,7 @@ const Firms = () => {
                 ? numericProjects
                 : (firm.gallery?.length ? firm.gallery.length * 6 : null);
               const ratingValue = typeof firm.rating === "number" ? firm.rating : null;
+              const ratingCount = Number(firm.ratingsCount) || 0;
               const sampleStudios = resolveFirmSampleStudios(firm);
               const startingPrice = resolveFirmStartingPrice(firm);
 
@@ -366,8 +438,11 @@ const Firms = () => {
                       {Number.isFinite(avgLeadTimeWeeks) && (
                         <span>Lead time ~{Math.round(avgLeadTimeWeeks)} weeks</span>
                       )}
-                      {ratingValue != null && (
-                        <span>Rating {ratingValue.toFixed(1)}/5</span>
+                      {(ratingValue != null || ratingCount > 0) && (
+                        <span>
+                          Rating {ratingValue != null ? ratingValue.toFixed(1) : '--'}/5 �{' '}
+                          {ratingCount > 0 ? `${ratingCount} review${ratingCount === 1 ? '' : 's'}` : 'New'}
+                        </span>
                       )}
                     </div>
 
@@ -388,6 +463,13 @@ const Firms = () => {
                           Visit website
                         </a>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleRateFirm(firm)}
+                        className="px-4 py-2.5 rounded-lg border border-amber-200 text-sm font-medium text-amber-700 hover:border-amber-300 transition"
+                      >
+                        Rate firm
+                      </button>
                       <Link
                         to="/firmportfolio"
                         state={{ firm }}
@@ -425,11 +507,25 @@ const Firms = () => {
       </main>
 
       <Footer />
+      <RatingModal
+        open={ratingDialog.open}
+        targetLabel={ratingDialog.target?.name || ratingDialog.target?.title || 'Marketplace firm'}
+        score={ratingScore}
+        comment={ratingComment}
+        onScoreChange={setRatingScore}
+        onCommentChange={setRatingComment}
+        onClose={closeRatingDialog}
+        onSubmit={handleSubmitRating}
+        saving={ratingSaving || ratingLoading}
+        snapshot={ratingSnapshot}
+      />
     </div>
   );
 };
 
 export default Firms;
+
+
 
 
 

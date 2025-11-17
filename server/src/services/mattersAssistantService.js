@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+const GEMINI_ENABLED = String(process.env.GEMINI_ENABLED ?? "true").toLowerCase() !== "false";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const CHAT_MODEL =
   process.env.MATTERS_CHAT_MODEL || process.env.GEMINI_MODEL || "gemini-1.5-flash-latest";
@@ -43,7 +44,7 @@ const ARCHITECTURE_KEYWORDS = [
   "circulation",
 ];
 
-const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+const genAI = GEMINI_ENABLED && GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 const clampHistory = (messages = []) => {
   const copy = [...messages];
@@ -79,7 +80,7 @@ const buildInstruction = (persona, mode) => {
 
 export const chatWithAssistant = async ({ messages = [], mode }) => {
   if (!genAI) {
-    const err = new Error("Gemini API key not configured for assistant.");
+    const err = new Error("Gemini assistant disabled (API key missing or feature flag off).");
     err.status = 503;
     throw err;
   }
@@ -119,5 +120,4 @@ export const chatWithAssistant = async ({ messages = [], mode }) => {
     reply: text.trim(),
   };
 };
-
 

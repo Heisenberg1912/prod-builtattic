@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+const GEMINI_ENABLED = String(process.env.GEMINI_ENABLED ?? "true").toLowerCase() !== "false";
 const GEMINI_API_KEY =
   process.env.MATTERS_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";
 const MATTERS_VISION_MODEL =
@@ -9,7 +10,7 @@ const MAX_IMAGE_BYTES = Number.parseInt(
   10,
 );
 
-const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+const genAI = GEMINI_ENABLED && GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 const FEEDS = [
   {

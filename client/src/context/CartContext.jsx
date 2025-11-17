@@ -1,18 +1,20 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import axios from "axios";
+import apiClient from "../config/axios.jsx";
+import { hasStoredAuthToken, isPortalApiEnabled } from "../utils/portalApi.js";
 
 const CartContext = createContext();
 export const useCart = () => useContext(CartContext);
 
-// Helpers: env, url join, storage, normalization
-const trimEndSlash = (s) => (s || "").replace(/\/+$/, "");
-const leadSlash = (s) => (s?.startsWith("/") ? s : `/${s || ""}`);
-const API_BASE = trimEndSlash(import.meta?.env?.VITE_API_BASE_URL || "");
-const withBase = (path) => (API_BASE ? `${API_BASE}${leadSlash(path)}` : leadSlash(path));
-
-const demoHeaders = { headers: { "x-demo-user": "demo-user" } };
 const CART_LS_KEY = "cart";
-const safeParse = (s, fb) => { try { return JSON.parse(s); } catch { return fb; } };
+
+const safeParse = (value, fallback) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
 const readLocal = () => safeParse(localStorage.getItem(CART_LS_KEY), []);
 const writeLocal = (items) => localStorage.setItem(CART_LS_KEY, JSON.stringify(items || []));
 
@@ -36,6 +38,7 @@ const keyOf = (item) => {
   if (item == null) return null;
   if (typeof item === "string" || typeof item === "number") return String(item);
   return (
+    item?.cartItemId ??
     item?.productId ??
     item?.id ??
     item?._id ??
@@ -49,7 +52,7 @@ const keyOf = (item) => {
 const fallbackIdFromItem = (item) => {
   if (!item) return null;
   const base = item?.title || item?.name || item?.slug || item?.sku || item?.code;
-  return base ? `item-${String(base).replace(/\s+/g, "-").toLowerCase()}` : null;
+  return base ? 'item-' + String(base).replace(/\s+/g, '-').toLowerCase() : null;
 };
 
 const normalizeForLocal = (item) => {
@@ -58,33 +61,21 @@ const normalizeForLocal = (item) => {
   if (!resolvedId) return null;
   const price = coerceNumber(item?.price, 0);
   const quantity = coerceQuantity(item?.quantity, 1);
-  const normalized = {
+  return {
     id: resolvedId,
     productId: resolvedId,
     title: item?.title ?? item?.name ?? "Untitled",
     price,
+    currency: item?.currency || "USD",
     image: item?.image ?? item?.img ?? "",
     quantity,
-    seller: item?.seller || null,
-    variation: item?.variation || null,
-    addons: Array.isArray(item?.addons) ? item.addons : [],
-    giftMessage: item?.giftMessage || "",
-    gstInvoice: Boolean(item?.gstInvoice),
-    subscriptionPlan: item?.subscriptionPlan || null,
-    kind: item?.kind || item?.source || "product",
-    schedule: item?.schedule || null,
     totalPrice: coerceNumber(item?.totalPrice, price * quantity),
-    metadata: typeof item?.metadata === "object" && item?.metadata !== null ? item.metadata : {},
-    addressId: item?.addressId || null,
-    notes: item?.notes || "",
+    source: item?.source || item?.kind || "product",
+    metadata: typeof item?.metadata === "object" && item.metadata !== null ? item.metadata : {},
   };
-  return normalized;
 };
 
-const normalizeList = (items) =>
-  (Array.isArray(items) ? items : [])
-    .map(normalizeForLocal)
-    .filter(Boolean);
+const normalizeList = (items) => (Array.isArray(items) ? items : []).map(normalizeForLocal).filter(Boolean);
 
 const getLocalState = () => normalizeList(readLocal());
 const commitLocalState = (items) => {
@@ -93,163 +84,242 @@ const commitLocalState = (items) => {
   return normalized;
 };
 
+const mapServerCart = (cartPayload) => {
+  if (!cartPayload || !Array.isArray(cartPayload.items)) return [];
+  return cartPayload.items.map((item) => {
+    const price = coerceNumber(item.price, 0);
+    const quantity = coerceQuantity(item.quantity ?? item.qty ?? 1, 1);
+    const id = item.cartItemId || item.id || item._id || keyOf(item) || fallbackIdFromItem(item);
+    return {
+      id,
+      cartItemId: item.cartItemId || item.id || item._id || null,
+      productId: item.productId || item.product || id,
+      title: item.title || "Untitled",
+      price,
+      currency: item.currency || "USD",
+      quantity,
+      totalPrice: Number((price * quantity).toFixed(2)),
+      image: item.image || "",
+      source: item.source || item.kind || "product",
+      metadata: item.metadata || {},
+    };
+  });
+};
+
 export const CartProvider = ({ children }) => {
   const [cartItems, setCartItems] = useState([]);
-  // If no API base set, start in local mode
-  const [apiAvailable, setApiAvailable] = useState(Boolean(API_BASE));
+  const [apiAvailable, setApiAvailable] = useState(false);
+
+  const applyLocalAdd = (normalized) => {
+    if (!normalized) return;
+    const items = getLocalState();
+    const idx = items.findIndex((entry) => entry.id === normalized.id);
+    let next;
+    if (idx >= 0) {
+      next = [...items];
+      const mergedQuantity = next[idx].quantity + normalized.quantity;
+      next[idx] = {
+        ...next[idx],
+        ...normalized,
+        quantity: mergedQuantity,
+        totalPrice: (normalized.price || next[idx].price || 0) * mergedQuantity,
+      };
+    } else {
+      next = [...items, normalized];
+    }
+    const committed = commitLocalState(next);
+    setCartItems(committed);
+  };
+
+  const applyLocalUpdate = (targetId, quantity) => {
+    if (!targetId) return;
+    const items = getLocalState();
+    const idx = items.findIndex((entry) => entry.id === targetId);
+    if (idx < 0) return;
+    const next = [...items];
+    if (quantity <= 0) {
+      next.splice(idx, 1);
+    } else {
+      next[idx] = {
+        ...next[idx],
+        quantity,
+        totalPrice: (next[idx].price ?? 0) * quantity,
+      };
+    }
+    const committed = commitLocalState(next);
+    setCartItems(committed);
+  };
+
+  const applyLocalRemove = (targetId) => {
+    if (!targetId) return;
+    const next = getLocalState().filter((entry) => entry.id !== targetId);
+    const committed = commitLocalState(next);
+    setCartItems(committed);
+  };
+
+  const shouldUseApi = () => isPortalApiEnabled() && hasStoredAuthToken();
+
+  const syncLocalSnapshot = () => {
+    const snapshot = getLocalState();
+    setCartItems(snapshot);
+    return snapshot;
+  };
 
   const fetchCart = async () => {
-    if (!apiAvailable) {
-      setCartItems(getLocalState());
+    if (!shouldUseApi()) {
+      setApiAvailable(false);
+      syncLocalSnapshot();
       return;
     }
     try {
-      const { data } = await axios.get(withBase("/api/cart"), demoHeaders);
-      const payload = Array.isArray(data?.items) ? normalizeList(data.items) : [];
+      const { data } = await apiClient.get('/cart');
+      const payload = mapServerCart(data?.cart);
       setCartItems(payload);
-    } catch (e) {
-      console.warn("Cart API unavailable, switching to localStorage:", e?.message || e);
+      setApiAvailable(true);
+    } catch (error) {
+      console.warn('cart_fetch_failed', error?.message || error);
       setApiAvailable(false);
-      setCartItems(getLocalState());
+      syncLocalSnapshot();
+    }
+  };
+
+  const buildServerPayload = (item) => {
+    const normalized = normalizeForLocal(item);
+    if (!normalized) return null;
+    return {
+      productId: normalized.productId,
+      title: normalized.title,
+      price: normalized.price,
+      currency: normalized.currency,
+      image: normalized.image,
+      source: normalized.source,
+      metadata: normalized.metadata,
+      quantity: normalized.quantity,
+    };
+  };
+
+  const syncLocalCartToServer = async () => {
+    if (!shouldUseApi()) return;
+    const localItems = getLocalState();
+    if (!localItems.length) {
+      await fetchCart();
+      return;
+    }
+    try {
+      for (const localItem of localItems) {
+        const payload = buildServerPayload(localItem);
+        if (!payload) continue;
+        await apiClient.post('/cart/items', payload);
+      }
+      commitLocalState([]);
+      await fetchCart();
+    } catch (error) {
+      console.warn('cart_sync_failed', error?.message || error);
     }
   };
 
   const addToCart = async (item) => {
-    const resolvedId = keyOf(item) ?? fallbackIdFromItem(item);
-    if (!apiAvailable) {
-      const normalized = normalizeForLocal(item);
-      if (!normalized) return;
-      const items = getLocalState();
-      const idx = items.findIndex((it) => it.id === normalized.id);
-      let next = [];
-      if (idx >= 0) {
-        const existing = items[idx];
-        const nextQuantity = existing.quantity + normalized.quantity;
-        next = [...items];
-        next[idx] = {
-          ...existing,
-          ...normalized,
-          quantity: nextQuantity,
-          price: normalized.price ?? existing.price,
-          totalPrice: coerceNumber(
-            normalized.totalPrice,
-            (normalized.price ?? existing.price ?? 0) * nextQuantity,
-          ),
-        };
-      } else {
-        next = [...items, normalized];
-      }
-      const committed = commitLocalState(next);
-      setCartItems(committed);
+    const normalized = normalizeForLocal(item);
+    if (!normalized) return;
+
+    if (!shouldUseApi() || !apiAvailable) {
+      applyLocalAdd(normalized);
       return;
     }
+
     try {
-      await axios.post(
-        withBase("/api/cart/add"),
-        {
-          productId: resolvedId,
-          source: item?.source || "Studio",
-          name: item?.title ?? item?.name ?? "Untitled",
-          image: item?.image ?? item?.img ?? "",
-          price: coerceNumber(item?.price, 0),
-          quantity: coerceQuantity(item?.quantity, 1),
-          seller: item?.seller || null,
-          variation: item?.variation || null,
-          addons: item?.addons || [],
-          giftMessage: item?.giftMessage || "",
-          gstInvoice: Boolean(item?.gstInvoice),
-          subscriptionPlan: item?.subscriptionPlan || null,
-          kind: item?.kind || "product",
-          schedule: item?.schedule || null,
-          totalPrice: coerceNumber(
-            item?.totalPrice,
-            coerceNumber(item?.price, 0) * coerceQuantity(item?.quantity, 1),
-          ),
-          addressId: item?.addressId || null,
-          notes: item?.notes || "",
-        },
-        demoHeaders
-      );
+      const payload = buildServerPayload(item);
+      await apiClient.post('/cart/items', payload);
       await fetchCart();
-    } catch (e) {
-      console.warn("addToCart API failed, switching to localStorage:", e?.message || e);
+    } catch (error) {
+      console.warn('addToCart API failed, falling back to local mode:', error?.message || error);
       setApiAvailable(false);
-      return addToCart({ ...item, productId: resolvedId }); // retry locally
+      applyLocalAdd(normalized);
     }
   };
 
   const updateQuantity = async (item, quantity) => {
-    if (!apiAvailable) {
-      const items = getLocalState();
-      const id = keyOf(item) ?? fallbackIdFromItem(item);
-      const idx = items.findIndex((it) => it.id === id);
-      if (idx >= 0) {
-        let next = [...items];
-        if (quantity <= 0) {
-          next.splice(idx, 1);
-        } else {
-          const parsedQuantity = coerceQuantity(quantity, 1);
-          const current = next[idx];
-          next[idx] = {
-            ...current,
-            quantity: parsedQuantity,
-            totalPrice: (current.price ?? 0) * parsedQuantity,
-          };
-        }
-        const committed = commitLocalState(next);
-        setCartItems(committed);
-      }
+    const parsedQuantity = coerceQuantity(quantity, 1);
+    if (!shouldUseApi() || !apiAvailable) {
+      const targetId = keyOf(item) ?? fallbackIdFromItem(item);
+      applyLocalUpdate(targetId, parsedQuantity);
       return;
     }
+
     try {
-      await axios.post(
-        withBase("/api/cart/update"),
-        {
+      const identifier = item.cartItemId || item.id;
+      if (identifier) {
+        await apiClient.patch('/cart/items/' + identifier, { qty: parsedQuantity });
+      } else {
+        await apiClient.post('/cart/update', {
           productId: keyOf(item) ?? fallbackIdFromItem(item),
-          source: item?.source || "Studio",
-          quantity: coerceQuantity(quantity, 1),
-        },
-        demoHeaders
-      );
+          quantity: parsedQuantity,
+        });
+      }
       await fetchCart();
-    } catch (e) {
-      console.warn("updateQuantity API failed, switching to localStorage:", e?.message || e);
-      setApiAvailable(false);
-      return updateQuantity(item, quantity); // retry locally
+    } catch (error) {
+      console.warn('updateQuantity API failed:', error?.message || error);
+      if (error?.response?.status === 401) {
+        setApiAvailable(false);
+      }
+      const targetId = keyOf(item) ?? fallbackIdFromItem(item);
+      applyLocalUpdate(targetId, parsedQuantity);
     }
   };
 
   const removeFromCart = async (item) => {
-    if (!apiAvailable) {
+    if (!shouldUseApi() || !apiAvailable) {
       const targetId = keyOf(item) ?? fallbackIdFromItem(item);
-      const next = getLocalState().filter((it) => it.id !== targetId);
-      const committed = commitLocalState(next);
-      setCartItems(committed);
+      applyLocalRemove(targetId);
       return;
     }
+
     try {
-      await axios.post(
-        withBase("/api/cart/remove"),
-        {
+      if (item.cartItemId || item.id) {
+        await apiClient.delete('/cart/items/' + (item.cartItemId || item.id));
+      } else {
+        await apiClient.post('/cart/remove', {
           productId: keyOf(item) ?? fallbackIdFromItem(item),
-          source: item?.source || "Studio",
-        },
-        demoHeaders
-      );
+        });
+      }
       await fetchCart();
-    } catch (e) {
-      console.warn("removeFromCart API failed, switching to localStorage:", e?.message || e);
-      setApiAvailable(false);
-      return removeFromCart(item); // retry locally
+    } catch (error) {
+      console.warn('removeFromCart API failed:', error?.message || error);
+      if (error?.response?.status === 401) {
+        setApiAvailable(false);
+      }
+      const targetId = keyOf(item) ?? fallbackIdFromItem(item);
+      applyLocalRemove(targetId);
     }
   };
 
-  useEffect(() => { fetchCart(); }, []);
+  useEffect(() => {
+    if (shouldUseApi()) {
+      syncLocalCartToServer();
+    } else {
+      fetchCart();
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleLogin = () => {
+      setApiAvailable(true);
+      syncLocalCartToServer();
+    };
+    const handleLogout = () => {
+      setApiAvailable(false);
+      syncLocalSnapshot();
+    };
+    window.addEventListener('auth:login', handleLogin);
+    window.addEventListener('auth:logout', handleLogout);
+    return () => {
+      window.removeEventListener('auth:login', handleLogin);
+      window.removeEventListener('auth:logout', handleLogout);
+    };
+  }, []);
 
   return (
-    <CartContext.Provider
-      value={{ cartItems, addToCart, updateQuantity, removeFromCart, fetchCart, apiAvailable }}
-    >
+    <CartContext.Provider value={{ cartItems, addToCart, updateQuantity, removeFromCart, fetchCart, apiAvailable }}>
       {children}
     </CartContext.Provider>
   );

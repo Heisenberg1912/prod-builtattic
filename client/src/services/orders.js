@@ -39,22 +39,75 @@ const injectDemoHeader = (headers = {}) => ({
   "x-demo-user": headers["x-demo-user"] || "demo-user",
 });
 
-export async function placeOrder(payload) {
-  const { data } = await client.post("/orders/place", payload);
-  const parsed = handleResponse(data, "Failed to place order");
+const buildRequestHeaders = (headers = {}, allowDemo = true) => {
+  const next = { ...headers };
+  if (allowDemo && !hasStoredToken() && !next["x-demo-user"]) {
+    next["x-demo-user"] = "demo-user";
+  }
+  return next;
+};
+
+const postOrderRequest = async (endpoint, payload, message, headers) => {
+  const { data } = await client.post(endpoint, payload, { headers });
+  const parsed = handleResponse(data, message);
   return extractOrder(parsed) ?? parsed;
+};
+
+export async function placeOrder(payload, options = {}) {
+  const { allowDemo = true, headers = {} } = options;
+  const baseHeaders = buildRequestHeaders(headers, allowDemo);
+  try {
+    return await postOrderRequest('/orders/place', payload, 'Failed to place order', baseHeaders);
+  } catch (error) {
+    if (error?.response?.status === 404) {
+      return await postOrderRequest('/orders', payload, 'Failed to place order', baseHeaders);
+    }
+    if (allowDemo && !baseHeaders['x-demo-user'] && shouldRetryWithDemo(error)) {
+      const retryHeaders = injectDemoHeader(baseHeaders);
+      return await postOrderRequest('/orders', payload, 'Failed to place order', retryHeaders);
+    }
+    if (error?.response?.status === 401) {
+      throw new Error('Please sign in to place an order');
+    }
+    throw error;
+  }
 }
 
-export async function createOrderFromCart(payload = {}) {
-  const { data } = await client.post("/orders", payload);
-  const parsed = handleResponse(data, "Failed to create order from cart");
-  return extractOrder(parsed) ?? parsed;
+export async function createOrderFromCart(payload = {}, options = {}) {
+  const { allowDemo = true, headers = {} } = options;
+  const baseHeaders = buildRequestHeaders(headers, allowDemo);
+  try {
+    return await postOrderRequest('/orders', payload, 'Failed to create order from cart', baseHeaders);
+  } catch (error) {
+    if (allowDemo && !baseHeaders['x-demo-user'] && shouldRetryWithDemo(error)) {
+      const retryHeaders = injectDemoHeader(baseHeaders);
+      return await postOrderRequest('/orders', payload, 'Failed to create order from cart', retryHeaders);
+    }
+    if (error?.response?.status === 401) {
+      throw new Error('Please sign in to place an order');
+    }
+    throw error;
+  }
 }
 
-export async function buyNow(payload) {
-  const { data } = await client.post("/orders/buy-now", payload);
-  const parsed = handleResponse(data, "Failed to create buy now order");
-  return extractOrder(parsed) ?? parsed;
+export async function buyNow(payload, options = {}) {
+  const { allowDemo = true, headers = {} } = options;
+  const baseHeaders = buildRequestHeaders(headers, allowDemo);
+  try {
+    return await postOrderRequest('/orders/buy-now', payload, 'Failed to create buy now order', baseHeaders);
+  } catch (error) {
+    if (allowDemo && !baseHeaders['x-demo-user'] && shouldRetryWithDemo(error)) {
+      const retryHeaders = injectDemoHeader(baseHeaders);
+      return await postOrderRequest('/orders/buy-now', payload, 'Failed to create buy now order', retryHeaders);
+    }
+    if (error?.response?.status === 404) {
+      return await postOrderRequest('/orders', payload, 'Failed to create buy now order', baseHeaders);
+    }
+    if (error?.response?.status === 401) {
+      throw new Error('Please sign in to place an order');
+    }
+    throw error;
+  }
 }
 
 export async function fetchOrders(params = {}, options = {}) {

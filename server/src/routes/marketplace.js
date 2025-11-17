@@ -1,8 +1,21 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import Firm from '../models/Firm.js';
 import AssociateProfile from '../models/AssociateProfile.js';
+import DummyCatalogEntry from '../models/DummyCatalogEntry.js';
 import { attachWeb3Proof, createWeb3Proof, summariseProofs } from '../services/web3ProofService.js';
+import { mapCatalogEntry } from '../utils/dummyCatalog.js';
+import logger from '../utils/logger.js';
+import {
+  getFallbackStudios,
+  findFallbackStudio,
+  getFallbackMaterials,
+  findFallbackMaterial,
+  getFallbackAssociates,
+  findFallbackAssociate,
+  getFallbackHosting,
+} from '../utils/marketplaceFallback.js';
 
 const router = Router();
 
@@ -107,7 +120,10 @@ async function fetchCatalog(kind, query, { includeFirm = true, defaultLimit = 12
     .lean();
 
   if (includeFirm) {
-    queryExec.populate('firm', 'name slug tagline coverImage rating category styles services');
+    queryExec.populate(
+      'firm',
+      'name slug tagline coverImage rating ratingsCount category styles services partners contact gallery certifications languages operatingRegions priceSqft currency profile hosting'
+    );
   }
 
   const [items, total, facetsAgg] = await Promise.all([
@@ -163,7 +179,9 @@ router.get('/studios', async (req, res) => {
     const response = await fetchCatalog('studio', req.query, { includeFirm: true, defaultLimit: 16 });
     res.json({ ok: true, ...response });
   } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
+    logger.warn('marketplace_studios_fallback', { error: error.message });
+    const fallback = getFallbackStudios(req.query);
+    res.json({ ok: true, ...fallback });
   }
 });
 
@@ -174,7 +192,7 @@ router.get('/studios/:slug', async (req, res) => {
       status: 'published',
       kind: 'studio',
     })
-      .populate('firm', 'name slug tagline coverImage rating category styles services contact')
+      .populate('firm', 'name slug tagline coverImage rating ratingsCount category styles services contact hosting')
       .lean();
 
     if (!item) {
@@ -184,16 +202,55 @@ router.get('/studios/:slug', async (req, res) => {
     attachWeb3Proof(item, 'studio');
     res.json({ ok: true, item });
   } catch (error) {
+    logger.warn('marketplace_studio_detail_fallback', { error: error.message, slug: req.params.slug });
+    const fallback = findFallbackStudio(req.params.slug);
+    if (fallback) {
+      return res.json({ ok: true, item: fallback });
+    }
     res.status(500).json({ ok: false, error: error.message });
   }
 });
 
+router.get('/design-studio/hosting', async (req, res) => {
+  try {
+    const { firmId, firmSlug } = req.query;
+    const match = {};
+    if (firmId) {
+      match._id = firmId;
+    } else if (firmSlug) {
+      match.slug = firmSlug;
+    } else {
+      match['hosting.enabled'] = true;
+    }
+
+    const firm = await Firm.findOne(match)
+      .select('name slug hosting updatedAt')
+      .lean();
+
+    if (!firm) {
+      return res.json({ ok: true, hosting: null, firm: null });
+    }
+
+    res.json({
+      ok: true,
+      hosting: firm.hosting || null,
+      firm: { _id: firm._id, name: firm.name, slug: firm.slug },
+      meta: { updatedAt: firm.hosting?.updatedAt || firm.updatedAt },
+    });
+  } catch (error) {
+    logger.warn('marketplace_hosting_fallback', { error: error.message, firmId: req.query.firmId, firmSlug: req.query.firmSlug });
+    const fallback = getFallbackHosting();
+    res.json({ ok: true, ...fallback });
+  }
+});
 router.get('/materials', async (req, res) => {
   try {
     const response = await fetchCatalog('material', req.query, { includeFirm: true, defaultLimit: 24 });
     res.json({ ok: true, ...response });
   } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
+    logger.warn('marketplace_materials_fallback', { error: error.message });
+    const fallback = getFallbackMaterials(req.query);
+    res.json({ ok: true, ...fallback });
   }
 });
 
@@ -204,7 +261,7 @@ router.get('/materials/:slug', async (req, res) => {
       status: 'published',
       kind: 'material',
     })
-      .populate('firm', 'name slug tagline coverImage rating category styles services contact')
+      .populate('firm', 'name slug tagline coverImage rating ratingsCount category styles services contact hosting')
       .lean();
 
     if (!item) {
@@ -214,6 +271,11 @@ router.get('/materials/:slug', async (req, res) => {
     attachWeb3Proof(item, 'material');
     res.json({ ok: true, item });
   } catch (error) {
+    logger.warn('marketplace_material_detail_fallback', { error: error.message, slug: req.params.slug });
+    const fallback = findFallbackMaterial(req.params.slug);
+    if (fallback) {
+      return res.json({ ok: true, item: fallback });
+    }
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -271,6 +333,55 @@ router.get('/associates', async (req, res) => {
 
     res.json({ ok: true, items: decoratedAssociates, meta: { total: decoratedAssociates.length, web3: web3Summary } });
   } catch (error) {
+    logger.warn('marketplace_associates_fallback', { error: error.message });
+    const fallback = getFallbackAssociates(req.query);
+    res.json({ ok: true, ...fallback });
+  }
+});
+
+router.get('/catalog/dummy', async (_req, res) => {
+  try {
+    const [designDocs, skillDocs, materialDocs] = await Promise.all([
+      DummyCatalogEntry.find({ type: 'design' }).sort({ updatedAt: -1 }).lean(),
+      DummyCatalogEntry.find({ type: 'skill' }).sort({ updatedAt: -1 }).lean(),
+      DummyCatalogEntry.find({ type: 'material' }).sort({ updatedAt: -1 }).lean(),
+    ]);
+
+    res.json({
+      ok: true,
+      design: designDocs.map(mapCatalogEntry).filter(Boolean),
+      skill: skillDocs.map(mapCatalogEntry).filter(Boolean),
+      material: materialDocs.map(mapCatalogEntry).filter(Boolean),
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.get('/associates/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ ok: false, error: 'Associate id is required' });
+    }
+    const isObjectId = mongoose.Types.ObjectId.isValid(id);
+    const match = isObjectId
+      ? { $or: [{ _id: id }, { user: id }] }
+      : { slug: id };
+    const associate = await AssociateProfile.findOne(match)
+      .populate('user', 'email role firstName lastName name')
+      .lean();
+    if (!associate) {
+      return res.status(404).json({ ok: false, error: 'Associate not found' });
+    }
+    const decorated = attachWeb3Proof(associate, 'associate');
+    res.json({ ok: true, item: decorated });
+  } catch (error) {
+    logger.warn('marketplace_associate_detail_fallback', { error: error.message, id: req.params.id });
+    const fallback = findFallbackAssociate(req.params.id);
+    if (fallback) {
+      return res.json({ ok: true, item: fallback });
+    }
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -307,3 +418,6 @@ router.get('/web3-insights', async (_req, res) => {
 });
 
 export default router;
+
+
+

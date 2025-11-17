@@ -9,21 +9,26 @@
 // - Montserrat font injected via <link> (no other file edits)
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-hot-toast";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { HiOutlineSearch } from "react-icons/hi";
 import { AiFillStar } from "react-icons/ai";
+import { FiHome, FiLayers, FiMap, FiPackage, FiTool, FiFeather } from "react-icons/fi";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
+import RatingModal from "../components/RatingModal.jsx";
 import { createEmptyFilterState } from "../constants/designFilters.js";
 import { marketplaceFeatures } from "../data/marketplace.js";
-import { fetchStudios } from "../services/marketplace.js";
+import { fetchStudios, fetchDesignStudioHosting } from "../services/marketplace.js";
+import { submitRating, fetchRatingSnapshot } from "../services/ratings.js";
 import { analyzeImage } from "../utils/imageSearch.js";
 import {
   applyFallback,
   getStudioFallback,
   getStudioImageUrl,
 } from "../utils/imageFallbacks.js";
+import { DEFAULT_STUDIO_TILES } from "../utils/studioTiles.js";
 
 // ---- Inject Montserrat once (no other file changes required)
 const ensureMontserrat = () => {
@@ -201,6 +206,144 @@ const SUSTAINABILITY_OPTIONS = [
   "Green Cover Preservation","Carbon-Neutral Construction","Net-Zero Energy Design","Low-Carbon Materials",
 ];
 
+const SERVICE_FILTERS = [
+  { id: "all", label: "All offerings", description: "Show every studio plus their services and products." },
+  { id: "services", label: "Design services", description: "Studios leading bespoke architectural, planning, and interior briefs." },
+  { id: "plans", label: "Pre-designed plans", description: "Catalogues of builder-ready plan sets clients can license." },
+  { id: "designBuild", label: "Design-build", description: "Studios that both design and construct turnkey assets." },
+];
+
+const SERVICE_KEYWORDS = {
+  services: ['architectural design','design service','blueprint','schematic','planning','concept','masterplan','bim','ifc','document set'],
+  interior: ['interior','space planning','furniture','finish palette','ff&e','fitout','styling'],
+  urban: ['urban','infrastructure','streetscape','transit','public realm','sceneography','broadcast'],
+  sustainable: ['sustainable','green building','net-zero','passive house','leed','breeam','low-carbon','solar','energy model'],
+  plans: ['plan set','pre-designed','catalogue plan','builder set','kit of parts','stock plan'],
+  designBuild: ['design-build','turnkey','epc','delivery partner','constructed','built turnkey','gc of record'],
+};
+
+const SERVICE_PRIMER = [
+  {
+    id: "architectural-design",
+    title: "Architectural design",
+    description: "Concept-to-IFC drawing sets for residential, commercial, and institutional programs.",
+    highlights: ["Full BIM deliverables", "Permitting support"],
+    icon: FiLayers,
+  },
+  {
+    id: "interior-design",
+    title: "Interior design",
+    description: "Space planning, furniture specification, finish palettes, and FF&E sourcing.",
+    highlights: ["FF&E schedules", "Material boards"],
+    icon: FiHome,
+  },
+  {
+    id: "urban-infrastructure",
+    title: "Urban & infrastructure",
+    description: "Public realm, transit, and broadcast/sceneography briefs at district scale.",
+    highlights: ["Masterplans", "Infrastructure playbooks"],
+    icon: FiMap,
+  },
+  {
+    id: "sustainable-solutions",
+    title: "Sustainable solutions",
+    description: "Passive design, low-carbon materials, and certification advisory.",
+    highlights: ["Net-zero roadmaps", "Climate adaptation"],
+    icon: FiFeather,
+  },
+];
+
+const PRODUCT_PRIMER = [
+  {
+    id: "plan-catalogue",
+    title: "Plan catalogue",
+    description: "Digital builder sets clients can license and adapt to their site.",
+    highlights: ["Permit-ready", "Digital delivery"],
+    icon: FiPackage,
+    focus: "plans",
+  },
+  {
+    id: "design-build",
+    title: "Design-build programs",
+    description: "Studios that both design and construct turnkey housing or mixed-use assets.",
+    highlights: ["Single contract", "Delivered building"],
+    icon: FiTool,
+    focus: "designBuild",
+  },
+];
+
+const gatherStudioText = (studio) =>
+  [
+    studio.title,
+    studio.summary,
+    studio.description,
+    studio.bio,
+    studio.story,
+    studio.programType,
+    studio.studioType,
+    (studio.programs || []).join(' '),
+    (studio.features || []).join(' '),
+    (studio.tags || []).join(' '),
+    (studio.metadata?.keywords || []).join(' '),
+    studio.firm?.bio,
+    (studio.firm?.services || []).join(' '),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase())
+    .join(' ');
+
+const deriveServiceSignals = (studio) => {
+  const text = gatherStudioText(studio);
+  const tokens = new Set(
+    [
+      ...(studio.programs || []),
+      ...(studio.services || []),
+      ...(studio.tags || []),
+      ...(studio.features || []),
+      studio.programType,
+      studio.offerType,
+    ]
+      .filter(Boolean)
+      .map((value) => value.toLowerCase())
+  );
+  const hasKeyword = (bucket) =>
+    SERVICE_KEYWORDS[bucket].some((needle) => text.includes(needle) || tokens.has(needle));
+  const offersDesign = hasKeyword('services') || tokens.has('design') || tokens.has('architecture');
+  const offersInterior = hasKeyword('interior');
+  const offersUrban = hasKeyword('urban');
+  const offersSustainable = hasKeyword('sustainable');
+  const sellsPlans = hasKeyword('plans') || tokens.has('plan set') || studio.catalogType === 'plan';
+  const designBuild = hasKeyword('designBuild') || /turnkey|build partner|construction/.test(text);
+
+  const badges = [];
+  if (offersDesign) badges.push('Architectural design');
+  if (offersInterior) badges.push('Interior design');
+  if (offersUrban) badges.push('Urban / infrastructure');
+  if (offersSustainable) badges.push('Sustainable consulting');
+  if (sellsPlans) badges.push('Plan catalogue');
+  if (designBuild) badges.push('Design-build delivery');
+
+  return {
+    offersDesign,
+    offersInterior,
+    offersUrban,
+    offersSustainable,
+    sellsPlans,
+    designBuild,
+    badges,
+  };
+};
+
+const matchesServiceFocus = (signals, focus) => {
+  if (focus === 'all') return true;
+  if (focus === 'services') return signals.offersDesign || signals.offersInterior || signals.offersUrban;
+  if (focus === 'plans') return signals.sellsPlans;
+  if (focus === 'designBuild') return signals.designBuild;
+  return true;
+};
+
+// Typologies by top-level category
+
 // Typologies by top-level category
 const TYPOLOGIES_BY_CATEGORY = {
   Residential: [
@@ -274,6 +417,7 @@ const Studio = () => {
 
   // Filters + UI
   const [filters, setFilters] = useState(() => createEmptyFilterState());
+  const [serviceFocus, setServiceFocus] = useState('all');
   const [sortOrder, setSortOrder] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(true); // desktop sidebar
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false); // mobile drawer
@@ -306,6 +450,7 @@ const Studio = () => {
   const [sqftSel, setSqftSel] = useState([0, 0]);
   const [floorsSel, setFloorsSel] = useState([0, 0]);
   const [programsSel, setProgramsSel] = useState([0, 0]);
+  const [hostingTiles, setHostingTiles] = useState(DEFAULT_STUDIO_TILES);
 
   // Client-side pagination (no backend change)
   const PAGE_SIZE = 9;
@@ -348,6 +493,33 @@ const Studio = () => {
     loadStudios();
     return () => { cancelled = true; };
   }, [selectedCategory, debouncedQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHostingConfig() {
+      try {
+        const response = await fetchDesignStudioHosting();
+        if (cancelled) return;
+        const hosting = response?.hosting || {};
+        const services = Array.isArray(hosting.services) && hosting.services.length
+          ? hosting.services
+          : DEFAULT_STUDIO_TILES.services;
+        const products = Array.isArray(hosting.products) && hosting.products.length
+          ? hosting.products
+          : DEFAULT_STUDIO_TILES.products;
+        const summary = hosting.serviceSummary?.trim() || DEFAULT_STUDIO_TILES.summary;
+        setHostingTiles({ summary, services, products });
+      } catch (_error) {
+        if (cancelled) return;
+        setHostingTiles(DEFAULT_STUDIO_TILES);
+      }
+    }
+
+    loadHostingConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // helpers
   const resolvePrice = (studio) => {
@@ -665,6 +837,8 @@ const Studio = () => {
 
     const everyCheckboxMatch = (s) => {
       const hay = mkHaystack(s);
+      const serviceSignals = deriveServiceSignals(s);
+      if (!matchesServiceFocus(serviceSignals, serviceFocus)) return false;
       if (filters["Typology"]?.size) {
         const ok = Array.from(filters["Typology"]).some((needle) =>
           hay.some((h) => h.includes(String(needle).toLowerCase()))
@@ -691,14 +865,14 @@ const Studio = () => {
 
       const inPrice   = price == null  ? true : (priceSel[0]  <= price && price <= priceSel[1]);
       const inSqft    = sqft == null   ? true : (sqftSel[0]   <= sqft  && sqft  <= sqftSel[1]);
-      const inFloors  = floors == null ? true : (floorsSel[0] <= floors&& floors<= floorsSel[1]);
+      const inFloors  = floors == null ? true : (floorsSel[0] <= floors &&  floors<= floorsSel[1]);
       const inPrograms= progs == null  ? true : (programsSel[0]<= progs && progs <= programsSel[1]);
 
       return inPrice && inSqft && inFloors && inPrograms;
     };
 
     return base.filter((s) => everyCheckboxMatch(s) && withinRanges(s));
-  }, [studios, selectedCategory, filters, priceSel, sqftSel, floorsSel, programsSel]);
+  }, [studios, selectedCategory, filters, priceSel, sqftSel, floorsSel, programsSel, serviceFocus]);
 
   const sortedStudios = useMemo(() => {
     const list = filteredByFilters.slice();
@@ -752,7 +926,7 @@ const Studio = () => {
   // Reset client-side pagination when result set changes
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [displayStudios.length, selectedCategory, sortOrder, debouncedQuery]);
+  }, [displayStudios.length, selectedCategory, sortOrder, debouncedQuery, serviceFocus]);
 
   // Active filters count
   const activeFilterCount = useMemo(() => {
@@ -769,8 +943,9 @@ const Studio = () => {
     for (const [sel, rng] of ranges) {
       if (sel[0] !== rng[0] || sel[1] !== rng[1]) n += 1;
     }
+        if (serviceFocus !== 'all') n += 1;
     return n;
-  }, [filters, priceSel, priceRange, sqftSel, sqftRange, floorsSel, floorsRange, programsSel, programsRange]);
+  }, [filters, priceSel, priceRange, sqftSel, sqftRange, floorsSel, floorsRange, programsSel, programsRange, serviceFocus]);
 
   // Grid class responsive tweak
   const listingsGridClass = useMemo(
@@ -871,6 +1046,7 @@ const Studio = () => {
                         setSqftSel(sqftRange);
                         setFloorsSel(floorsRange);
                         setProgramsSel(programsRange);
+                        setServiceFocus('all');
                       }}
                       className="text-xs text-slate-600 hover:text-slate-800"
                     >
@@ -1137,6 +1313,7 @@ const Studio = () => {
                         setSqftSel(sqftRange);
                         setFloorsSel(floorsRange);
                         setProgramsSel(programsRange);
+                        setServiceFocus('all');
                       }}
                       className="text-xs text-slate-600 hover:text-slate-800"
                     >
@@ -1222,6 +1399,15 @@ const Studio = () => {
                       ? Number(priceLabel).toLocaleString(undefined, { maximumFractionDigits: 0 })
                       : priceLabel;
 
+                  const firmHosting = studio.firm?.hosting || null;
+                  const overlayTilesSource = (() => {
+                    if (firmHosting?.products?.length) return firmHosting.products;
+                    if (firmHosting?.services?.length) return firmHosting.services;
+                    return hostingTiles.products;
+                  })();
+                  const overlayTiles = (overlayTilesSource || []).slice(0, 2);
+                  const bodyTiles = (firmHosting?.services?.length ? firmHosting.services : hostingTiles.services).slice(0, 2);
+
                   const supportingText = studio.firm?.bio || studio.bio || summaryPreview;
                   const firmName = resolveFirmName(studio);
                   const firmCountry = resolveFirmCountry(studio);
@@ -1233,7 +1419,34 @@ const Studio = () => {
                     if (raw == null || !Number.isFinite(Number(raw))) return null;
                     return `${Number(raw).toLocaleString()} sq ft`;
                   })();
-                  const metaTokens = [primaryCategory, primaryStyle, areaToken, climate, terrain].filter(Boolean);
+                  const serviceSignals = deriveServiceSignals(studio);
+                  const practiseBadgesSource = Array.isArray(studio.practiceBadges)
+                    ? studio.practiceBadges
+                    : Array.isArray(studio.firm?.practiceBadges)
+                    ? studio.firm.practiceBadges
+                    : [];
+                  const practiseBadges = (practiseBadgesSource.length ? practiseBadgesSource : serviceSignals.badges).filter(Boolean);
+                  const readinessFlags = [];
+                  if (serviceSignals.sellsPlans) {
+                    readinessFlags.push({ id: "plan-ready", label: "Plan-ready", tone: "emerald" });
+                  }
+                  if (serviceSignals.designBuild) {
+                    readinessFlags.push({ id: "design-build", label: "Design-build ready", tone: "amber" });
+                  }
+                  const metaPills = [
+                    { id: "category", label: "Category", value: primaryCategory },
+                    { id: "style", label: "Style", value: primaryStyle },
+                    { id: "plot", label: "Plot", value: areaToken },
+                    { id: "climate", label: "Climate", value: climate },
+                    { id: "terrain", label: "Terrain", value: terrain },
+                  ].filter((pill) => pill.value);
+                  const contactEmail =
+                    studio.firm?.contact?.email ||
+                    studio.contactEmail ||
+                    studio.inquiriesEmail ||
+                    studio.pointOfContact?.email ||
+                    null;
+                  const contactCtaLabel = contactEmail ? "Share brief" : "View services";
                   const programTokens = [
                     Number.isFinite(roomsValue)
                       ? `${roomsValue} room${roomsValue === 1 ? "" : "s"}`
@@ -1282,6 +1495,18 @@ const Studio = () => {
                           loading="lazy"
                           onError={(event) => applyFallback(event, heroFallback)}
                         />
+                        {overlayTiles.length > 0 && (
+                          <div className="absolute left-3 top-3 flex max-w-[90%] flex-wrap gap-2">
+                            {overlayTiles.map((tile, index) => (
+                              <span
+                                key={`overlay-${studio.slug || studio.id}-${tile.id || index}`}
+                                className="rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm"
+                              >
+                                {tile.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         {Array.isArray(studio.highlights) && studio.highlights.length > 0 && (
                           <div className="absolute bottom-3 left-3 flex max-w-[90%] flex-wrap gap-2">
                             {studio.highlights.slice(0, 2).map((highlight, index) => (
@@ -1343,14 +1568,46 @@ const Studio = () => {
                             </div>
                           )}
 
-                          {metaTokens.length > 0 && (
+                          {practiseBadges.length > 0 && (
                             <div className="flex flex-wrap gap-2">
-                              {metaTokens.map((token) => (
+                              {practiseBadges.slice(0, 4).map((badge, index) => (
                                 <span
-                                  key={`meta-${studio.slug || studio.id}-${token}`}
-                                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600"
+                                  key={`practise-${studio.slug || studio.id}-${badge}-${index}`}
+                                  className="inline-flex items-center gap-1 rounded-full bg-slate-900/10 px-2.5 py-1 text-[11px] font-semibold text-slate-800"
                                 >
-                                  {token}
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-800" aria-hidden="true" />
+                                  {badge}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {bodyTiles.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {bodyTiles.map((tile, index) => (
+                                <span
+                                  key={`hosting-chip-${studio.slug || studio.id}-${tile.id || index}`}
+                                  className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
+                                >
+                                  {tile.label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {metaPills.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {metaPills.map((pill) => (
+                                <span
+                                  key={`meta-${studio.slug || studio.id}-${pill.id}`}
+                                  className="inline-flex min-w-[110px] flex-col rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"
+                                >
+                                  <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                                    {pill.label}
+                                  </span>
+                                  <span className="text-xs font-semibold text-slate-900 line-clamp-1">
+                                    {pill.value}
+                                  </span>
                                 </span>
                               ))}
                             </div>
@@ -1374,6 +1631,28 @@ const Studio = () => {
                                     className="rounded-full bg-slate-900/10 px-2.5 py-1 text-xs font-medium text-slate-600"
                                   >
                                     {serviceLabel}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {readinessFlags.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {readinessFlags.map((flag) => {
+                                const toneClass =
+                                  flag.tone === "emerald"
+                                    ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                                    : flag.tone === "amber"
+                                    ? "border-amber-100 bg-amber-50 text-amber-700"
+                                    : "border-slate-200 bg-slate-50 text-slate-700";
+                                return (
+                                  <span
+                                    key={`readiness-${studio.slug || studio.id}-${flag.id}`}
+                                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${toneClass}`}
+                                  >
+                                    <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+                                    {flag.label}
                                   </span>
                                 );
                               })}
@@ -1429,20 +1708,49 @@ const Studio = () => {
                           )}
                         </div>
 
-                        <div className="mt-auto flex flex-wrap items-end justify-between gap-3">
-                          {priceLabel ? (
-                            <p className="text-base font-semibold text-slate-900">
-                              {currency} {formattedPrice}
-                              <span className="ml-1 text-xs font-normal text-slate-500">
-                                / {normalizedUnit}
-                              </span>
-                            </p>
-                          ) : (
-                            <p className="text-sm font-medium text-slate-500">Price on request</p>
-                          )}
-                          {areaToken && (
-                            <p className="text-xs text-slate-500">{areaToken}</p>
-                          )}
+                        <div className="mt-auto space-y-4">
+                          <div className="flex flex-wrap items-end justify-between gap-3">
+                            {priceLabel ? (
+                              <p className="text-base font-semibold text-slate-900">
+                                {currency} {formattedPrice}
+                                <span className="ml-1 text-xs font-normal text-slate-500">
+                                  / {normalizedUnit}
+                                </span>
+                              </p>
+                            ) : (
+                              <p className="text-sm font-medium text-slate-500">Price on request</p>
+                            )}
+                            {areaToken && (
+                              <p className="text-xs text-slate-500">{areaToken}</p>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap gap-3">
+                            <Link
+                              to={href}
+                              onClick={(event) => event.stopPropagation()}
+                              className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                            >
+                              View studio
+                            </Link>
+                            {contactEmail ? (
+                              <a
+                                href={`mailto:${contactEmail}`}
+                                onClick={(event) => event.stopPropagation()}
+                                className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+                              >
+                                {contactCtaLabel}
+                              </a>
+                            ) : (
+                              <Link
+                                to={href}
+                                onClick={(event) => event.stopPropagation()}
+                                className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
+                              >
+                                {contactCtaLabel}
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </MotionArticle>
@@ -1508,6 +1816,7 @@ const Studio = () => {
                 setSqftSel(sqftRange);
                 setFloorsSel(floorsRange);
                 setProgramsSel(programsRange);
+                setServiceFocus('all');
               }}
               className="text-xs text-slate-600"
             >
@@ -1660,4 +1969,6 @@ const Studio = () => {
 };
 
 export default Studio;
+
+
 

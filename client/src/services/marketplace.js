@@ -15,22 +15,68 @@ import { associateCatalog, associateEnhancements } from "../data/services.js";
 import { fetchVendorPortalProfile, loadVendorProfileDraft } from "./portal.js";
 
 import { decorateFirmWithProfile, decorateFirmsWithProfiles, loadFirmProfile } from "../utils/firmProfile.js";
+import { DEFAULT_STUDIO_TILES } from "../utils/studioTiles.js";
 
 const slugify = (value = '') => value.toString().toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
 const ensureArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
+const nowISO = () => new Date().toISOString();
+const ADMIN_AUTH_STATUSES = new Set([401, 403]);
 
-let vendorProfilePromise = null;
+const sanitizeQueryParams = (params = {}) =>
+  Object.entries(params).reduce((acc, [key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return acc;
+    }
+    acc[key] = value;
+    return acc;
+  }, {});
+
+const resolveAdminDataResource = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    throw new Error('resource_required');
+  }
+  return encodeURIComponent(normalized);
+};
+
+const buildLimitedDbOverview = () => ({
+  limited: true,
+  fetchedAt: nowISO(),
+  db: {
+    name: 'Access restricted',
+  },
+  server: null,
+  collections: [],
+});
+
+const vendorProfilePromises = { authed: null, guest: null };
+
+const hasAuthSession = () => {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  try {
+    const token =
+      window.localStorage.getItem('auth_token') ||
+      window.localStorage.getItem('token');
+    return Boolean(token && token !== 'null' && token !== 'undefined');
+  } catch (error) {
+    console.warn('vendor_profile_session_check_failed', error);
+    return false;
+  }
+};
 
 async function getVendorProfileForMarketplace() {
-  if (!vendorProfilePromise) {
-    vendorProfilePromise = (async () => {
-      try {
-        const response = await fetchVendorPortalProfile({ preferDraft: true, fallbackToDraft: true });
-        if (response?.profile) {
-          return response.profile;
+  const sessionKey = hasAuthSession() ? 'authed' : 'guest';
+  if (!vendorProfilePromises[sessionKey]) {
+    vendorProfilePromises[sessionKey] = (async () => {
+      if (sessionKey === 'authed') {
+        try {
+          const response = await fetchVendorPortalProfile({ preferDraft: true, fallbackToDraft: true });
+          if (response?.profile) {
+            return response.profile;
+          }
+        } catch (error) {
+          console.warn('vendor_profile_load_failed', error);
         }
-      } catch (error) {
-        console.warn('vendor_profile_load_failed', error);
       }
       try {
         return loadVendorProfileDraft() || null;
@@ -39,7 +85,7 @@ async function getVendorProfileForMarketplace() {
       }
     })();
   }
-  return vendorProfilePromise;
+  return vendorProfilePromises[sessionKey];
 }
 
 function decorateMaterialsWithVendorProfile(items = [], profile) {
@@ -186,23 +232,75 @@ const normalizeAssociate = (associate = {}) => {
   if (mergedRates.daily === undefined && hourly !== null && hourly !== undefined) {
     mergedRates.daily = Math.round(Number(hourly) * 8);
   }
+  const resolvedHero =
+    associate.heroImage ||
+    associate.coverImage ||
+    (extras && extras.heroImage) ||
+    (Array.isArray(associate.portfolioMedia) && associate.portfolioMedia[0]?.mediaUrl) ||
+    null;
+  const resolvedAvatar =
+    associate.profileImage ||
+    associate.avatar ||
+    (extras && extras.avatar) ||
+    "/assets/associates/default-consultant.jpg";
+  const resolveMediaItems = () => {
+    const direct = Array.isArray(associate.portfolioMedia) ? associate.portfolioMedia : [];
+    if (direct.length) {
+      return direct
+        .map((item) => ({
+          title: item.title || "",
+          description: item.description || "",
+          mediaUrl: item.mediaUrl || item.url || item.image || "",
+          kind: item.kind || "",
+        }))
+        .filter((item) => item.mediaUrl);
+    }
+    if (extras?.portfolioMedia?.length) {
+      return extras.portfolioMedia
+        .map((item) => ({
+          title: item.title || "",
+          description: item.description || "",
+          mediaUrl: item.mediaUrl || item.url || item.image || "",
+          kind: item.kind || "",
+        }))
+        .filter((item) => item.mediaUrl);
+    }
+    return [];
+  };
   return {
     ...associate,
     hourlyRate: hourly ?? null,
     rates: mergedRates,
-    avatar: associate.avatar || (extras && extras.avatar) || "/assets/associates/default-consultant.jpg",
+    heroImage: resolvedHero,
+    profileImage: associate.profileImage || associate.avatar || null,
+    avatar: resolvedAvatar,
+    contactEmail: associate.contactEmail || associate.user?.email || null,
     serviceBadges: (extras && extras.serviceBadges) || associate.serviceBadges || [],
     booking: (extras && extras.booking) || associate.booking || null,
     warranty: (extras && extras.warranty) || associate.warranty || null,
     addons: (extras && extras.addons) || associate.addons || [],
     prepChecklist: (extras && extras.prepChecklist) || associate.prepChecklist || [],
     deliverables: (extras && extras.deliverables) || associate.deliverables || [],
+    expertise: (extras && extras.expertise) || associate.expertise || [],
+    portfolioMedia: resolveMediaItems(),
   };
 };
 
 const LOCAL_STUDIOS = fallbackStudios.map(normalizeStudio);
 const LOCAL_MATERIALS = fallbackMaterials.map(normalizeMaterial);
 const LOCAL_ASSOCIATES = associateCatalog.map(normalizeAssociate);
+const FALLBACK_ASSOCIATES = fallbackAssociates.map(normalizeAssociate);
+
+const toComparableId = (value) => (value ? String(value).toLowerCase() : "");
+const findLocalAssociate = (id) => {
+  const target = toComparableId(id);
+  if (!target) return null;
+  return (
+    LOCAL_ASSOCIATES.find((associate) => toComparableId(associate?._id) === target) ||
+    FALLBACK_ASSOCIATES.find((associate) => toComparableId(associate?._id) === target) ||
+    null
+  );
+};
 
 function unwrapItems(data) {
   return {
@@ -358,30 +456,81 @@ const buildStudioFacets = (list = []) => {
 };
 
 export async function fetchStudios(params = {}) {
+
   try {
+
     const { data } = await client.get("/marketplace/studios", { params });
+
     const items = decorateStudiosWithProfiles((data?.items || []).map(normalizeStudio));
+
     const meta = data?.meta || {};
+
+    if (items.length === 0) {
+
+      const fallbackItems = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
+
+      return {
+
+        items: fallbackItems,
+
+        meta: {
+
+          total: fallbackItems.length,
+
+          facets: meta.facets || buildStudioFacets(fallbackItems),
+
+          web3: meta.web3 || null,
+
+          fallback: true,
+
+        },
+
+      };
+
+    }
+
     return {
+
       items,
+
       meta: {
+
         total: meta.total ?? items.length,
+
         facets: meta.facets || buildStudioFacets(items),
+
         web3: meta.web3 || null,
+
       },
+
     };
+
   } catch {
+
     const filtered = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
+
     return {
+
       items: filtered,
+
       meta: {
+
         total: filtered.length,
+
         facets: buildStudioFacets(filtered),
+
         web3: null,
+
       },
+
     };
+
   }
+
 }
+
+
+
 
 export async function fetchMaterials(params = {}) {
   const vendorProfile = await getVendorProfileForMarketplace();
@@ -407,21 +556,90 @@ export async function fetchMaterials(params = {}) {
 }
 
 export async function fetchMarketplaceAssociates(params = {}) {
+
   try {
+
     const { data } = await client.get("/marketplace/associates", { params });
+
     const items = (data?.items || []).map(normalizeAssociate);
+
+    if (items.length === 0) {
+
+      const fallbackItems = filterAssociates(LOCAL_ASSOCIATES, params);
+
+      return {
+
+        items: fallbackItems,
+
+        meta: {
+
+          total: fallbackItems.length,
+
+          web3: data?.meta?.web3 || null,
+
+          fallback: true,
+
+        },
+
+      };
+
+    }
+
     return {
+
       items: filterAssociates(items, params),
+
       meta: {
+
         total: data?.meta?.total ?? items.length,
+
         web3: data?.meta?.web3 || null,
+
       },
+
     };
+
   } catch {
+
     const filtered = filterAssociates(LOCAL_ASSOCIATES, params);
+
     return { items: filtered, meta: { total: filtered.length, web3: null } };
+
+  }
+
+}
+
+
+
+
+const buildDesignStudioHostingFallback = () => ({
+  ok: true,
+  hosting: {
+    enabled: true,
+    serviceSummary: DEFAULT_STUDIO_TILES.summary,
+    services: DEFAULT_STUDIO_TILES.services,
+    products: DEFAULT_STUDIO_TILES.products,
+    updatedAt: nowISO(),
+  },
+  fallback: true,
+});
+
+export async function fetchDesignStudioHosting(params = {}) {
+  try {
+    const { data } = await client.get('/marketplace/design-studio/hosting', { params });
+    if (data?.hosting) {
+      return data;
+    }
+    return buildDesignStudioHostingFallback();
+  } catch (error) {
+    const fallback = buildDesignStudioHostingFallback();
+    if (error?.message) {
+      fallback.error = error.message;
+    }
+    return fallback;
   }
 }
+
 
 export async function fetchMarketplaceFirms(params = {}) {
   try {
@@ -470,16 +688,168 @@ export async function fetchFirmProducts(firmId) {
   return fetchCatalog({ firmId });
 }
 
-export async function fetchAdminUsers() {
+export async function fetchAdminUsers(params = {}) {
+  const queryParams = sanitizeQueryParams({
+    q:
+      typeof params?.query === 'string'
+        ? params.query.trim()
+        : typeof params?.q === 'string'
+          ? params.q.trim()
+          : undefined,
+    limit:
+      Number.isFinite(params?.limit) && params.limit > 0
+        ? Math.floor(params.limit)
+        : undefined,
+  });
+
   try {
-    const { data } = await client.get("/admin/users");
+    const { data } = await client.get('/admin/users', { params: queryParams });
     return data?.users || [];
   } catch (err) {
-    if (err?.response?.status === 403 || err?.response?.status === 401) {
+    if (ADMIN_AUTH_STATUSES.has(err?.response?.status)) {
       return [];
     }
     throw err;
   }
+}
+
+export async function fetchMarketplaceAssociateProfile(id) {
+  if (!id) {
+    throw new Error("Associate id is required");
+  }
+  try {
+    const { data } = await client.get(`/marketplace/associates/${id}`);
+    if (data?.item) {
+      return normalizeAssociate(data.item);
+    }
+    return null;
+  } catch (error) {
+    if (error?.response?.status === 404) {
+      return null;
+    }
+    if (!error?.response) {
+      const fallback = findLocalAssociate(id);
+      if (fallback) {
+        return fallback;
+      }
+    }
+    throw error;
+  }
+}
+
+export async function inviteAdminUser(payload = {}) {
+  if (!payload?.email) {
+    throw new Error('email_required');
+  }
+  const body = {
+    email: String(payload.email).trim().toLowerCase(),
+    role: payload.role || 'user',
+  };
+  if (payload.password) {
+    body.password = payload.password;
+  }
+  const { data } = await client.post('/admin/users', body);
+  return data?.user || null;
+}
+
+export async function updateAdminUser(userId, payload = {}) {
+  if (!userId) {
+    throw new Error('user_id_required');
+  }
+  const { data } = await client.patch(`/admin/users/${userId}`, payload);
+  return data?.user || null;
+}
+
+export async function deleteAdminUser(userId) {
+  if (!userId) {
+    throw new Error('user_id_required');
+  }
+  const { data } = await client.delete(`/admin/users/${userId}`);
+  return data?.user || null;
+}
+
+export async function resetAdminUserPassword(userId) {
+  if (!userId) {
+    throw new Error('user_id_required');
+  }
+  await client.post(`/admin/users/${userId}/reset-password`);
+  return true;
+}
+
+export async function fetchDbOverview() {
+  try {
+    const { data } = await client.get('/admin/db/overview');
+    return data?.overview || null;
+  } catch (error) {
+    if (ADMIN_AUTH_STATUSES.has(error?.response?.status)) {
+      return buildLimitedDbOverview();
+    }
+    throw error;
+  }
+}
+
+export async function fetchAdminStudioRequests(params = {}) {
+  const queryParams = sanitizeQueryParams({
+    limit:
+      Number.isFinite(params?.limit) && params.limit > 0
+        ? Math.floor(params.limit)
+        : undefined,
+  });
+  try {
+    const { data } = await client.get('/admin/studio-requests', { params: queryParams });
+    return {
+      requests: data?.requests || [],
+      metrics: data?.metrics || { total: 0, open: 0, byStatus: [], bySource: [] },
+    };
+  } catch (error) {
+    if (ADMIN_AUTH_STATUSES.has(error?.response?.status)) {
+      return { requests: [], metrics: { total: 0, open: 0, byStatus: [], bySource: [] } };
+    }
+    throw error;
+  }
+}
+
+export async function fetchAdminDataResources() {
+  try {
+    const { data } = await client.get('/admin/data');
+    return data?.resources || [];
+  } catch (error) {
+    if (ADMIN_AUTH_STATUSES.has(error?.response?.status)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function fetchAdminDataItems(resource, params = {}) {
+  const resourceKey = resolveAdminDataResource(resource);
+  const queryParams = sanitizeQueryParams(params);
+  const { data } = await client.get(`/admin/data/${resourceKey}`, { params: queryParams });
+  return data?.items ? data : { items: data?.items || [], meta: data?.meta || null };
+}
+
+export async function createAdminDataItem(resource, payload = {}) {
+  const resourceKey = resolveAdminDataResource(resource);
+  const { data } = await client.post(`/admin/data/${resourceKey}`, payload);
+  return data?.item || null;
+}
+
+export async function updateAdminDataItem(resource, recordId, payload = {}) {
+  if (!recordId) {
+    throw new Error('record_id_required');
+  }
+  const resourceKey = resolveAdminDataResource(resource);
+  const { data } = await client.patch(`/admin/data/${resourceKey}/${recordId}`, payload);
+  return data?.item || null;
+}
+
+export async function deleteAdminDataItem(resource, recordId) {
+  if (!recordId) {
+    throw new Error('record_id_required');
+  }
+  const resourceKey = resolveAdminDataResource(resource);
+  const { data } = await client.delete(`/admin/data/${resourceKey}/${recordId}`);
+  return data?.item || null;
 }
 
 export async function fetchFirmById(firmId) {

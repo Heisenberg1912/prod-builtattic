@@ -65,7 +65,7 @@ export function getFirmAvatarImage(firm) {
 }
 
 export function getAssociateAvatar(associate) {
-  return associate?.avatar || getAssociateFallback(associate);
+  return associate?.profileImage || associate?.avatar || getAssociateFallback(associate);
 }
 
 export function getMaterialImage(item) {

@@ -1,20 +1,43 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
-export const authenticateJWT = async (req, res, next) => {
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+
+const extractToken = (req) => {
   const authHeader = req.headers.authorization || req.headers.Authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No token provided" });
-  }
-  const token = authHeader.split(" ")[1];
+  if (!authHeader || typeof authHeader !== "string") return null;
+  const [scheme, token] = authHeader.split(" ");
+  if (!/^Bearer$/i.test(scheme) || !token) return null;
+  return token.trim();
+};
+
+export const authenticateJWT = async (req, res, next) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "dev_secret");
-    const user = await User.findById(decoded.sub || decoded.id);
-    if (!user) return res.status(401).json({ message: "User not found" });
+    const token = extractToken(req);
+    if (!token) {
+      return res.status(401).json({ message: "No token provided" });
+    }
+
+    if (!ACCESS_SECRET) {
+      throw new Error('JWT access secret not configured');
+    }
+
+    const decoded = jwt.verify(token, ACCESS_SECRET);
+    const userId = decoded._id || decoded.sub || decoded.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+
+    const user = await User.findById(userId).lean();
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+
     req.user = user;
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Invalid token" });
+    const message = err?.name === 'JsonWebTokenError' ? 'Invalid token' : err?.message || 'Unauthorized';
+    return res.status(401).json({ message });
   }
 };
 

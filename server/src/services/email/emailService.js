@@ -260,6 +260,34 @@ export const sendSupportEmailNotification = async ({
 
 
 
+
+export const sendAdminNotificationEmail = async ({ subject, html, text }) => {
+  const recipientsRaw = process.env.ADMIN_ALERT_EMAIL || process.env.SALES_ALERT_EMAIL;
+  if (!recipientsRaw) {
+    return { skipped: true, reason: 'admin email not configured' };
+  }
+  const recipients = recipientsRaw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (!recipients.length) {
+    return { skipped: true, reason: 'admin email not configured' };
+  }
+  const transporter = createTransporter();
+  const fromAddress = process.env.EMAIL_FROM || 'Builtattic <' + (process.env.EMAIL_USER || 'noreply@builtattic.com') + '>';
+  const fallbackText = text || (typeof html === 'string' ? html.replace(/<[^>]+>/g, ' ') : 'New marketplace activity');
+  const finalHtml = html || '<p>' + fallbackText + '</p>';
+  const mailOptions = {
+    from: fromAddress,
+    to: recipients,
+    subject: subject || 'Marketplace notification',
+    html: finalHtml,
+    text: fallbackText,
+  };
+  const result = await transporter.sendMail(mailOptions);
+  return { success: true, messageId: result.messageId };
+};
+
 export const sendPasswordResetEmail = async ({ to, resetUrl, expiresInMinutes = 60 }) => {
   const transporter = createTransporter();
   const fromAddress = process.env.EMAIL_FROM || `Builtattic <${process.env.EMAIL_USER}>`;

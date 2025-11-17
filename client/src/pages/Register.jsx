@@ -1,25 +1,34 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Link, useNavigate } from "react-router-dom";
-import { register as apiRegister } from "../services/auth.js";
+import { register as registerAccount } from "../services/auth.js";
 import { uploadAsset } from "../services/portal.js";
+import {
+  inferRoleFromUser,
+  normalizeRole,
+  resolveDashboardPath,
+} from "../constants/roles.js";
 
-const preferredContactOptions = ["Email", "Phone", "WhatsApp"];
-const industryOptions = [
-  "Real Estate",
-  "Developer",
+const firmTypeOptions = [
+  "Architecture",
   "Contractor",
-  "Interior",
-  "PMC",
-  "Urban Planning / Design",
+  "Vendor",
+  "Developer",
 ];
-const procurementCategories = [
-  "Infrastructure",
-  "Healthcare",
-  "Education",
-  "Housing",
-  "Civic",
-  "Industrial",
+const userTypeOptions = [
+  "Landowner",
+  "Developer",
+  "Student",
+  "Architect",
+];
+const availabilityOptions = ["Hourly", "Weekly", "Monthly"];
+const workModeOptions = ["Remote", "On-site"];
+const educationLevels = [
+  "Diploma",
+  "Bachelor's",
+  "Master's",
+  "Doctorate",
+  "Other",
 ];
 
 const withPasswords = (fields) => [
@@ -28,124 +37,205 @@ const withPasswords = (fields) => [
   { key: "confirmPassword", label: "Confirm Password", type: "password", placeholder: "Repeat password" },
 ];
 
+const documentUploadAccept = "application/pdf,image/*";
+
 const baseLayouts = {
-  user: withPasswords([
-    { key: "fullName", label: "Full Name", type: "text" },
-    { key: "displayName", label: "Display Name / Username", type: "text" },
-    { key: "email", label: "Email", type: "email" },
-    { key: "phone", label: "Phone (E.164)", type: "tel", placeholder: "+91 98765 43210" },
-    {
-      key: "preferredContact",
-      label: "Preferred Contact",
-      type: "select",
-      options: preferredContactOptions,
-    },
-    { key: "country", label: "Country", type: "text" },
-    { key: "stateRegion", label: "State / Region", type: "text" },
-    { key: "city", label: "City", type: "text" },
-    { key: "address", label: "Address", type: "textarea", optional: true },
-    { key: "website", label: "Website (optional)", type: "url", optional: true },
-    { key: "profileImage", label: "Profile Image", type: "file", optional: true, accept: "image/*" },
-    { key: "notes", label: "Notes", type: "textarea", optional: true },
-  ]),
   firm: withPasswords([
-    { key: "legalName", label: "Legal / Registered Firm Name", type: "text" },
-    { key: "brandName", label: "Brand / Trading Name", type: "text", optional: true },
-    { key: "officialEmail", label: "Official Email", type: "email" },
+    { key: "firmName", label: "Firm Name", type: "text" },
+    { key: "founderName", label: "Founder / Owner", type: "text" },
+    { key: "officialEmail", label: "Email", type: "email" },
     { key: "phone", label: "Phone (E.164)", type: "tel", placeholder: "+91 98765 43210" },
-    {
-      key: "preferredContact",
-      label: "Preferred Contact",
-      type: "select",
-      options: preferredContactOptions,
-    },
     { key: "country", label: "Country", type: "text" },
-    { key: "stateRegion", label: "State / Region", type: "text" },
     { key: "city", label: "City", type: "text" },
-    { key: "registeredAddress", label: "Registered Address", type: "textarea" },
-    { key: "website", label: "Website / Portfolio", type: "url", optional: true },
-    { key: "brandLogo", label: "Brand Logo", type: "file", optional: true, accept: "image/*" },
-    { key: "coaNumber", label: "COA Registration Number", type: "text", optional: true },
-    { key: "foundedYear", label: "Founded Year", type: "number", optional: true, placeholder: "2015" },
-    { key: "teamSize", label: "Team Size (optional)", type: "number", optional: true },
-    { key: "primaryServices", label: "Primary Services", type: "text", placeholder: "Architecture | Interior | Landscape" },
-    { key: "serviceRegions", label: "Service Regions (States / Countries)", type: "text" },
-    { key: "hourlyRate", label: "Hourly Rate (currency)", type: "text", optional: true, placeholder: "USD 150 / hour" },
-    { key: "notes", label: "Notes", type: "textarea", optional: true },
+    { key: "registrationId", label: "Registration ID", type: "text" },
+    {
+      key: "verificationDocument",
+      label: "Verification Document (License / Certificate)",
+      type: "file",
+      accept: documentUploadAccept,
+    },
+    {
+      key: "firmType",
+      label: "Firm Type",
+      type: "select",
+      options: firmTypeOptions,
+    },
+    { key: "teamSize", label: "Team Size", type: "number", placeholder: "25" },
+    { key: "yearsActive", label: "Years Active", type: "number", placeholder: "10" },
+    {
+      key: "primaryCategories",
+      label: "Primary Categories",
+      type: "textarea",
+      placeholder: "Residential, Hospitality, Workplace",
+    },
+    {
+      key: "primaryStyles",
+      label: "Primary Styles",
+      type: "textarea",
+      placeholder: "Modern, Tropical, Adaptive reuse",
+    },
+    {
+      key: "averageDesignRate",
+      label: "Average Design Rate ($/sqft)",
+      type: "text",
+      placeholder: "$12 / sqft",
+    },
+    {
+      key: "servicesOffered",
+      label: "Services Offered",
+      type: "textarea",
+      placeholder: "Architecture, Interior design, BIM, Design-build",
+    },
+    { key: "portfolioLink", label: "Portfolio Link", type: "url", optional: true },
+    {
+      key: "portfolioUpload",
+      label: "Portfolio Upload",
+      type: "file",
+      optional: true,
+      accept: documentUploadAccept,
+    },
   ]),
   associate: withPasswords([
     { key: "fullName", label: "Full Name", type: "text" },
     { key: "email", label: "Email", type: "email" },
     { key: "phone", label: "Phone (E.164)", type: "tel", placeholder: "+91 98765 43210" },
-    {
-      key: "preferredContact",
-      label: "Preferred Contact",
-      type: "select",
-      options: preferredContactOptions,
-    },
     { key: "country", label: "Country", type: "text" },
-    { key: "stateRegion", label: "State / Region", type: "text" },
     { key: "city", label: "City", type: "text" },
-    { key: "address", label: "Address (optional)", type: "textarea", optional: true },
-    { key: "portfolioUrl", label: "Portfolio / Website", type: "url" },
-    { key: "profileImage", label: "Profile Image", type: "file", optional: true, accept: "image/*" },
-    { key: "skillsSoftware", label: "Skills & Software (comma-separated)", type: "text" },
-    { key: "availability", label: "Availability (hrs/week)", type: "number", optional: true },
-    { key: "notes", label: "Notes", type: "textarea", optional: true },
-  ]),
-  vendor: withPasswords([
-    { key: "companyName", label: "Company / Brand Name", type: "text" },
-    { key: "contactPerson", label: "Primary Contact Name", type: "text" },
-    { key: "officialEmail", label: "Official Email", type: "email" },
-    { key: "phone", label: "Phone (E.164)", type: "tel", placeholder: "+91 98765 43210" },
     {
-      key: "preferredContact",
-      label: "Preferred Contact",
+      key: "educationLevel",
+      label: "Education Level",
       type: "select",
-      options: preferredContactOptions,
-    },
-    { key: "country", label: "Country", type: "text" },
-    { key: "stateRegion", label: "State / Region", type: "text" },
-    { key: "city", label: "City", type: "text" },
-    { key: "warehouseLocations", label: "Warehousing / Supply Regions", type: "text" },
-    {
-      key: "primaryCategory",
-      label: "Primary Category",
-      type: "select",
-      options: procurementCategories,
+      options: educationLevels,
     },
     {
-      key: "industryType",
-      label: "Industry Type (optional)",
+      key: "verificationDocument",
+      label: "Verification (Degree / ID)",
+      type: "file",
+      accept: documentUploadAccept,
+    },
+    {
+      key: "experienceYears",
+      label: "Experience (years)",
+      type: "number",
+      placeholder: "5",
+      inputProps: { min: "0" },
+    },
+    {
+      key: "skills",
+      label: "Skills",
+      type: "textarea",
+      placeholder: "Revit, Rhino, FF&E sourcing",
+    },
+    {
+      key: "primaryCategories",
+      label: "Primary Categories",
+      type: "textarea",
+      placeholder: "Residential, Hospitality",
+    },
+    {
+      key: "primaryStyles",
+      label: "Primary Styles",
+      type: "textarea",
+      placeholder: "Brutalist, Tropical Minimalism",
+    },
+    {
+      key: "designRate",
+      label: "Design Rate ($/sqft)",
+      type: "text",
+      placeholder: "$8 / sqft",
+    },
+    {
+      key: "availability",
+      label: "Availability",
       type: "select",
-      options: industryOptions,
+      options: availabilityOptions,
+    },
+    {
+      key: "workMode",
+      label: "Work Mode",
+      type: "select",
+      options: workModeOptions,
+    },
+    { key: "portfolioLink", label: "Portfolio Link", type: "url", optional: true },
+    {
+      key: "resumeUpload",
+      label: "Portfolio / Resume Upload",
+      type: "file",
       optional: true,
+      accept: documentUploadAccept,
     },
-    { key: "catalogUrl", label: "Catalogue or Website", type: "url", optional: true },
-    { key: "brandLogo", label: "Brand Logo", type: "file", optional: true, accept: "image/*" },
-    { key: "gstin", label: "GSTIN / Tax ID (optional)", type: "text", optional: true },
-    { key: "notes", label: "Notes", type: "textarea", optional: true },
+  ]),
+  user: withPasswords([
+    { key: "fullName", label: "Full Name", type: "text" },
+    { key: "email", label: "Email", type: "email" },
+    { key: "phone", label: "Phone (E.164)", type: "tel", placeholder: "+91 98765 43210" },
+    { key: "country", label: "Country", type: "text" },
+    { key: "city", label: "City", type: "text" },
+    {
+      key: "userType",
+      label: "User Type",
+      type: "select",
+      options: userTypeOptions,
+    },
+    {
+      key: "projectType",
+      label: "Intended Project Type",
+      type: "text",
+      placeholder: "Farmhouse, co-living, adaptive reuse",
+    },
+    {
+      key: "budgetRange",
+      label: "Budget Range (optional)",
+      type: "text",
+      optional: true,
+      placeholder: "$250k - $400k",
+    },
   ]),
 };
 
 const roleOptions = [
-  { value: "user", label: "User" },
-  { value: "firm", label: "Firms" },
+  { value: "firm", label: "Firm" },
   { value: "associate", label: "Associate" },
-  { value: "vendor", label: "Vendor" },
+  { value: "user", label: "User" },
+];
+
+const roleShortcuts = [
+  { value: "firm", label: "Firm registration", detail: "Publish studios & services" },
+  { value: "associate", label: "Associate registration", detail: "Offer specialist support" },
+  { value: "user", label: "User registration", detail: "Plan or source a project" },
 ];
 
 const featureHighlights = [
-  { title: 'Built for collaborators', description: 'Invite associates and manage studios in one workspace.' },
-  { title: 'Secure onboarding', description: 'Documents stay private and are reviewed by the Builtattic team.' },
-  { title: 'Fast publishing', description: 'Push updates live with a couple of clicks once approved.' },
+  { title: "Firm due diligence", description: "Upload registrations and licenses once, unlock marketplace visibility." },
+  { title: "Associate spotlight", description: "Share skills, preferred work modes, and verified credentials." },
+  { title: "Project-ready briefs", description: "Users detail project intent so teams can respond faster." },
 ];
+
 
 const getLayoutForRole = (candidateRole) => baseLayouts[candidateRole] || baseLayouts.user;
 
+const getQueryRedirect = () => {
+  try {
+    const u = new URL(window.location.href);
+    const keys = ["redirect", "returnTo", "next", "r"];
+    for (const k of keys) {
+      const v = u.searchParams.get(k);
+      if (v && v.startsWith("/")) return v;
+    }
+  } catch {}
+  return null;
+};
+
+const resolveRedirect = (role, serverPath, qsPath) => {
+  const q = qsPath && qsPath.startsWith("/") ? qsPath : null;
+  const s = serverPath && serverPath.startsWith("/") ? serverPath : null;
+  const norm = normalizeRole(role);
+  return q || s || resolveDashboardPath(norm);
+};
+
 const RegisterPage = () => {
-  const [role, setRole] = useState("user");
-  const initialLayout = getLayoutForRole("user");
+  const [role, setRole] = useState("firm");
+  const initialLayout = getLayoutForRole("firm");
   const [form, setForm] = useState(() => {
     const init = {};
     initialLayout.forEach((field) => {
@@ -155,8 +245,21 @@ const RegisterPage = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [ok, setOk] = useState(false);
   const navigate = useNavigate();
+  const completeRegistrationLogin = ({ token, user, role: responseRole, dashboardPath }) => {
+    if (!token || !user) {
+      throw new Error("Registration response missing session token");
+    }
+    const resolvedRole = inferRoleFromUser(user) || responseRole || role;
+    const qsPath = getQueryRedirect();
+    const dest = resolveRedirect(resolvedRole, dashboardPath, qsPath);
+    try {
+      localStorage.setItem("auth_token", token);
+      localStorage.setItem("role", resolvedRole);
+      localStorage.setItem("user", JSON.stringify(user));
+    } catch {}
+    navigate(dest, { replace: true });
+  };
 
   const currentLayout = useMemo(() => getLayoutForRole(role), [role]);
 
@@ -173,14 +276,19 @@ const RegisterPage = () => {
     setRole(nextRole);
     resetFormForLayout(getLayoutForRole(nextRole));
     setError("");
-    setOk(false);
+  };
+
+  const applyRoleShortcut = (nextRole) => {
+    if (!nextRole) return;
+    setRole(nextRole);
+    resetFormForLayout(getLayoutForRole(nextRole));
+    setError("");
   };
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
     if (error) setError("");
-    if (ok) setOk(false);
   };
 
   const validate = () => {
@@ -287,16 +395,32 @@ const RegisterPage = () => {
 
       profile.roleSelection = role;
 
-      await apiRegister({
+      const primaryName =
+        form.fullName ||
+        form.firmName ||
+        form.founderName ||
+        form.legalName ||
+        form.brandName ||
+        form.companyName ||
+        form.contactPerson ||
+        form.displayName ||
+        profile.fullName ||
+        emailFromForm;
+
+      const response = await registerAccount({
         email: emailFromForm,
         password: form.password,
         role,
         profile,
       });
 
-      toast.success("Registered successfully");
-      setOk(true);
-      setTimeout(() => navigate("/login"), 1200);
+      completeRegistrationLogin({
+        token: response.token,
+        user: response.user,
+        role: response.user?.role || response.role || role,
+        dashboardPath: response.dashboardPath,
+      });
+      toast.success("Registration successful");
     } catch (err) {
       const message =
         err?.response?.data?.message ||
@@ -360,112 +484,125 @@ const RegisterPage = () => {
           ))}
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="mt-6 space-y-5 max-h-[70vh] overflow-y-auto pr-1"
-        >
-          <div className="sticky top-0 bg-white py-3 z-10 border-b border-gray-100">
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              Select Role
-            </label>
-            <select
-              value={role}
-              onChange={handleRoleChange}
-              className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {roleOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+        <div className="mt-6 space-y-3">
+          <p className="text-sm font-semibold text-gray-700">Pick a registration track</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {roleShortcuts.map((shortcut) => {
+              const isActive = role === shortcut.value;
+              return (
+                <button
+                  key={shortcut.value}
+                  type="button"
+                  onClick={() => applyRoleShortcut(shortcut.value)}
+                  className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                    isActive ? 'border-slate-900 bg-slate-900 text-white' : 'border-gray-200 bg-gray-50 text-gray-600'
+                  }`}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">{shortcut.label}</p>
+                  <p className="text-sm">{shortcut.detail}</p>
+                </button>
+              );
+            })}
           </div>
+        </div>
+        <form
+            onSubmit={handleSubmit}
+            className="mt-6 space-y-5 max-h-[70vh] overflow-y-auto pr-1"
+          >
+            <div className="sticky top-0 bg-white py-3 z-10 border-b border-gray-100">
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Registration type
+              </label>
+              <select
+                value={role}
+                onChange={handleRoleChange}
+                className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {roleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          {currentLayout.map((field) => {
-            const placeholder =
-              field.key === "hourlyRate"
-                ? formatCurrency(750)
-                : field.placeholder || "";
-            const commonProps = {
-              name: field.key,
-              value: form[field.key] || "",
-              onChange: handleChange,
-              required: !field.optional,
-              className:
-                "w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500",
-            };
+            {currentLayout.map((field) => {
+              const placeholder = field.placeholder || "";
+              const commonProps = {
+                name: field.key,
+                value: form[field.key] || "",
+                onChange: handleChange,
+                required: !field.optional,
+                className:
+                  "w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-300 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500",
+                ...(field.inputProps || {}),
+              };
 
-            if (field.type === "file") {
+              if (field.type === "file") {
+                return (
+                  <div key={`${role}-${field.key}`}>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">
+                      {field.label} {!field.optional && <span className="text-red-500">*</span>}
+                    </label>
+                    <input
+                      name={field.key}
+                      type="file"
+                      accept={field.accept || "image/*"}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] || null;
+                        setForm((prev) => ({ ...prev, [field.key]: file }));
+                        if (error) setError("");
+                      }}
+                      className="w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                    />
+                    {typeof File !== 'undefined' && form[field.key] instanceof File && (
+                      <p className="mt-2 text-xs text-gray-500">Selected: {form[field.key]?.name}</p>
+                    )}
+                  </div>
+                );
+              }
+
               return (
                 <div key={`${role}-${field.key}`}>
                   <label className="block text-sm font-medium text-gray-600 mb-1">
                     {field.label} {!field.optional && <span className="text-red-500">*</span>}
                   </label>
-                  <input
-                    name={field.key}
-                    type="file"
-                    accept={field.accept || "image/*"}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] || null;
-                      setForm((prev) => ({ ...prev, [field.key]: file }));
-                      if (error) setError("");
-                      if (ok) setOk(false);
-                    }}
-                    className="w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  {field.type === "select" ? (
+                    <select {...commonProps}>
+                      <option value="">Select {field.label}</option>
+                      {field.options.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : field.type === "textarea" ? (
+                  <textarea
+                    {...commonProps}
+                    rows={field.rows || 3}
+                    placeholder={placeholder}
                   />
-                  {typeof File !== 'undefined' && form[field.key] instanceof File && (
-                    <p className="mt-2 text-xs text-gray-500">Selected: {form[field.key]?.name}</p>
+                  ) : (
+                    <input
+                      {...commonProps}
+                      type={field.type}
+                      placeholder={placeholder}
+                    />
                   )}
                 </div>
               );
-            }
+            })}
 
-            return (
-              <div key={`${role}-${field.key}`}>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  {field.label} {!field.optional && <span className="text-red-500">*</span>}
-                </label>
-                {field.type === "select" ? (
-                  <select {...commonProps}>
-                    <option value="">Select {field.label}</option>
-                    {field.options.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                ) : field.type === "textarea" ? (
-                  <textarea
-                    {...commonProps}
-                    rows={3}
-                    placeholder={placeholder}
-                  />
-                ) : (
-                  <input
-                    {...commonProps}
-                    type={field.type}
-                    placeholder={placeholder}
-                  />
-                )}
-              </div>
-            );
-          })}
+            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
 
-          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-          {ok && (
-            <p className="text-green-600 text-sm text-center">
-              Registered successfully. Redirecting...
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-3 rounded-lg shadow-md transition-all duration-300"
-          >
-            {loading ? "Registering..." : "Register"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-3 rounded-lg shadow-md transition-all duration-300"
+            >
+              {loading ? "Registering..." : "Register"}
+            </button>
+          </form>
 
         <p className="text-center text-gray-500 text-sm mt-6">
           Already have an account?{' '}
@@ -479,3 +616,6 @@ const RegisterPage = () => {
 };
 
 export default RegisterPage;
+
+
+

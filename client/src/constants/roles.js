@@ -33,3 +33,15 @@ export const normalizeRole = (role) => {
 export const resolveDashboardPath = (role) =>
   roleDashboardPath[normalizeRole(role)] || "/dashboard/user";
 
+export const inferRoleFromUser = (user) => {
+  if (!user) return "user";
+  if (user.role) return normalizeRole(user.role);
+  const globals = user.rolesGlobal || [];
+  if (globals.includes("superadmin")) return "superadmin";
+  if (globals.includes("admin")) return "admin";
+  const membershipRole = user.memberships?.[0]?.role;
+  if (membershipRole === "owner") return "vendor";
+  if (membershipRole === "admin") return "firm";
+  if (membershipRole === "associate") return "associate";
+  return user.isClient === false ? "user" : "client";
+};

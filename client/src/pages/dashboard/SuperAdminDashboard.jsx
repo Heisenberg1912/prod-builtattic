@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import { logout as performLogout } from "../../services/auth.js";
+import { logout as performLogout, readStoredUser } from "../../services/auth.js";
 import {
   Search,
   Users,
@@ -9,11 +10,36 @@ import {
   ShoppingCart,
   UserCog,
   LayoutDashboard,
+  DollarSign,
   Plus,
   Menu,
   X,
+  RefreshCw,
+  Database,
 } from "lucide-react";
-import { fetchAdminUsers, fetchCatalog, fetchFirms } from "../../services/marketplace.js";
+import {
+  fetchAdminUsers,
+  fetchCatalog,
+  fetchFirms,
+  fetchDbOverview,
+  fetchAdminDataResources,
+  fetchAdminDataItems,
+  createAdminDataItem,
+  updateAdminDataItem,
+  deleteAdminDataItem,
+  inviteAdminUser,
+  resetAdminUserPassword,
+  updateAdminUser,
+  deleteAdminUser,
+  fetchAdminStudioRequests,
+} from "../../services/marketplace.js";
+import {
+  createDummyEntry,
+  deleteDummyEntry,
+  fetchAdminDummyCatalog,
+  invalidateDummyCatalogCache,
+  DUMMY_TYPES,
+} from "../../services/dummyCatalog.js";
 
 // Sidebar config
 const sidebarItems = [
@@ -23,11 +49,12 @@ const sidebarItems = [
   { id: "Firms", label: "Firms", icon: <Building2 size={18} /> },
   { id: "Clients", label: "Clients", icon: <Briefcase size={18} /> },
   { id: "Marketplace", label: "Marketplace", icon: <ShoppingCart size={18} /> },
+  { id: "Data", label: "Data Explorer", icon: <Database size={18} /> },
 ];
 
 const formatCurrency = (amount, currency = "USD") => {
   const value = Number(amount);
-  if (!Number.isFinite(value)) return "G";
+  if (!Number.isFinite(value)) return "--";
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -39,15 +66,49 @@ const formatCurrency = (amount, currency = "USD") => {
   }
 };
 
+const formatBytes = (bytes) => {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return "--";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  const sized = value / 1024 ** index;
+  return `${sized.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+};
+
+const formatDuration = (seconds) => {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return "--";
+  const days = Math.floor(value / 86400);
+  const hours = Math.floor((value % 86400) / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${Math.round(value)}s`;
+};
+
 const formatDate = (input) => {
-  if (!input) return "G";
+  if (!input) return "--";
   const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return "G";
+  if (Number.isNaN(d.getTime())) return "--";
   return d.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
+};
+
+const formatRelativeTime = (input) => {
+  if (!input) return "Not synced";
+  const timestamp = typeof input === "number" ? input : new Date(input).getTime();
+  if (Number.isNaN(timestamp)) return "Not synced";
+  const diff = Date.now() - timestamp;
+  if (diff < 0) return "Just now";
+  if (diff < 15_000) return "Just now";
+  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  return new Date(timestamp).toLocaleString();
 };
 
 const resolveUserRole = (user) => {
@@ -61,6 +122,12 @@ const resolveUserRole = (user) => {
   return user.isClient === false ? "User" : "Client";
 };
 
+const dummyTypeLabels = {
+  [DUMMY_TYPES.DESIGN]: 'Design Studio',
+  [DUMMY_TYPES.SKILL]: 'Skill Studio',
+  [DUMMY_TYPES.MATERIAL]: 'Material Studio',
+};
+
 export default function SuperAdminDashboard({ onLogout }) {
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState("Dashboard");
@@ -70,11 +137,96 @@ export default function SuperAdminDashboard({ onLogout }) {
     products: [],
     firms: [],
     users: [],
+    dbOverview: null,
     error: null,
   });
+  const [usersRefreshing, setUsersRefreshing] = useState(false);
+  const [userOps, setUserOps] = useState({ updatingId: null, resettingId: null, suspendingId: null, deletingId: null, inviting: false });
+  const [userMeta, setUserMeta] = useState({ lastFetchedAt: null });
+  const [studioRequestsState, setStudioRequestsState] = useState({ loading: true, data: [], metrics: null, error: null });
+  const [currentUser] = useState(() => readStoredUser());
+  const [dummyCatalog, setDummyCatalog] = useState({
+    [DUMMY_TYPES.DESIGN]: [],
+    [DUMMY_TYPES.SKILL]: [],
+    [DUMMY_TYPES.MATERIAL]: [],
+  });
+  const [dummyLoading, setDummyLoading] = useState(true);
+  const userQueryRef = useRef("");
   const navigate = useNavigate();
+  const [authToken, setAuthToken] = useState(() => {
+    try {
+      return localStorage.getItem('auth_token');
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const syncToken = () => {
+      try {
+        setAuthToken(localStorage.getItem('auth_token'));
+      } catch {}
+    };
+    window.addEventListener('storage', syncToken);
+    window.addEventListener('auth:login', syncToken);
+    window.addEventListener('auth:logout', syncToken);
+    return () => {
+      window.removeEventListener('storage', syncToken);
+      window.removeEventListener('auth:login', syncToken);
+      window.removeEventListener('auth:logout', syncToken);
+    };
+  }, []);
+
+  const refreshDummyCatalog = useCallback(async () => {
+    setDummyLoading(true);
+    try {
+      const snapshot = await fetchAdminDummyCatalog();
+      setDummyCatalog(snapshot);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Unable to load dummy catalog');
+    } finally {
+      setDummyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshDummyCatalog();
+  }, [refreshDummyCatalog]);
 
   const normalizedSearch = search.trim().toLowerCase();
+  const handleCreateDummy = useCallback(async (type, payload) => {
+    const normalizedType = String(type || '').toLowerCase();
+    try {
+      const created = await createDummyEntry(normalizedType, payload);
+      invalidateDummyCatalogCache();
+      const label = dummyTypeLabels[normalizedType] || 'catalog';
+      const name = created?.title || created?.name || created?.slug || 'Entry';
+      setDummyCatalog((prev) => ({
+        ...prev,
+        [normalizedType]: [created, ...(prev[normalizedType] || []).filter((entry) => entry.id !== created.id)],
+      }));
+      toast.success(`${name} added to ${label}`);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Unable to create dummy entry');
+    }
+  }, []);
+
+  const handleRemoveDummy = useCallback(async (type, id) => {
+    const normalizedType = String(type || '').toLowerCase();
+    try {
+      await deleteDummyEntry(normalizedType, id);
+      invalidateDummyCatalogCache();
+      setDummyCatalog((prev) => ({
+        ...prev,
+        [normalizedType]: (prev[normalizedType] || []).filter((entry) => entry.id !== id),
+      }));
+      toast.success('Dummy entry removed');
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Unable to remove entry');
+    }
+  }, []);
+
   const dashboardStats = useMemo(() => {
     const totalRevenue = dataState.products.reduce(
       (sum, item) => sum + Number(item.price || 0),
@@ -86,6 +238,9 @@ export default function SuperAdminDashboard({ onLogout }) {
     const categories = new Set(
       dataState.products.flatMap((p) => p.categories || [])
     );
+    const hostedFirms = dataState.firms.filter((firm) => firm.hosting?.enabled).length;
+    const totalRequests = studioRequestsState.metrics?.total ?? 0;
+    const openRequests = studioRequestsState.metrics?.open ?? 0;
     return {
       totalUsers: dataState.users.length,
       totalFirms: dataState.firms.length,
@@ -93,18 +248,122 @@ export default function SuperAdminDashboard({ onLogout }) {
       publishedProducts: publishedProducts.length,
       totalRevenue,
       categories: Array.from(categories),
+      hostedFirms,
+      totalRequests,
+      openRequests,
     };
-  }, [dataState]);
+  }, [dataState, studioRequestsState.metrics]);
 
   useEffect(() => {
+    userQueryRef.current = normalizedSearch;
+  }, [normalizedSearch]);
+
+  const refreshUsers = useCallback(async ({ query, silent } = {}) => {
+    const searchQuery = typeof query === "string" ? query : userQueryRef.current;
+    setUsersRefreshing(true);
+    try {
+      const nextUsers = await fetchAdminUsers({ query: searchQuery || undefined });
+      setDataState((prev) => ({ ...prev, users: nextUsers }));
+      userQueryRef.current = searchQuery || "";
+      setUserMeta({ lastFetchedAt: Date.now(), query: searchQuery || "" });
+      if (!silent) {
+        toast.success("User list synced");
+      }
+    } catch (error) {
+      if (!silent) {
+        toast.error(error?.message || "Unable to refresh users");
+      }
+    } finally {
+      setUsersRefreshing(false);
+    }
+  }, [userQueryRef]);
+
+  const handleInviteUser = useCallback(async ({ email, role }) => {
+    setUserOps((prev) => ({ ...prev, inviting: true }));
+    try {
+      await inviteAdminUser({ email, role });
+      toast.success('Invitation sent');
+      await refreshUsers({ silent: true });
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to invite user');
+    } finally {
+      setUserOps((prev) => ({ ...prev, inviting: false }));
+    }
+  }, [refreshUsers]);
+
+  const handleChangeRole = useCallback(async (user, nextRole) => {
+    if (!user || !nextRole || user.role === nextRole) return;
+    setUserOps((prev) => ({ ...prev, updatingId: user._id }));
+    try {
+      await updateAdminUser(user._id, { role: nextRole });
+      toast.success('Role updated');
+      await refreshUsers({ silent: true });
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to update role');
+    } finally {
+      setUserOps((prev) => ({ ...prev, updatingId: null }));
+    }
+  }, [refreshUsers]);
+
+  const handleResetPassword = useCallback(async (user) => {
+    if (!user) return;
+    setUserOps((prev) => ({ ...prev, resettingId: user._id }));
+    try {
+      await resetAdminUserPassword(user._id);
+      toast.success('Password reset email sent');
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to reset password');
+    } finally {
+      setUserOps((prev) => ({ ...prev, resettingId: null }));
+    }
+  }, []);
+
+  const handleToggleSuspend = useCallback(async (user, nextState) => {
+    if (!user) return;
+    setUserOps((prev) => ({ ...prev, suspendingId: user._id }));
+    try {
+      await updateAdminUser(user._id, { isSuspended: nextState });
+      toast.success(nextState ? 'User suspended' : 'User reactivated');
+      await refreshUsers({ silent: true });
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to update status');
+    } finally {
+      setUserOps((prev) => ({ ...prev, suspendingId: null }));
+    }
+  }, [refreshUsers]);
+
+  const handleDeleteUser = useCallback(async (user) => {
+    if (!user) return;
+    const message = `Delete ${user.email}? This action cannot be undone.`;
+    const confirmed = typeof window !== 'undefined' ? window.confirm(message) : true;
+    if (!confirmed) return;
+    setUserOps((prev) => ({ ...prev, deletingId: user._id }));
+    try {
+      await deleteAdminUser(user._id);
+      toast.success('User deleted');
+      await refreshUsers({ silent: true });
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to delete user');
+    } finally {
+      setUserOps((prev) => ({ ...prev, deletingId: null }));
+    }
+  }, [refreshUsers]);
+
+
+  useEffect(() => {
+    if (!authToken) {
+      setDataState((prev) => ({ ...prev, loading: false }));
+      return undefined;
+    }
     let isMounted = true;
     const load = async () => {
       setDataState((prev) => ({ ...prev, loading: true, error: null }));
       try {
-        const [products, firms, users] = await Promise.all([
+        const [products, firms, users, dbOverview] = await Promise.all([
           fetchCatalog(),
           fetchFirms(),
           fetchAdminUsers(),
+          fetchDbOverview(),
         ]);
         if (!isMounted) return;
         setDataState({
@@ -112,8 +371,10 @@ export default function SuperAdminDashboard({ onLogout }) {
           products,
           firms,
           users,
+          dbOverview,
           error: null,
         });
+        setUserMeta({ lastFetchedAt: Date.now(), query: userQueryRef.current || '' });
       } catch (err) {
         console.error("Failed to load admin dashboard data", err);
         if (!isMounted) return;
@@ -128,7 +389,23 @@ export default function SuperAdminDashboard({ onLogout }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [authToken]);
+
+  useEffect(() => {
+    if (activeView !== 'Users') return undefined;
+    const timer = setTimeout(() => {
+      refreshUsers({ query: normalizedSearch || undefined, silent: true });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [activeView, normalizedSearch, refreshUsers]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (activeView !== 'Users') return;
+      refreshUsers({ silent: true });
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [activeView, refreshUsers]);
 
   const handleSearchKey = (e) => {
     if (e.key === "Enter" && normalizedSearch) {
@@ -148,9 +425,25 @@ export default function SuperAdminDashboard({ onLogout }) {
     products: dataState.products,
     firms: dataState.firms,
     users: dataState.users,
+    dbOverview: dataState.dbOverview,
     loading: dataState.loading,
     error: dataState.error,
     stats: dashboardStats,
+    usersLoading: usersRefreshing,
+    onInviteUser: handleInviteUser,
+    onChangeRole: handleChangeRole,
+    onResetPassword: handleResetPassword,
+    onToggleSuspend: handleToggleSuspend,
+    onDeleteUser: handleDeleteUser,
+    onRefreshUsers: refreshUsers,
+    userOps,
+    currentUserId: currentUser?._id || null,
+    lastRefreshedAt: userMeta.lastFetchedAt,
+    authToken,
+    dummyCatalog,
+    dummyLoading,
+    onCreateDummy: handleCreateDummy,
+    onRemoveDummy: handleRemoveDummy,
   };
 
   const handleLogout = async () => {
@@ -173,6 +466,7 @@ export default function SuperAdminDashboard({ onLogout }) {
       case "Firms": return <FirmsView {...viewProps} />;
       case "Clients": return <ClientsView {...viewProps} />;
       case "Marketplace": return <MarketplaceView {...viewProps} />;
+      case "Data": return <DataExplorerView authToken={authToken} />;
       default: return <DashboardView {...viewProps} />;
     }
   };
@@ -271,43 +565,57 @@ export default function SuperAdminDashboard({ onLogout }) {
 //
 // --- Views ---
 //
-function DashboardView({ stats, products, loading, error }) {
-  const cards = [
-    {
-      key: "users",
-      icon: <Users />,
-      title: "Users",
-      description: loading ? "LoadingGǪ" : `${stats?.totalUsers ?? 0} total users`,
-    },
+function DashboardView({ stats, products, loading, error, dbOverview, dummyCatalog, dummyLoading, onCreateDummy, onRemoveDummy }) {
+    const clusterDescription = useMemo(() => {
+      if (!dbOverview) return 'Connecting…';
+      if (dbOverview.limited) {
+        return dbOverview?.db?.name || 'Status available';
+      }
+      return `${dbOverview?.db?.name || 'Cluster'} • ${formatBytes(dbOverview?.db?.dataSize)}`;
+    }, [dbOverview]);
+
+    const cards = [
+      {
+        key: "users",
+        icon: <Users />,
+        title: "Users",
+        description: loading ? "Loading..." : `${stats?.totalUsers ?? 0} total users`,
+      },
     {
       key: "firms",
       icon: <Building2 />,
       title: "Firms",
-      description: loading ? "LoadingGǪ" : `${stats?.totalFirms ?? 0} partner firms`,
+      description: loading ? "Loading..." : `${stats?.totalFirms ?? 0} partner firms`,
     },
     {
       key: "products",
       icon: <ShoppingCart />,
       title: "Published Listings",
-      description: loading ? "LoadingGǪ" : `${stats?.publishedProducts ?? 0} live products`,
+      description: loading ? "Loading..." : `${stats?.publishedProducts ?? 0} live products`,
     },
     {
       key: "revenue",
       icon: <DollarSign />,
       title: "Potential Revenue",
       description: loading
-        ? "LoadingGǪ"
+        ? "Loading..."
         : formatCurrency(stats?.totalRevenue ?? 0, products[0]?.currency || "USD"),
     },
-    {
-      key: "categories",
-      icon: <Briefcase />,
-      title: "Categories",
-      description: loading
-        ? "LoadingGǪ"
-        : `${stats?.categories?.length ?? 0} active categories`,
-    },
-  ];
+      {
+        key: "categories",
+        icon: <Briefcase />,
+        title: "Categories",
+        description: loading
+          ? "Loading..."
+          : `${stats?.categories?.length ?? 0} active categories`,
+      },
+      {
+        key: "database",
+        icon: <Database />,
+        title: "Mongo cluster",
+        description: clusterDescription,
+      },
+    ];
 
   const latestProducts = products.slice(0, 5);
 
@@ -329,11 +637,11 @@ function DashboardView({ stats, products, loading, error }) {
         ))}
       </div>
 
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold mb-4">Latest Marketplace Listings</h2>
-        <div className="bg-white border border-gray-200 rounded-xl divide-y">
-          {loading ? (
-            <div className="px-4 py-6 text-sm text-gray-500">Loading listingsGǪ</div>
+        <section className="mt-8">
+          <h2 className="text-xl font-semibold mb-4">Latest Marketplace Listings</h2>
+          <div className="bg-white border border-gray-200 rounded-xl divide-y">
+            {loading ? (
+              <div className="px-4 py-6 text-sm text-gray-500">Loading listings...</div>
           ) : latestProducts.length === 0 ? (
             <div className="px-4 py-6 text-sm text-gray-500">
               No listings available yet. Seed data to see products here.
@@ -354,95 +662,962 @@ function DashboardView({ stats, products, loading, error }) {
               </div>
             ))
           )}
-        </div>
-      </section>
-    </>
+          </div>
+        </section>
+
+        {dbOverview && <DatabaseOverview overview={dbOverview} />}
+
+        {onCreateDummy && onRemoveDummy && dummyCatalog ? (
+          <DummyDataManager
+            catalog={dummyCatalog}
+            loading={dummyLoading}
+            onCreate={onCreateDummy}
+            onDelete={onRemoveDummy}
+          />
+        ) : null}
+      </>
+    );
+}
+
+const makeDesignForm = () => ({
+  title: '',
+  summary: '',
+  price: '',
+  priceSqft: '',
+  firmName: '',
+  country: '',
+  style: '',
+  tags: '',
+  heroImage: '',
+  gallery: '',
+});
+
+const makeSkillForm = () => ({
+  name: '',
+  title: '',
+  hourly: '',
+  skills: '',
+  languages: '',
+  avatar: '',
+  location: '',
+  availability: '',
+});
+
+const makeMaterialForm = () => ({
+  title: '',
+  category: '',
+  price: '',
+  unit: '',
+  vendor: '',
+  heroImage: '',
+  gallery: '',
+});
+
+function DummyDataManager({ catalog, onCreate, onDelete }) {
+  const [designForm, setDesignForm] = useState(makeDesignForm);
+  const [skillForm, setSkillForm] = useState(makeSkillForm);
+  const [materialForm, setMaterialForm] = useState(makeMaterialForm);
+
+  const handleSubmit = (event, type) => {
+    event.preventDefault();
+    const formMap = {
+      [DUMMY_TYPES.DESIGN]: { data: designForm, reset: () => setDesignForm(makeDesignForm()) },
+      [DUMMY_TYPES.SKILL]: { data: skillForm, reset: () => setSkillForm(makeSkillForm()) },
+      [DUMMY_TYPES.MATERIAL]: { data: materialForm, reset: () => setMaterialForm(makeMaterialForm()) },
+    };
+    const entry = formMap[type];
+    if (!entry) return;
+    onCreate(type, entry.data);
+    entry.reset();
+  };
+
+  const handleChange = (setter) => (event) => {
+    const { name, value } = event.target;
+    setter((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const catalogs = {
+    [DUMMY_TYPES.DESIGN]: catalog?.[DUMMY_TYPES.DESIGN] || [],
+    [DUMMY_TYPES.SKILL]: catalog?.[DUMMY_TYPES.SKILL] || [],
+    [DUMMY_TYPES.MATERIAL]: catalog?.[DUMMY_TYPES.MATERIAL] || [],
+  };
+
+  return (
+    <Section title="Dummy Data Generator">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <form className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4" onSubmit={(e) => handleSubmit(e, DUMMY_TYPES.DESIGN)}>
+          <h3 className="text-base font-semibold text-gray-900">Design Studio listing</h3>
+          <label className="text-xs font-semibold text-gray-600">
+            Title
+            <input
+              required
+              name="title"
+              value={designForm.title}
+              onChange={handleChange(setDesignForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Rainforest Villa"
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Firm name
+            <input
+              name="firmName"
+              value={designForm.firmName}
+              onChange={handleChange(setDesignForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Atelier Q"
+            />
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-gray-600">
+              Price $/sqft
+              <input
+                name="priceSqft"
+                value={designForm.priceSqft}
+                onChange={handleChange(setDesignForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="15"
+                inputMode="decimal"
+              />
+            </label>
+            <label className="text-xs font-semibold text-gray-600">
+              Style
+              <input
+                name="style"
+                value={designForm.style}
+                onChange={handleChange(setDesignForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Tropical modern"
+              />
+            </label>
+          </div>
+          <label className="text-xs font-semibold text-gray-600">
+            Summary
+            <textarea
+              name="summary"
+              value={designForm.summary}
+              onChange={handleChange(setDesignForm)}
+              rows={3}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="One-liner about the concept"
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Hero image URL
+            <input
+              name="heroImage"
+              value={designForm.heroImage}
+              onChange={handleChange(setDesignForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="https://..."
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Tags (comma separated)
+            <input
+              name="tags"
+              value={designForm.tags}
+              onChange={handleChange(setDesignForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Passive, Off-grid"
+            />
+          </label>
+          <button type="submit" className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+            Save design listing
+          </button>
+        </form>
+
+        <form className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4" onSubmit={(e) => handleSubmit(e, DUMMY_TYPES.SKILL)}>
+          <h3 className="text-base font-semibold text-gray-900">Skill Studio profile</h3>
+          <label className="text-xs font-semibold text-gray-600">
+            Name
+            <input
+              required
+              name="name"
+              value={skillForm.name}
+              onChange={handleChange(setSkillForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Ananya Rao"
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Role / Title
+            <input
+              name="title"
+              value={skillForm.title}
+              onChange={handleChange(setSkillForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="BIM Lead"
+            />
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-gray-600">
+              Hourly rate
+              <input
+                name="hourly"
+                value={skillForm.hourly}
+                onChange={handleChange(setSkillForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="65"
+                inputMode="decimal"
+              />
+            </label>
+            <label className="text-xs font-semibold text-gray-600">
+              Location
+              <input
+                name="location"
+                value={skillForm.location}
+                onChange={handleChange(setSkillForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Remote"
+              />
+            </label>
+          </div>
+          <label className="text-xs font-semibold text-gray-600">
+            Skills (comma or new lines)
+            <textarea
+              name="skills"
+              value={skillForm.skills}
+              onChange={handleChange(setSkillForm)}
+              rows={2}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Rhino\nParametric"
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Avatar URL
+            <input
+              name="avatar"
+              value={skillForm.avatar}
+              onChange={handleChange(setSkillForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="https://..."
+            />
+          </label>
+          <button type="submit" className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+            Save associate profile
+          </button>
+        </form>
+
+        <form className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4" onSubmit={(e) => handleSubmit(e, DUMMY_TYPES.MATERIAL)}>
+          <h3 className="text-base font-semibold text-gray-900">Material Studio SKU</h3>
+          <label className="text-xs font-semibold text-gray-600">
+            Title
+            <input
+              required
+              name="title"
+              value={materialForm.title}
+              onChange={handleChange(setMaterialForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Reclaimed teak cladding"
+            />
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-gray-600">
+              Category
+              <input
+                name="category"
+                value={materialForm.category}
+                onChange={handleChange(setMaterialForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Cladding"
+              />
+            </label>
+            <label className="text-xs font-semibold text-gray-600">
+              Price
+              <input
+                name="price"
+                value={materialForm.price}
+                onChange={handleChange(setMaterialForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="48"
+                inputMode="decimal"
+              />
+            </label>
+          </div>
+          <label className="text-xs font-semibold text-gray-600">
+            Vendor
+            <input
+              name="vendor"
+              value={materialForm.vendor}
+              onChange={handleChange(setMaterialForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Material Ops"
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Hero image URL
+            <input
+              name="heroImage"
+              value={materialForm.heroImage}
+              onChange={handleChange(setMaterialForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="https://..."
+            />
+          </label>
+          <button type="submit" className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+            Save material SKU
+          </button>
+        </form>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {Object.values(DUMMY_TYPES).map((type) => (
+          <div key={type} className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">{dummyTypeLabels[type]}</p>
+                <p className="text-sm text-gray-500">{catalogs[type].length} entries</p>
+              </div>
+            </div>
+            {catalogs[type].length === 0 ? (
+              <p className="text-sm text-gray-500">No entries added yet.</p>
+            ) : (
+              <ul className="space-y-2 max-h-48 overflow-auto text-sm">
+                {catalogs[type].map((entry) => (
+                  <li key={entry.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                    <div>
+                      <p className="font-semibold text-gray-900">{entry.title || entry.name}</p>
+                      <p className="text-xs text-gray-500">{entry.slug}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(type, entry.id)}
+                      className="text-xs text-red-600 hover:text-red-800"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+    </Section>
   );
 }
 
-function UsersView({ search, users, loading }) {
-  const filtered = (users || []).filter((user) => {
+function DatabaseOverview({ overview }) {
+  if (!overview) return null;
+  const { db, server, collections = [], fetchedAt, limited } = overview;
+
+  if (limited) {
+    return (
+      <section className="mt-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-xl font-semibold">Database Overview</h2>
+            {fetchedAt && (
+              <p className="text-xs text-gray-500">Updated {formatRelativeTime(fetchedAt)}</p>
+            )}
+          </div>
+        </div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-semibold">{db?.name || 'Cluster status unavailable'}</p>
+          <p className="mt-1">
+            Detailed metrics require a super admin session. Sign in with elevated access to see collection and storage
+            details.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const summaryMetrics = [
+    { label: 'Collections', value: db?.collections != null ? db.collections.toLocaleString() : '--' },
+    { label: 'Documents', value: db?.objects != null ? db.objects.toLocaleString() : '--' },
+    { label: 'Data size', value: formatBytes(db?.dataSize) },
+    { label: 'Storage size', value: formatBytes(db?.storageSize) },
+    { label: 'Index size', value: formatBytes(db?.indexSize) },
+    { label: 'Avg document', value: formatBytes(db?.avgObjSize) },
+  ];
+  const topCollections = collections.slice(0, 6);
+
+  return (
+    <section className="mt-8">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-xl font-semibold">Database Overview</h2>
+          {fetchedAt && (
+            <p className="text-xs text-gray-500">Updated {formatRelativeTime(fetchedAt)}</p>
+          )}
+        </div>
+        {db?.host && (
+          <code className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1">
+            {db.host}
+          </code>
+        )}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {summaryMetrics.map((metric) => (
+          <div key={metric.label} className="bg-white border rounded-lg px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">{metric.label}</p>
+            <p className="text-lg font-semibold text-gray-900">{metric.value || '--'}</p>
+          </div>
+        ))}
+      </div>
+
+      {server && (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="bg-white border rounded-lg px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Mongo Version</p>
+            <p className="text-lg font-semibold text-gray-900">{server.version || '—'}</p>
+          </div>
+          <div className="bg-white border rounded-lg px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Uptime</p>
+            <p className="text-lg font-semibold text-gray-900">{formatDuration(server.uptimeSeconds)}</p>
+          </div>
+          <div className="bg-white border rounded-lg px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500">Connections</p>
+            <p className="text-lg font-semibold text-gray-900">{server.connections ?? '—'}</p>
+          </div>
+        </div>
+      )}
+
+      {topCollections.length > 0 && (
+        <div className="mt-6 bg-white border rounded-lg overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-500">
+              <tr>
+                <th className="px-4 py-2 text-left">Collection</th>
+                <th className="px-4 py-2 text-left">Documents</th>
+                <th className="px-4 py-2 text-left">Storage</th>
+                <th className="px-4 py-2 text-left">Avg doc</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topCollections.map((collection) => (
+                <tr key={collection.name} className="border-t">
+                  <td className="px-4 py-2 font-medium text-gray-900">{collection.name}</td>
+                  <td className="px-4 py-2">{(collection.documents ?? 0).toLocaleString()}</td>
+                  <td className="px-4 py-2">{formatBytes(collection.storageSize)}</td>
+                  <td className="px-4 py-2">{formatBytes(collection.avgObjSize)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DataExplorerView({ authToken }) {
+  const [resources, setResources] = useState([]);
+  const [resourceLoading, setResourceLoading] = useState(true);
+  const [selectedResource, setSelectedResource] = useState('');
+  const [records, setRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState('');
+  const [limit, setLimit] = useState(50);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [refreshCounter, setRefreshCounter] = useState(0);
+  const [editorState, setEditorState] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!authToken) {
+      setResources([]);
+      setResourceLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+    setResourceLoading(true);
+    const loadResources = async () => {
+      try {
+        const list = await fetchAdminDataResources();
+        if (!active) return;
+        setResources(list);
+      } catch (error) {
+        if (!active) return;
+        console.error('admin_data_resources_failed', error);
+      } finally {
+        if (active) setResourceLoading(false);
+      }
+    };
+    loadResources();
+    return () => {
+      active = false;
+    };
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!selectedResource && resources.length) {
+      setSelectedResource(resources[0].key);
+    }
+  }, [resources, selectedResource]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setRecords([]);
+      setRecordsLoading(false);
+      return undefined;
+    }
+    let active = true;
+    if (!selectedResource) {
+      setRecords([]);
+      setRecordsLoading(false);
+      return;
+    }
+    setRecordsLoading(true);
+    setRecordsError('');
+    (async () => {
+      try {
+        const response = await fetchAdminDataItems(selectedResource, {
+          limit,
+          q: searchTerm || undefined,
+        });
+        if (!active) return;
+        setRecords(response?.items || []);
+      } catch (error) {
+        if (!active) return;
+        setRecordsError(error?.response?.data?.error || error.message || 'Unable to load records');
+      } finally {
+        if (active) setRecordsLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [selectedResource, limit, searchTerm, refreshCounter, authToken]);
+
+  const handleApplySearch = () => setSearchTerm(searchInput.trim());
+
+  const handleResourceChange = (value) => {
+    setSelectedResource(value);
+    setSearchInput('');
+    setSearchTerm('');
+    setEditorState(null);
+  };
+
+  const handleRefresh = () => setRefreshCounter((value) => value + 1);
+
+  const openEditor = (mode, record = null) => {
+    const baseValue = record ? JSON.stringify(record, null, 2) : '{\n  \n}';
+    setEditorState({
+      mode,
+      resource: selectedResource,
+      recordId: record?._id || null,
+      value: baseValue,
+      saving: false,
+      error: '',
+    });
+  };
+
+  const closeEditor = () => setEditorState(null);
+
+  const handleDeleteRecord = async (record) => {
+    if (!record?._id || !selectedResource) return;
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm(`Delete record ${record._id}? This cannot be undone.`)
+      : true;
+    if (!confirmed) return;
+    try {
+      await deleteAdminDataItem(selectedResource, record._id);
+      toast.success('Record deleted');
+      handleRefresh();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error.message || 'Unable to delete record');
+    }
+  };
+
+  const saveEditor = async () => {
+    if (!editorState || !selectedResource) return;
+    let payload;
+    try {
+      payload = JSON.parse(editorState.value);
+    } catch (error) {
+      setEditorState((prev) => ({ ...prev, error: 'Invalid JSON: ' + error.message }));
+      return;
+    }
+    setEditorState((prev) => ({ ...prev, saving: true, error: '' }));
+    try {
+      if (editorState.mode === 'edit' && editorState.recordId) {
+        await updateAdminDataItem(selectedResource, editorState.recordId, payload);
+        toast.success('Record updated');
+      } else {
+        await createAdminDataItem(selectedResource, payload);
+        toast.success('Record created');
+      }
+      setEditorState(null);
+      handleRefresh();
+    } catch (error) {
+      setEditorState((prev) => ({
+        ...prev,
+        saving: false,
+        error: error?.response?.data?.error || error.message || 'Unable to save record',
+      }));
+    }
+  };
+
+  if (!authToken) {
+    return (
+      <Section title="Data Explorer">
+        <p className="text-sm text-gray-500">Sign in to view and edit database records.</p>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Data Explorer">
+      <div className="flex flex-wrap gap-3 items-center mb-4">
+        <select
+          value={selectedResource}
+          onChange={(event) => handleResourceChange(event.target.value)}
+          className="rounded border border-gray-200 px-3 py-2 text-sm"
+          disabled={resourceLoading || resources.length === 0}
+        >
+          {resources.map((resource) => (
+            <option key={resource.key} value={resource.key}>
+              {resource.label || resource.key}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') handleApplySearch();
+          }}
+          placeholder="Search documents"
+          className="flex-1 min-w-[160px] rounded border border-gray-200 px-3 py-2 text-sm"
+        />
+        <select
+          value={limit}
+          onChange={(event) => setLimit(Number(event.target.value))}
+          className="rounded border border-gray-200 px-3 py-2 text-sm"
+        >
+          {[25, 50, 100, 250].map((value) => (
+            <option key={value} value={value}>{value} rows</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={handleApplySearch}
+          className="rounded border border-gray-200 px-3 py-2 text-sm hover:border-gray-300"
+        >
+          Apply filters
+        </button>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="rounded border border-gray-200 px-3 py-2 text-sm hover:border-gray-300"
+        >
+          Refresh
+        </button>
+        <button
+          type="button"
+          onClick={() => openEditor('create')}
+          className="rounded bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+          disabled={!selectedResource}
+        >
+          Add record
+        </button>
+      </div>
+
+      {recordsError && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {recordsError}
+        </div>
+      )}
+
+      {recordsLoading ? (
+        <div className="text-sm text-gray-500">Loading documents…</div>
+      ) : records.length === 0 ? (
+        <div className="text-sm text-gray-500">No documents found for this collection.</div>
+      ) : (
+        <div className="space-y-4">
+          {records.map((record) => (
+            <div key={record._id || JSON.stringify(record)} className="bg-white border rounded-lg p-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-gray-900">{record._id || 'Document'}</p>
+                  <p className="text-xs text-gray-500">Resource: {selectedResource || 'n/a'}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEditor('edit', record)}
+                    className="text-xs px-3 py-1 rounded border border-gray-200 hover:border-gray-300"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRecord(record)}
+                    className="text-xs px-3 py-1 rounded border border-gray-200 text-red-600 hover:border-red-300"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <pre className="mt-3 max-h-64 overflow-auto rounded bg-gray-50 p-3 text-xs text-gray-800">
+                {JSON.stringify(record, null, 2)}
+              </pre>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editorState && (
+        <div className="mt-6 border rounded-lg bg-white">
+          <div className="flex items-center justify-between px-4 py-2 border-b">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">
+                {editorState.mode === 'edit' ? 'Edit record' : 'Create record'}
+              </p>
+              <p className="text-xs text-gray-500">Collection: {selectedResource}</p>
+            </div>
+            <button className="text-xs text-gray-500 hover:text-gray-800" onClick={closeEditor}>
+              Close
+            </button>
+          </div>
+          <textarea
+            rows={14}
+            className="w-full border-0 p-4 font-mono text-xs text-gray-900 focus:outline-none"
+            value={editorState.value}
+            onChange={(event) => setEditorState((prev) => ({ ...prev, value: event.target.value }))}
+          />
+          {editorState.error && (
+            <p className="px-4 pb-2 text-xs text-red-600">{editorState.error}</p>
+          )}
+          <div className="flex justify-end gap-2 border-t px-4 py-3">
+            <button
+              type="button"
+              className="text-xs px-3 py-1 rounded border border-gray-200 hover:border-gray-300"
+              onClick={closeEditor}
+              disabled={editorState.saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="text-xs px-3 py-1 rounded bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-60"
+              onClick={saveEditor}
+              disabled={editorState.saving}
+            >
+              {editorState.saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function UsersView({
+  search,
+  users = [],
+  loading,
+  usersLoading,
+  onInviteUser,
+  onChangeRole,
+  onResetPassword,
+  onToggleSuspend,
+  onDeleteUser,
+  onRefreshUsers,
+  userOps = {},
+  currentUserId,
+  lastRefreshedAt,
+}) {
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('user');
+
+  const handleInviteSubmit = async (event) => {
+    event.preventDefault();
+    if (!inviteEmail) return;
+    await onInviteUser?.({ email: inviteEmail.trim(), role: inviteRole });
+    setInviteEmail('');
+  };
+
+  const filtered = users.filter((user) => {
     if (!search) return true;
     const values = [
       user.email,
       resolveUserRole(user),
-      user.memberships?.map((m) => m.role).join(", "),
+      user.memberships?.map((m) => m.role).join(', '),
     ].filter(Boolean);
-    return values.some((value) =>
-      String(value).toLowerCase().includes(search)
-    );
+    return values.some((value) => String(value).toLowerCase().includes(search));
   });
+
+  const busy = {
+    updating: userOps.updatingId,
+    resetting: userOps.resettingId,
+    suspending: userOps.suspendingId,
+    deleting: userOps.deletingId,
+    inviting: userOps.inviting,
+  };
+
+  const roleOptions = ['user', 'client', 'vendor', 'firm', 'associate', 'admin', 'superadmin'];
+
+  const renderStatus = (user) => (
+    <StatusBadge status={user.isSuspended ? 'Suspended' : 'Active'} />
+  );
+
+  const renderRows = () =>
+    filtered.map((user) => {
+      const isSelf = currentUserId && String(currentUserId) === String(user._id);
+      const roleControlDisabled = busy.updating === user._id || busy.suspending === user._id || isSelf;
+      const suspendDisabled = busy.suspending === user._id || isSelf;
+      const deleteDisabled = busy.deleting === user._id || isSelf;
+      const resetDisabled = busy.resetting === user._id;
+      const membershipSummary = user.memberships?.length
+        ? user.memberships.map((m) => m.role).join(', ')
+        : 'No memberships';
+
+      return [
+        <div>
+          <p className="font-medium text-gray-900">{user.email}</p>
+          <p className="text-xs text-gray-500">{membershipSummary}</p>
+        </div>,
+        <div>
+          <select
+            className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm"
+            value={user.role}
+            onChange={(event) => onChangeRole?.(user, event.target.value)}
+            disabled={roleControlDisabled}
+          >
+            {roleOptions.map((option) => (
+              <option key={option} value={option}>
+                {option.charAt(0).toUpperCase() + option.slice(1)}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            Primary: {resolveUserRole(user)}
+          </p>
+          {user.rolesGlobal?.length ? (
+            <p className="text-xs text-gray-400">Global: {user.rolesGlobal.join(', ')}</p>
+          ) : null}
+        </div>,
+        <span className="text-sm text-gray-700">{formatDate(user.createdAt)}</span>,
+        <div className="space-y-1">
+          {renderStatus(user)}
+          <p className="text-xs text-gray-400">
+            Last login: {user.lastLoginAt ? formatDate(user.lastLoginAt) : 'Never'}
+          </p>
+        </div>,
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onResetPassword?.(user)}
+            disabled={resetDisabled}
+            className="text-xs px-3 py-1 rounded border border-gray-200 hover:border-gray-300 disabled:opacity-60"
+          >
+            {resetDisabled ? 'Sending...' : 'Reset password'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleSuspend?.(user, !user.isSuspended)}
+            disabled={suspendDisabled}
+            className={`text-xs px-3 py-1 rounded border disabled:opacity-60 ${
+              user.isSuspended
+                ? 'border-green-200 text-green-700 hover:border-green-300'
+                : 'border-red-200 text-red-700 hover:border-red-300'
+            }`}
+          >
+            {user.isSuspended ? 'Re-activate' : 'Suspend'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onDeleteUser?.(user)}
+            disabled={deleteDisabled}
+            className="text-xs px-3 py-1 rounded border border-gray-200 text-gray-600 hover:border-gray-300 disabled:opacity-60"
+          >
+            {busy.deleting === user._id ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>,
+      ];
+    });
 
   return (
     <Section title="User Management">
-      {loading ? (
-        <div className="text-sm text-gray-500">Loading user listGǪ</div>
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
+        <h3 className="font-semibold mb-2 text-gray-800">Invite a new teammate</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Invitations send login instructions via email and automatically notify the ops inbox.
+        </p>
+        <form className="flex flex-col gap-3 md:flex-row" onSubmit={handleInviteSubmit}>
+          <input
+            type="email"
+            required
+            value={inviteEmail}
+            onChange={(event) => setInviteEmail(event.target.value)}
+            placeholder="person@company.com"
+            className="flex-1 rounded border border-gray-200 px-3 py-2 text-sm"
+          />
+          <select
+            value={inviteRole}
+            onChange={(event) => setInviteRole(event.target.value)}
+            className="rounded border border-gray-200 px-3 py-2 text-sm"
+          >
+            {roleOptions.map((option) => (
+              <option key={'invite-' + option} value={option}>
+                {option.charAt(0).toUpperCase() + option.slice(1)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={busy.inviting}
+            className="rounded bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
+          >
+            {busy.inviting ? 'Sending...' : 'Invite user'}
+          </button>
+        </form>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+        <p>
+          Showing {filtered.length} of {users.length} users
+        </p>
+        <div className="flex items-center gap-3">
+          <span>Last synced {formatRelativeTime(lastRefreshedAt)}</span>
+          <button
+            type="button"
+            onClick={() => onRefreshUsers?.({})}
+            disabled={usersLoading}
+            className="inline-flex items-center gap-1 rounded border border-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${usersLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {loading || usersLoading ? (
+        <div className="text-sm text-gray-500">Loading user list...</div>
       ) : filtered.length === 0 ? (
         <EmptySearchNotice term={search} />
       ) : (
         <Table
-          headers={["Email", "Role", "Joined"]}
-          rows={filtered.map((user) => [
-            <span>
-              {user.email}
-              <br />
-              <span className="text-gray-400">
-                {user.memberships?.length
-                  ? `${user.memberships.length} membership${user.memberships.length > 1 ? "s" : ""}`
-                  : "No memberships"}
-              </span>
-            </span>,
-            resolveUserRole(user),
-            formatDate(user.createdAt),
-          ])}
+          headers={["Email", "Role", "Joined", "Status", "Actions"]}
+          rows={renderRows()}
         />
       )}
     </Section>
   );
 }
 
-function AssociatesView({ search, users, loading }) {
-  const associates = (users || []).filter((user) =>
-    user.memberships?.some((m) => m.role === "associate")
-  );
-  const filtered = associates.filter((associate) => {
-    if (!search) return true;
-    return associate.email.toLowerCase().includes(search);
-  });
-
+function AssociatesView() {
   return (
     <Section title="Associates">
-      {loading ? (
-        <div className="text-sm text-gray-500">Loading associatesGǪ</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-sm text-gray-500">
-          {associates.length === 0
-            ? "No associates onboarded yet."
-            : `No associates found for Gǣ${search}Gǥ.`}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((associate) => (
-            <div key={associate._id} className="bg-white border rounded-lg p-4">
-              <h3 className="font-semibold">{associate.email}</h3>
-              <p className="text-sm text-gray-500">
-                {associate.memberships
-                  ?.filter((m) => m.role === "associate")
-                  .map((m) => `Firm #${m.firm}`)
-                  .join(", ") || "Marketplace Associate"}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-500">
+        Associate performance widgets will land here once the contributor APIs are wired up.
+      </div>
     </Section>
   );
 }
 
-function FirmsView({ search, firms, loading }) {
-  const filtered = (firms || []).filter((firm) => {
+function FirmsView({ search, firms = [], loading }) {
+  const filtered = firms.filter((firm) => {
     if (!search) return true;
-    return [firm.name, firm.slug, firm.ownerUserId]
+    return [firm.name, firm.location]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(search));
   });
@@ -450,24 +1625,15 @@ function FirmsView({ search, firms, loading }) {
   return (
     <Section title="Firms">
       {loading ? (
-        <div className="text-sm text-gray-500">Loading firmsGǪ</div>
+        <div className="text-sm text-gray-500">Loading firms...</div>
       ) : filtered.length === 0 ? (
         <EmptySearchNotice term={search} />
       ) : (
         <div className="space-y-3">
-          {filtered.map((firm) => (
-            <div
-              key={firm._id}
-              className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 p-4 bg-gray-50 rounded-lg border"
-            >
-              <div>
-                <h3 className="font-semibold">{firm.name}</h3>
-                <p className="text-sm text-gray-500">Slug: {firm.slug}</p>
-                <p className="text-xs text-gray-400">
-                  Owner: {firm.ownerUserId || "Unassigned"}
-                </p>
-              </div>
-              <StatusBadge status={firm.approved ? "Verified" : "Pending"} />
+          {filtered.slice(0, 25).map((firm) => (
+            <div key={firm._id || firm.name} className="rounded-lg border bg-white px-4 py-3 text-sm text-gray-700">
+              <p className="font-medium text-gray-900">{firm.name || 'Unnamed firm'}</p>
+              <p className="text-xs text-gray-500">{firm.location || 'Location pending'}</p>
             </div>
           ))}
         </div>
@@ -476,30 +1642,26 @@ function FirmsView({ search, firms, loading }) {
   );
 }
 
-function ClientsView({ search, users, loading }) {
-  const clients = (users || []).filter((user) => user.isClient !== false);
-  const filtered = clients.filter((client) => {
+function ClientsView({ search, users = [], loading }) {
+  const clients = users.filter((user) => user.isClient !== false);
+  const filtered = clients.filter((user) => {
     if (!search) return true;
-    return client.email.toLowerCase().includes(search);
+    return user.email?.toLowerCase().includes(search);
   });
 
   return (
     <Section title="Clients">
       {loading ? (
-        <div className="text-sm text-gray-500">Loading clientsGǪ</div>
+        <div className="text-sm text-gray-500">Loading clients...</div>
       ) : filtered.length === 0 ? (
-        <div className="text-sm text-gray-500">
-          {clients.length === 0
-            ? "No clients have registered yet."
-            : `No clients found for Gǣ${search}Gǥ.`}
-        </div>
+        <EmptySearchNotice term={search} />
       ) : (
         <Table
-          headers={["Email", "Type", "Joined"]}
-          rows={filtered.map((client) => [
-            client.email,
-            resolveUserRole(client),
-            formatDate(client.createdAt),
+          headers={["Email", "Status", "Joined"]}
+          rows={filtered.slice(0, 25).map((client) => [
+            <span className="font-medium text-gray-900">{client.email}</span>,
+            <StatusBadge status={client.isSuspended ? 'Suspended' : 'Active'} />,
+            <span>{formatDate(client.createdAt)}</span>,
           ])}
         />
       )}
@@ -518,7 +1680,7 @@ function MarketplaceView({ search, products, loading }) {
   return (
     <Section title="Marketplace Listings">
       {loading ? (
-        <div className="text-sm text-gray-500">Loading listingsGǪ</div>
+        <div className="text-sm text-gray-500">Loading listings...</div>
       ) : filtered.length === 0 ? (
         <EmptySearchNotice term={search} />
       ) : (
@@ -625,6 +1787,7 @@ function StatusBadge({ status }) {
     Verified: "bg-blue-100 text-blue-700",
     Published: "bg-green-100 text-green-700",
     Draft: "bg-gray-200 text-gray-700",
+    Suspended: "bg-red-100 text-red-700",
   };
   return (
     <span className={`px-2 py-1 text-xs rounded-full ${styles[status] || "bg-gray-100 text-gray-700"}`}>
@@ -641,4 +1804,3 @@ function EmptySearchNotice({ term }) {
     </div>
   );
 }
-

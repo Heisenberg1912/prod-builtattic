@@ -3,12 +3,14 @@ import { Router } from 'express';
 import argon2 from 'argon2';
 import { z } from 'zod';
 import User from '../models/User.js';
+import Firm from '../models/Firm.js';
+import mongoose from 'mongoose';
 import { signAccess } from '../auth/middleware.js';
 import { requireAuth } from '../rbac/guards.js';
 import { validateEmailDeliverability } from '../utils/emailValidation.js';
-import { signInWithGoogle } from '../services/googleAuth.js';
+import { signInWithGoogle, googleAuthConfigured } from '../services/googleAuth.js';
 
-import { sendSignupCredentialsEmail, sendPasswordResetEmail } from '../services/email/emailService.js';
+import { sendSignupCredentialsEmail, sendPasswordResetEmail, sendAdminNotificationEmail } from '../services/email/emailService.js';
 import logger from '../utils/logger.js';
 const r = Router();
 const credsSchema = z.object({
@@ -66,6 +68,16 @@ async function handleSignup(req, res) {
     });
   }
 
+  try {
+    await sendAdminNotificationEmail({
+      subject: '[Builtattic] New signup: ' + email,
+      html: '<p>' + email + ' just signed up as <strong>' + resolvedRole + '</strong>.</p>',
+      text: email + ' just signed up as ' + resolvedRole + '.',
+    });
+  } catch (error) {
+    logger.warn('Failed to send admin signup alert', { email, error: error.message });
+  }
+
   const token = signAccess(u);
   res.json({
     ok:true,
@@ -91,11 +103,19 @@ r.post('/login', async (req, res) => {
   const u = await User.findOne({ email }).select('+passHash');
   if (!u) return res.status(401).json({ ok:false, error:'invalid credentials' });
 
+  if (u.isSuspended) {
+    return res.status(403).json({ ok:false, error:'account_suspended' });
+  }
+
   const ok = await argon2.verify(u.passHash, password);
   if (!ok) return res.status(401).json({ ok:false, error:'invalid credentials' });
 
+  await User.updateOne({ _id: u._id }, { $set: { lastLoginAt: new Date() } });
+
   const token = signAccess(u);
-  const fresh = await User.findById(u._id).select('email role rolesGlobal memberships').lean();
+  const fresh = await User.findById(u._id)
+    .select('email role rolesGlobal memberships isSuspended lastLoginAt')
+    .lean();
   res.json({
     ok:true,
     token,
@@ -104,19 +124,21 @@ r.post('/login', async (req, res) => {
       email:fresh.email,
       role:fresh.role,
       rolesGlobal:fresh.rolesGlobal||[],
-      memberships:fresh.memberships||[]
+      memberships:fresh.memberships||[],
+      isSuspended:fresh.isSuspended||false,
+      lastLoginAt:fresh.lastLoginAt||null
     }
   });
 });
 
 r.post('/google', async (req, res) => {
   try {
-    const { idToken } = req.body || {};
+    const { idToken, targetRole } = req.body || {};
     if (!idToken) return res.status(400).json({ ok: false, error: 'idToken required' });
-    if (!process.env.GOOGLE_CLIENT_ID) {
+    if (!googleAuthConfigured()) {
       return res.status(503).json({ ok: false, error: 'Google sign-in not configured' });
     }
-    const { token, user } = await signInWithGoogle(idToken);
+    const { token, user } = await signInWithGoogle(idToken, { targetRole });
     res.json({ ok: true, token, user });
   } catch (err) {
     res.status(401).json({ ok: false, error: err.message || 'Google sign-in failed' });
@@ -136,6 +158,80 @@ r.get('/me', requireAuth, async (req, res) => {
       memberships:fresh.memberships||[]
     }
   });
+});
+
+r.post('/logout', requireAuth, (_req, res) => {
+  res.json({ ok: true });
+});
+
+const demoGuardEnabled = String(process.env.ENABLE_DEMO_AUTH || 'true').toLowerCase() !== 'false';
+
+const resolveDemoFirm = async () => {
+  const firmId = process.env.DEMO_FIRM_ID;
+  if (firmId && mongoose.isValidObjectId(firmId)) {
+    const firm = await Firm.findById(firmId).lean();
+    if (firm) return firm;
+  }
+  const firmSlug = process.env.DEMO_FIRM_SLUG;
+  if (firmSlug) {
+    const firm = await Firm.findOne({ slug: firmSlug }).lean();
+    if (firm) return firm;
+  }
+  const fallback = await Firm.findOne().lean();
+  return fallback;
+};
+
+r.post('/demo-login', async (req, res) => {
+  try {
+    if (!demoGuardEnabled) {
+      return res.status(403).json({ ok: false, error: 'Demo auth disabled' });
+    }
+    const firm = await resolveDemoFirm();
+    if (!firm) {
+      return res.status(404).json({ ok: false, error: 'Demo firm not configured' });
+    }
+    const email = (process.env.DEMO_USER_EMAIL || 'demo@builtattic.com').toLowerCase();
+    const displayName = process.env.DEMO_USER_NAME || 'Demo Workspace User';
+    const demoPassword = process.env.DEMO_USER_PASSWORD || 'builtattic-demo';
+
+    let user = await User.findOne({ email }).select('+passHash');
+    if (!user) {
+      const passHash = await argon2.hash(demoPassword);
+      user = await User.create({
+        email,
+        passHash,
+        role: 'firm',
+        isClient: false,
+        memberships: [{ firm: firm._id, role: 'owner', title: displayName }],
+      });
+    } else {
+      const hasMembership = (user.memberships || []).some((entry) => String(entry.firm) === String(firm._id));
+      if (!hasMembership) {
+        user.memberships = [...(user.memberships || []), { firm: firm._id, role: 'owner', title: displayName }];
+        await user.save();
+      }
+    }
+
+    const fresh = await User.findById(user._id)
+      .select('email role rolesGlobal memberships isSuspended lastLoginAt')
+      .lean();
+    const token = signAccess(fresh);
+    res.json({
+      ok: true,
+      token,
+      user: {
+        _id: fresh._id,
+        email: fresh.email,
+        role: fresh.role,
+        memberships: fresh.memberships || [],
+        rolesGlobal: fresh.rolesGlobal || [],
+      },
+      firm: { _id: firm._id, name: firm.name, slug: firm.slug },
+    });
+  } catch (error) {
+    logger.error('demo_login_failed', { error: error.message });
+    res.status(500).json({ ok: false, error: 'Unable to start demo session' });
+  }
 });
 
 r.post('/forgot-password', async (req, res) => {

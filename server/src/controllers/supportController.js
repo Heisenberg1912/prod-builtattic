@@ -7,7 +7,7 @@ import {
   removeSupportClient,
 } from '../utils/supportEvents.js';
 
-const SUPPORT_EMAILS = (process.env.SUPPORT_INBOX || 'tushar@builtattic.com,arnav@builtattic.com')
+const SUPPORT_EMAILS = (process.env.SUPPORT_INBOX || 'support@example.com')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
@@ -189,4 +189,3 @@ export const streamThread = async (req, res, next) => {
     return next(error);
   }
 };
-

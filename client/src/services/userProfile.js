@@ -12,6 +12,10 @@ const DEFAULT_PROFILE = {
   bio: "",
   avatar: "",
   company: "",
+  jobTitle: "",
+  pronouns: "",
+  timezone: "",
+  website: "",
   role: "user",
   updatedAt: null,
 };
@@ -56,6 +60,10 @@ const normalizeDirectUser = (user) => {
     bio: user.bio || "",
     avatar: user.avatar || user.avatarUrl || user.profileImage || "",
     company: user.company || user.organization || "",
+    jobTitle: user.jobTitle || user.title || "",
+    pronouns: user.pronouns || "",
+    timezone: user.timezone || "",
+    website: user.website || user.portfolio || "",
     role: user.role || DEFAULT_PROFILE.role,
     updatedAt: user.updatedAt || user.lastUpdated || null,
   });
@@ -72,6 +80,10 @@ const normalizeTokenUser = (payload) => {
     bio: payload.bio || "",
     avatar: payload.picture || payload.avatar || "",
     company: payload.company || "",
+    jobTitle: payload.jobTitle || payload.title || "",
+    pronouns: payload.pronouns || "",
+    timezone: payload.timezone || "",
+    website: payload.website || "",
     role: payload.role || DEFAULT_PROFILE.role,
     updatedAt: payload.updatedAt || null,
   });
@@ -87,6 +99,10 @@ const mapRemoteToLocal = (remote = {}, role = DEFAULT_PROFILE.role) =>
     bio: remote.bio || "",
     avatar: remote.avatar || "",
     company: remote.company || "",
+    jobTitle: remote.jobTitle || remote.title || "",
+    pronouns: remote.pronouns || "",
+    timezone: remote.timezone || "",
+    website: remote.website || remote.portfolio || "",
     role: role || DEFAULT_PROFILE.role,
   });
 
@@ -98,6 +114,10 @@ const mapLocalToRemote = (profile = {}, base = {}) => ({
   location: profile.location ?? base.location ?? "",
   company: profile.company ?? base.company ?? "",
   avatar: profile.avatar ?? base.avatar ?? "",
+  jobTitle: profile.jobTitle ?? base.jobTitle ?? "",
+  pronouns: profile.pronouns ?? base.pronouns ?? "",
+  timezone: profile.timezone ?? base.timezone ?? "",
+  website: profile.website ?? base.website ?? "",
   bio: profile.bio ?? base.bio ?? "",
 });
 

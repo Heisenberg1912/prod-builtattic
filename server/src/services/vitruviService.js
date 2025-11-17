@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+const GEMINI_ENABLED = String(process.env.GEMINI_ENABLED ?? "true").toLowerCase() !== "false";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash-latest";
 const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "imagen-3.0-latest";
@@ -36,7 +37,7 @@ const DEFAULT_ROOM_SPLITS = Object.fromEntries(
 const MAX_VARIATION_ITEMS = 4;
 const MAX_CHECKLIST_ITEMS = 6;
 
-const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+const genAI = GEMINI_ENABLED && GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 export async function runAnalyzeAndGenerate(prompt, options = {}) {
   const {
