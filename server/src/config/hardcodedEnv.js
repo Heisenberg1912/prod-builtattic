@@ -8,14 +8,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const dedupe = (value, index, array) => array.indexOf(value) === index;
+const serverRoot = path.resolve(__dirname, '../..');
+const repoRoot = path.resolve(serverRoot, '..');
+const srcRoot = path.resolve(__dirname, '..');
+const expandEnvPaths = (baseDir) => [
+  path.resolve(baseDir, '.env.local'),
+  path.resolve(baseDir, '.env'),
+];
+
 const candidateEnvFiles = [
   process.env.ENV_FILE,
-  path.resolve(process.cwd(), '.env.local'),
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(__dirname, '../../.env.local'),
-  path.resolve(__dirname, '../../.env'),
-  path.resolve(__dirname, '../.env.local'),
-  path.resolve(__dirname, '../.env'),
+  ...expandEnvPaths(process.cwd()),
+  ...expandEnvPaths(srcRoot),
+  ...expandEnvPaths(serverRoot),
+  ...expandEnvPaths(repoRoot),
 ]
   .filter(Boolean)
   .map((filePath) => path.resolve(filePath))

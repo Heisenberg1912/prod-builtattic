@@ -1,7 +1,7 @@
 ﻿# Builtattic Backend
 
 ## Setup
-1. Copy `.env.example` to `.env` and provide real credentials/secrets for every key.
+1. From the repo root, copy `.env.example` to `.env` and provide real credentials/secrets for every key (the same file powers the client and server).
 2. `cd server`
 3. `npm install`
 4. `npm run dev`

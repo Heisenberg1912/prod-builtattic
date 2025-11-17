@@ -93,7 +93,7 @@ By default the Express server serves the built React bundle. The client build no
 1. Host the bundle on Cloud Storage + Cloud CDN, set `SERVE_CLIENT_FROM_API=false`, and point your frontend to the API domain.
 2. Split deployments: one Cloud Run service for API, one for SSR/client if needed.
 
-Whichever option you choose, update `VITE_API_BASE_URL` and related variables in `client/.env` (or pass them from Cloud Build) before building.
+Whichever option you choose, update `VITE_API_BASE_URL` and related variables in the repo root `.env` (or pass them from Cloud Build) before building.
 
 ## 9. Custom Domain & SSL
 

@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-This runs the client and server concurrently. Environment variables for each workspace live in `client/.env` and `server/.env` while development values are provided in the new `*.env.example` files.
+This runs the client and server concurrently. Environment variables now live in a single `.env` at the repository root—copy `.env.example`, fill in your own secrets, and both apps will read from the same file.
 
 ## Production Deployment
 
@@ -25,7 +25,7 @@ For a complete walkthrough, including Google Cloud prerequisites, secret provisi
 
 1. Connect the repository to Vercel and keep the project root (`.`).
 2. Leave the install command as `npm install` and the build command as `npm run build`; the client output directory is `client/dist`.
-3. In the Vercel dashboard define the environment variables listed in `server/.env.example` (at minimum `MONGO_URI`, `MONGO_DBNAME`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and any third-party API keys you rely on). You can optionally set `VITE_API_BASE_URL=/api` for client previews, otherwise the default is already relative.
+3. In the Vercel dashboard define the environment variables listed in `.env.example` (at minimum `MONGO_URI`, `MONGO_DBNAME`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and any third-party API keys you rely on). You can optionally set `VITE_API_BASE_URL=/api` for client previews, otherwise the default is already relative.
 4. Seed your Mongo database once by running `npm run seed:json` locally (or from a one-off Vercel job) before pointing production traffic at the project.
 5. Deploy; the `/api/*` requests are automatically proxied to the Express app running inside a Vercel serverless function while static assets are served from `client/dist`.
 

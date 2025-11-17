@@ -28,9 +28,10 @@ Use this sheet when creating the Production/Preview/Development environment grou
 # Add/update an environment variable
 vercel env add MONGO_URI production
 
-# Pull the dashboard values down to local .env files
-vercel env pull server/.env
-vercel env pull client/.env --environment=development
+# Pull dashboard values down to the shared repo root .env
+vercel env pull .env --environment=development
+# Optional: grab another environment snapshot
+vercel env pull .env.production --environment=production
 ```
 
 Always redeploy (`vercel deploy`) after changing environment variables so the new values propagate to every serverless instance.
