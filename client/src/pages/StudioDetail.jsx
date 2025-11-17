@@ -10,7 +10,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "react-hot-toast";
 import Footer from "../components/Footer";
-import { ChevronLeft, ChevronRight, PenSquare } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, PenSquare } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { fetchStudioBySlug } from "../services/marketplace.js";
@@ -19,6 +19,7 @@ import { formatRequestError } from "../utils/httpErrors.js";
 import { applyFallback, getStudioFallback } from "../utils/imageFallbacks.js";
 import { readStoredUser } from "../services/auth.js";
 import { inferRoleFromUser } from "../constants/roles.js";
+import { getWorkspaceCollections, subscribeToWorkspaceRole } from "../utils/workspaceSync.js";
 
 const number = (v, dp = 0) =>
   typeof v === "number" && isFinite(v)
@@ -35,6 +36,48 @@ const startCase = (value = "") =>
 
 const formatAreaUnit = (unit) =>
   typeof unit === "string" && unit.trim().toLowerCase() === "m2" ? "m²" : "sq ft";
+
+
+const formatCurrency = (value, currency = "USD") => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(numeric);
+  } catch {
+    return `${currency} ${numeric.toLocaleString()}`;
+  }
+};
+
+const bundleToServiceTile = (bundle) => {
+  if (!bundle) return null;
+  const details = [];
+  if (bundle.scope) details.push(bundle.scope);
+  if (bundle.turnaroundTime) details.push(`Turnaround ${bundle.turnaroundTime}`);
+  if (bundle.fileFormat) details.push(bundle.fileFormat);
+  if (bundle.skillLevel) details.push(`Skill: ${startCase(bundle.skillLevel)}`);
+  if (Array.isArray(bundle.deliverables) && bundle.deliverables.length) {
+    details.push(
+      `${bundle.deliverables.length} deliverable${bundle.deliverables.length === 1 ? "" : "s"}`
+    );
+  }
+  if (bundle.revisionsAllowed) {
+    details.push(`Revisions: ${bundle.revisionsAllowed}`);
+  }
+  const priceLabel = formatCurrency(bundle.price, bundle.currency || "USD");
+  const statusLabel =
+    bundle.cadence || bundle.durationLabel || priceLabel || bundle.notes || undefined;
+  return {
+    id: bundle.id || `bundle-${Math.random().toString(36).slice(2, 8)}`,
+    label: bundle.bundleName || "Service bundle",
+    description: details.join(" \u00b7 ") || bundle.notes || "Custom engagement available.",
+    status: "available",
+    statusLabel,
+  };
+};
 
 const getSpecValue = (studio, labels = []) => {
   const inSpecs =
@@ -515,6 +558,17 @@ const StudioDetail = () => {
   };
   const recommendedStudios = useMemo(() => [], [studio]);
 
+  const [workspaceCollections, setWorkspaceCollections] = useState(() => getWorkspaceCollections("firm"));
+  useEffect(() => {
+    const unsubscribe = subscribeToWorkspaceRole("firm", (state) => setWorkspaceCollections(state));
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
+  }, []);
+  const workspaceServiceBundles = workspaceCollections?.serviceBundles || [];
+
   const handleAddRecommendedToCart = async (entry) => {
     const payload = buildCartPayload(entry);
     if (!payload) return;
@@ -525,23 +579,106 @@ const StudioDetail = () => {
       console.error(err);
       toast.error("Could not add studio to cart");
     }
-  };  const hostingConfig = studio?.firm?.hosting;
+  };
+  const hostingConfig = studio?.firm?.hosting;
   const tileConfig = useMemo(() => {
-    if (!hostingConfig) return null;
-    const summary = hostingConfig.serviceSummary?.trim() || "";
-    const services = Array.isArray(hostingConfig.services) ? hostingConfig.services : [];
-    const products = Array.isArray(hostingConfig.products) ? hostingConfig.products : [];
-    if (!summary && !services.length && !products.length) {
-      return null;
+    const summary = hostingConfig?.serviceSummary?.trim() || "";
+    const services = Array.isArray(hostingConfig?.services) ? hostingConfig.services : [];
+    const products = Array.isArray(hostingConfig?.products) ? hostingConfig.products : [];
+    if (summary || services.length || products.length) {
+      return { summary, services, products };
     }
-    return { summary, services, products };
-  }, [hostingConfig?.serviceSummary, hostingConfig?.services, hostingConfig?.products]);
+    if (workspaceServiceBundles.length) {
+      const bundlesAsTiles = workspaceServiceBundles
+        .map((bundle) => bundleToServiceTile(bundle))
+        .filter(Boolean);
+      if (bundlesAsTiles.length) {
+        const fallbackSummary =
+          workspaceServiceBundles.length === 1
+            ? `Program ready: ${workspaceServiceBundles[0].bundleName || workspaceServiceBundles[0].scope || "Custom engagement"}`
+            : "Programs drafted in your workspace are shown below.";
+        return {
+          summary: fallbackSummary,
+          services: bundlesAsTiles,
+          products: [],
+        };
+      }
+    }
+    return null;
+  }, [hostingConfig, workspaceServiceBundles]);
   const serviceTiles = tileConfig?.services || [];
   const productTiles = tileConfig?.products || [];
   const serviceSummary = tileConfig?.summary || "";
   const hasServiceSummary = Boolean(serviceSummary && serviceSummary.trim());
   const hasServiceTiles = serviceTiles.length > 0;
   const hasProductTiles = productTiles.length > 0;
+  const ownerChecklist = useMemo(() => {
+    if (!studio) return [];
+    const slug = studio.slug;
+    return [
+      {
+        key: "gallery",
+        label: "Hero & gallery",
+        ok: galleryImages.length > 0,
+        detail: galleryImages.length ? `${galleryImages.length} media asset${galleryImages.length === 1 ? "" : "s"}` : "Upload at least one hero image.",
+        href: slug ? buildEditorLink(slug, "gallery") : "/portal/studio",
+      },
+      {
+        key: "pricing",
+        label: "Pricing & CTA",
+        ok: pricePerSqft != null || totalPrice != null,
+        detail:
+          pricePerSqft != null
+            ? `${currency} ${number(pricePerSqft)} per ${areaUnitLabel}`
+            : totalPrice != null
+              ? `${currency} ${number(totalPrice)} total`
+              : "Share transparent pricing or keep it on-request.",
+        href: slug ? buildEditorLink(slug, "pricing") : "/portal/studio",
+      },
+      {
+        key: "specs",
+        label: "Specs & layout",
+        ok:
+          Boolean(areaSqft || plotAreaSqft) ||
+          bedroomCount != null ||
+          bathroomCount != null ||
+          floorsCount != null,
+        detail: areaSqft ? `${number(areaSqft)} ${areaUnitLabel}` : "Add bedrooms, baths, floors, or sqft.",
+        href: slug ? buildEditorLink(slug, "details") : "/portal/studio",
+      },
+      {
+        key: "programs",
+        label: "Service programs",
+        ok: hasServiceTiles || hasServiceSummary,
+        detail: hasServiceTiles ? `${serviceTiles.length} tile${serviceTiles.length === 1 ? "" : "s"}` : "Describe what this studio sells.",
+        href: "/portal/studio#firm-profile",
+      },
+    ];
+  }, [
+    studio,
+    galleryImages.length,
+    pricePerSqft,
+    totalPrice,
+    currency,
+    areaSqft,
+    plotAreaSqft,
+    areaUnitLabel,
+    bedroomCount,
+    bathroomCount,
+    floorsCount,
+    hasServiceTiles,
+    hasServiceSummary,
+    serviceTiles.length,
+  ]);
+  const ownerChecklistComplete = ownerChecklist.length > 0 && ownerChecklist.every((item) => item.ok);
+  const ownerUpdatedStamp = useMemo(() => {
+    if (!studio?.updatedAt) return null;
+    try {
+      return new Date(studio.updatedAt).toLocaleString();
+    } catch {
+      return studio.updatedAt;
+    }
+  }, [studio?.updatedAt]);
   const contactEmail =
     studio?.firm?.contact?.email ||
     studio?.contactEmail ||
@@ -873,6 +1010,53 @@ const StudioDetail = () => {
         </div>
       ) : null}
       <main className="flex-1 max-w-7xl mx-auto px-4 lg:px-6 py-8 lg:py-10">
+        {canEditStudio && ownerChecklist.length ? (
+          <section className="mb-8 rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Owner view</p>
+                <h2 className="text-xl font-semibold text-slate-900">Publishing readiness</h2>
+                <p className="text-sm text-slate-600">
+                  Keep these rows green and your tile stays featured at the top of Design Studio.
+                </p>
+              </div>
+              <div className="text-xs text-slate-500 space-y-1">
+                <p>
+                  Studio ID:{" "}
+                  <span className="font-semibold text-slate-800">{studio?._id || studio?.id || "?"}</span>
+                </p>
+                {studio?.slug ? (
+                  <p>Slug: <span className="font-semibold text-slate-800">/studio/{studio.slug}</span></p>
+                ) : null}
+                {ownerUpdatedStamp ? <p>Updated {ownerUpdatedStamp}</p> : null}
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {ownerChecklist.map((item) => (
+                <Link
+                  key={item.key}
+                  to={item.href}
+                  className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                    item.ok
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-900 hover:border-emerald-300"
+                      : "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300"
+                  }`}
+                >
+                  {item.ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+                  <div>
+                    <p className="text-sm font-semibold">{item.label}</p>
+                    <p className="text-xs">{item.detail}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            {ownerChecklistComplete ? (
+              <div className="rounded-2xl border border-emerald-200 bg-white/70 px-4 py-3 text-sm text-emerald-800">
+                Everything looks dialed in. Drop new media periodically to keep the recommendation engine warm.
+              </div>
+            ) : null}
+          </section>
+        ) : null}
         {/* Top two-column layout */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left: gallery with controls */}

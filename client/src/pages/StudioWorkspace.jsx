@@ -23,12 +23,164 @@ import {
 } from "../utils/workspaceSync.js";
 
 
-const StatCard = ({ label, value, helper }) => (
-  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">{label}</p>
-    <p className="mt-2 text-2xl font-semibold text-slate-900">{value ?? "—"}</p>
+const HeroStat = ({ label, value, helper }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-slate-900 shadow-sm">
+    <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-400">{label}</p>
+    <p className="mt-2 text-2xl font-semibold">{value ?? "-"}</p>
     {helper ? <p className="text-sm text-slate-500">{helper}</p> : null}
   </div>
+);
+
+const WorkspaceHero = ({ metaCards, onCreateStudio }) => (
+  <section className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-white via-slate-50 to-indigo-100 px-8 py-10 text-slate-900 shadow-xl ring-1 ring-slate-100">
+    <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end">
+      <div className="flex-1 space-y-4">
+        <span className="inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.5em] text-slate-500">
+          Studio OS
+        </span>
+        <h1 className="text-3xl font-semibold sm:text-4xl">Design Studio workspace</h1>
+        <p className="max-w-2xl text-base text-slate-600">
+          Publish bundles, update your firm voice, and drop new concept packs without leaving the portal. Everything here
+          syncs to the public Studio experience instantly after approval.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3 lg:w-[260px]">
+        <button
+          type="button"
+          onClick={onCreateStudio}
+          className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-slate-800"
+        >
+          Launch a new studio
+        </button>
+        <Link
+          to="/studio"
+          className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-white"
+        >
+          View public page
+        </Link>
+        <a
+          href="mailto:studios@builtattic.com"
+          className="text-center text-sm font-semibold text-slate-600 underline-offset-4 hover:underline"
+        >
+          Message studios@builtattic.com
+        </a>
+      </div>
+    </div>
+    <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {metaCards.map((card) => (
+        <HeroStat key={card.label} {...card} />
+      ))}
+    </div>
+    <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-indigo-200/40 blur-[100px]" />
+    <div className="pointer-events-none absolute -bottom-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-200/30 blur-[150px]" />
+  </section>
+);
+
+const QuickActionList = ({ onCreateStudio }) => {
+  const actions = [
+    {
+      type: "button",
+      label: "Draft a studio bundle",
+      helper: "Spin up a new tile with hero, pricing, and gallery.",
+      onClick: onCreateStudio,
+    },
+    {
+      type: "anchor",
+      label: "Update firm profile",
+      helper: "Sync hero copy + services buyers see first.",
+      href: "#firm-profile",
+    },
+    {
+      type: "link",
+      label: "Manage plan uploads",
+      helper: "Push renders and plan packs from the dashboard.",
+      to: "/dashboard/firm",
+    },
+    {
+      type: "link",
+      label: "Preview public Studio",
+      helper: "Open the live experience buyers browse.",
+      to: "/studio",
+    },
+  ];
+
+  const renderAction = (action) => {
+    const content = (
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{action.label}</p>
+          <p className="text-xs text-slate-500">{action.helper}</p>
+        </div>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-400">Go</span>
+      </div>
+    );
+
+    if (action.type === "button") {
+      return (
+        <button
+          key={action.label}
+          type="button"
+          onClick={action.onClick}
+          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300"
+        >
+          {content}
+        </button>
+      );
+    }
+
+    if (action.type === "anchor") {
+      return (
+        <a
+          key={action.label}
+          href={action.href}
+          className="block rounded-2xl border border-slate-200 bg-white px-4 py-3 hover:border-slate-300"
+        >
+          {content}
+        </a>
+      );
+    }
+
+    return (
+      <Link
+        key={action.label}
+        to={action.to}
+        className="block rounded-2xl border border-slate-200 bg-white px-4 py-3 hover:border-slate-300"
+      >
+        {content}
+      </Link>
+    );
+  };
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Quick actions</p>
+      <div className="mt-4 space-y-2">{actions.map(renderAction)}</div>
+    </section>
+  );
+};
+
+const SyncSummaryCard = ({ planUploads = [], serviceBundles = [], draftCount = 0 }) => (
+  <section className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-5 text-slate-900 shadow-sm">
+    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-500">Workspace sync</p>
+    <p className="mt-2 text-sm text-slate-600">Keep assets aligned so your marketplace placement stays fresh for buyers.</p>
+    <dl className="mt-4 space-y-3">
+      <div>
+        <dt className="text-xs uppercase tracking-[0.35em] text-indigo-500">Plan uploads</dt>
+        <dd className="text-xl font-semibold text-slate-900">{planUploads.length || 0}</dd>
+        <p className="text-xs text-slate-500">Concept packs ready for promotion</p>
+      </div>
+      <div>
+        <dt className="text-xs uppercase tracking-[0.35em] text-indigo-500">Service bundles</dt>
+        <dd className="text-xl font-semibold text-slate-900">{serviceBundles.length || 0}</dd>
+        <p className="text-xs text-slate-500">Scopes synced to Design Studio</p>
+      </div>
+      <div>
+        <dt className="text-xs uppercase tracking-[0.35em] text-indigo-500">Draft studios</dt>
+        <dd className="text-xl font-semibold text-slate-900">{draftCount ?? 0}</dd>
+        <p className="text-xs text-slate-500">Publish-ready bundles</p>
+      </div>
+    </dl>
+  </section>
 );
 
 const formatCurrency = (value, currency = "USD") => {
@@ -68,7 +220,7 @@ const ChipRow = ({ items, placeholder = "Add details from dashboard" }) => {
           key={`${item || "item"}-${index}`}
           className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
         >
-          {item || "—"}
+          {item || "â€”"}
         </span>
       ))}
     </div>
@@ -91,7 +243,7 @@ const resolveHeroImage = (studio) => {
 };
 
 const formatUpdatedAt = (value) => {
-  if (!value) return "�";
+  if (!value) return "ï¿½";
   try {
     return new Date(value).toLocaleDateString(undefined, {
       month: "short",
@@ -102,47 +254,6 @@ const formatUpdatedAt = (value) => {
     return value;
   }
 };
-
-const GuideCard = ({ title, body, helper, actionLabel, onAction }) => (
-  <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Workflow</p>
-      <h3 className="mt-1 text-lg font-semibold text-slate-900">{title}</h3>
-    </div>
-    <p className="text-sm text-slate-600">{body}</p>
-    {helper ? <p className="text-xs text-slate-500">{helper}</p> : null}
-    {onAction ? (
-      <button
-        type="button"
-        onClick={onAction}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900 underline-offset-4 hover:underline"
-      >
-        {actionLabel || "Start"}
-      </button>
-    ) : null}
-  </article>
-);
-
-const WorkspaceGuide = ({ onCreateStudio }) => (
-  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-    <GuideCard
-      title="Listing tile"
-      body="Hero image, summary, and quick stats surface in every marketplace tile."
-      helper='Use the "Edit listing tile" button on any studio below to refresh it.'
-    />
-    <GuideCard
-      title="Detail page"
-      body="Long-form copy, gallery assets, and delivery notes convince buyers to reach out."
-      helper='Open "Edit listing page" to update programs, specs, and CTA copy.'
-    />
-    <GuideCard
-      title="New bundle"
-      body="Create a fresh studio bundle when you want a brand-new tile + detail page."
-      actionLabel="Add studio"
-      onAction={onCreateStudio}
-    />
-  </section>
-);
 
 const StudioWorkbenchCard = ({ studio, onEditTile, onEditListing, onPublish, onDelete }) => {
   const heroImage = resolveHeroImage(studio);
@@ -314,9 +425,9 @@ export default function StudioWorkspace() {
   const metaCards = useMemo(() => {
     const meta = studiosState.meta || {};
     return [
-      { label: "Total studios", value: meta.total ?? "—" },
-      { label: "Published", value: meta.publishedCount ?? "—" },
-      { label: "Drafts", value: meta.draftCount ?? "—" },
+      { label: "Total studios", value: meta.total ?? "â€”" },
+      { label: "Published", value: meta.publishedCount ?? "â€”" },
+      { label: "Drafts", value: meta.draftCount ?? "â€”" },
     ];
   }, [studiosState.meta]);
 
@@ -445,19 +556,30 @@ export default function StudioWorkspace() {
 
   const renderStudios = () => {
     if (studiosState.loading) {
-      return <p className="text-sm text-slate-500">Loading studios...</p>;
+      return (
+        <div className="rounded-3xl border border-slate-200 bg-white/90 p-6 text-sm text-slate-500 shadow-sm">
+          Loading studios...
+        </div>
+      );
     }
     if (studiosState.error) {
-      return <p className="text-sm text-rose-600">{studiosState.error}</p>;
+      return (
+        <div className="rounded-3xl border border-rose-100 bg-white/95 p-6 text-sm text-rose-600 shadow-sm">
+          {studiosState.error}
+        </div>
+      );
     }
     if (!studiosState.items.length) {
       return (
-        <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500 space-y-3">
-          <p>No studios yet. Publish your first Design Studio bundle to unlock marketplace placement.</p>
+        <div className="rounded-[28px] border border-dashed border-slate-300 bg-white/90 p-8 text-center shadow-sm space-y-4">
+          <h3 className="text-lg font-semibold text-slate-900">No studio bundles yet</h3>
+          <p className="text-sm text-slate-500">
+            Launch your first Design Studio listing to unlock marketplace placement and shareable URLs.
+          </p>
           <button
             type="button"
             onClick={() => openCreateForm('create')}
-            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800"
           >
             <Plus size={14} /> Add studio
           </button>
@@ -465,7 +587,7 @@ export default function StudioWorkspace() {
       );
     }
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
         {studiosState.items.map((studio) => (
           <StudioWorkbenchCard
             key={studio._id || studio.id || studio.slug}
@@ -502,235 +624,237 @@ export default function StudioWorkspace() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
       <RegistrStrip />
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
-        <header className="rounded-3xl border border-slate-200 bg-white px-8 py-10 shadow-sm">
-          <span className="inline-flex items-center rounded-full bg-slate-900/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-700">
-            Design Studio
-          </span>
-          <h1 className="mt-6 text-3xl sm:text-4xl font-bold text-slate-900">Studio workspace</h1>
-          <p className="mt-4 max-w-2xl text-slate-600">
-            Manage your Design Studio profile, publish studio bundles, and keep marketplace signals fresh for buyers.
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3 text-sm text-slate-500">
-            <span>
-              Need help? Email <a href="mailto:studios@builtattic.com" className="font-semibold text-slate-900">studios@builtattic.com</a>
-            </span>
-            <Link to="/studio" className="font-semibold text-slate-900 underline">
-              View live Design Studio
-            </Link>
-          </div>
-        </header>
+      <main className="flex-1 pb-16">
+        <div className="mx-auto w-full max-w-6xl space-y-10 px-4 py-12 sm:px-6 lg:px-8">
+          <WorkspaceHero metaCards={metaCards} onCreateStudio={() => openCreateForm("create")} />
 
-        {authState.required ? (
-          <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Workspace locked</p>
-            <h2 className="mt-3 text-2xl font-semibold text-slate-900">Connect the demo workspace to upload designs</h2>
-            <p className="mt-3 text-sm text-slate-500">
-              Sign in with a demo token so your studios can be saved to the Mongo cluster and rendered on the Design Studio
-              page. No password required.
-            </p>
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                disabled={authState.loading}
-                className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-              >
-                {authState.loading ? "Connecting..." : "Connect demo workspace"}
-              </button>
-              <button
-                type="button"
-                onClick={() => window.open('https://react.dev/link/react-devtools', '_blank')}
-                className="text-sm font-semibold text-slate-600 hover:text-slate-900"
-              >
-                Need help?
-              </button>
-            </div>
-            {authState.error ? <p className="mt-3 text-sm text-rose-600">{authState.error}</p> : null}
-          </div>
-        ) : (
-          <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {metaCards.map((card) => (
-                <StatCard key={card.label} {...card} />
-              ))}
-            </div>
-
-            <FirmProfileEditor
-              onProfileUpdate={(next) => setProfile(next)}
-              header={(
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Studio profile</p>
-                  <h2 className="text-2xl font-semibold text-slate-900">{profile?.name || "Design Studio profile"}</h2>
-                  <p className="text-sm text-slate-500">Changes sync to Design Studio once approved.</p>
-                </div>
-              )}
-            />
-
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Plan upload</p>
-                  <h2 className="text-lg font-semibold text-slate-900">Design assets ready for hosting</h2>
-                  <p className="text-sm text-slate-500">Review concept packs synced from the Firm dashboard.</p>
-                </div>
-                <Link to="/dashboard/firm" className="text-xs font-semibold text-slate-900 underline">
-                  Update from dashboard
-                </Link>
-              </div>
-              {planUploads.length === 0 ? (
-                <p className="text-sm text-slate-500">No plans synced yet.</p>
-              ) : (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {planUploads.map((plan) => (
-                    <article key={plan.id} className="rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                          {plan.category || 'Category'}{plan.subtype ? ` � ${plan.subtype}` : ''}
-                        </p>
-                        <h3 className="text-base font-semibold text-slate-900">{plan.projectTitle || "Untitled plan"}</h3>
-                        <p className="text-sm text-slate-500">{plan.primaryStyle || "Add a primary style"}</p>
-                      </div>
-                      <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Area</dt>
-                          <dd>{formatSqft(plan.areaSqft)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Floors</dt>
-                          <dd>{Number(plan.floors) || '-'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Design rate</dt>
-                          <dd>{formatRate(plan.designRate)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Construction</dt>
-                          <dd>{formatRate(plan.constructionCost)}</dd>
-                        </div>
-                      </dl>
-                      <div className="text-xs text-slate-500 space-y-1">
-                        <p>License: {plan.licenseType || 'n/a'} � Delivery: {plan.delivery || 'n/a'}</p>
-                        <p>Assets: {plan.renderImages?.length || 0} renders {plan.walkthrough ? '� Walkthrough' : ''}</p>
-                        {plan.conceptPlan ? (
-                          <a href={plan.conceptPlan} target="_blank" rel="noreferrer" className="text-slate-900 underline">
-                            Open concept plan
-                          </a>
-                        ) : null}
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Materials</p>
-                        <ChipRow items={plan.materials} />
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Service bundles</p>
-                  <h2 className="text-lg font-semibold text-slate-900">Programs synced to Design Studio</h2>
-                  <p className="text-sm text-slate-500">Hourly, weekly, and monthly scopes from your dashboard.</p>
-                </div>
-                <Link to="/dashboard/firm" className="text-xs font-semibold text-slate-900 underline">
-                  Update from dashboard
-                </Link>
-              </div>
-              {serviceBundles.length === 0 ? (
-                <p className="text-sm text-slate-500">No bundles available yet.</p>
-              ) : (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {serviceBundles.map((bundle) => (
-                    <article key={bundle.id} className="rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">{bundle.cadence || 'Cadence'}</p>
-                        <h3 className="text-base font-semibold text-slate-900">{bundle.bundleName || 'Unnamed bundle'}</h3>
-                        <p className="text-sm text-slate-500">{bundle.scope || 'Scope pending'}</p>
-                      </div>
-                      <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Price</dt>
-                          <dd>{bundle.price && Number.isFinite(Number(bundle.price)) ? `$${Number(bundle.price).toLocaleString()}` : bundle.price || 'Custom'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Turnaround</dt>
-                          <dd>{bundle.turnaroundTime || '-'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">File format</dt>
-                          <dd>{bundle.fileFormat || '-'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Skill level</dt>
-                          <dd>{bundle.skillLevel || '-'}</dd>
-                        </div>
-                      </dl>
-                      <div className="text-xs text-slate-500 space-y-1">
-                        <p>Revisions: {bundle.revisionsAllowed || 'n/a'}</p>
-                        <p>Deliverables: {bundle.deliverables?.length || 0}</p>
-                        {bundle.references?.length ? <p>References: {bundle.references.join(', ')}</p> : null}
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Deliverables</p>
-                        <ChipRow items={bundle.deliverables} />
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Catalog</p>
-                  <h2 className="text-lg font-semibold text-slate-900">Studio bundles</h2>
-                  <p className="text-sm text-slate-500">Drafts stay private until you publish.</p>
-                </div>
+          {authState.required ? (
+            <section className="rounded-[32px] border border-dashed border-amber-200 bg-white/95 p-10 text-center shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-500">Workspace locked</p>
+              <h2 className="mt-3 text-2xl font-semibold text-slate-900">Connect the demo workspace to upload designs</h2>
+              <p className="mt-3 text-sm text-slate-500">
+                Sign in with a demo token so your studios can be saved and rendered on the Design Studio page. No password
+                required.
+              </p>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={() => openCreateForm('create')}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800"
+                  onClick={handleDemoLogin}
+                  disabled={authState.loading}
+                  className="inline-flex items-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-slate-800 disabled:opacity-60"
                 >
-                  <Plus size={16} /> Add studio
+                  {authState.loading ? "Connecting..." : "Connect demo workspace"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.open('https://react.dev/link/react-devtools', '_blank')}
+                  className="text-sm font-semibold text-slate-600 underline-offset-4 hover:text-slate-900 hover:underline"
+                >
+                  Need help?
                 </button>
               </div>
-
-              <WorkspaceGuide onCreateStudio={() => openCreateForm('create')} />
-
-              {renderStudios()}
+              {authState.error ? <p className="mt-4 text-sm text-rose-600">{authState.error}</p> : null}
             </section>
+          ) : (
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-8">
+                <div id="firm-profile" className="scroll-mt-32 rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-sm">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Studio profile</p>
+                    <h2 className="text-2xl font-semibold text-slate-900">{profile?.name || "Design Studio profile"}</h2>
+                    <p className="text-sm text-slate-500">Changes sync to Design Studio once approved.</p>
+                  </div>
+                  <div className="mt-6 rounded-2xl border border-slate-100/80 bg-slate-50/60 p-4">
+                    <FirmProfileEditor
+                      onProfileUpdate={(next) => setProfile(next)}
+                      header={(
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Workspace identity</p>
+                          <h3 className="text-xl font-semibold text-slate-900">Share your story</h3>
+                          <p className="text-sm text-slate-500">Hero copy, services, and buyer proof update live pages.</p>
+                        </div>
+                      )}
+                    />
+                  </div>
+                </div>
 
-            {formVisible ? (
-              <StudioForm
-                form={form}
-                onChange={setForm}
-                onCancel={() => {
-                  setFormVisible(false);
-                  setFormIntent(null);
-                  setForm(EMPTY_STUDIO_FORM);
-                }}
-                onSubmit={handleSubmit}
-                saving={saving}
-                onHeroUpload={handleHeroUpload}
-                onGalleryUpload={handleGalleryUpload}
-                uploading={uploading}
-                heroFileInputRef={heroFileInputRef}
-                galleryFileInputRef={galleryFileInputRef}
-                intent={formIntent}
-              />
-            ) : null}
-          </>
-        )}
+                <section className="rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-sm space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Plan uploads</p>
+                      <h2 className="text-xl font-semibold text-slate-900">Design assets ready for hosting</h2>
+                      <p className="text-sm text-slate-500">Review concept packs synced from the Firm dashboard.</p>
+                    </div>
+                    <Link to="/dashboard/firm" className="text-xs font-semibold text-slate-900 underline">
+                      Update from dashboard
+                    </Link>
+                  </div>
+
+                  {planUploads.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 p-6 text-sm text-slate-500">
+                      No plans synced yet.
+                    </div>
+                  ) : (
+                    <div className="grid gap-5 lg:grid-cols-2">
+                      {planUploads.map((plan) => (
+                        <article key={plan.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-5 shadow-sm space-y-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                              {plan.category || 'Category'}{plan.subtype ? ` · ${plan.subtype}` : ''}
+                            </p>
+                            <h3 className="text-base font-semibold text-slate-900">{plan.projectTitle || "Untitled plan"}</h3>
+                            <p className="text-sm text-slate-500">{plan.primaryStyle || "Add a primary style"}</p>
+                          </div>
+                          <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Area</dt>
+                              <dd>{formatSqft(plan.areaSqft)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Floors</dt>
+                              <dd>{Number(plan.floors) || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Design rate</dt>
+                              <dd>{formatRate(plan.designRate)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Construction</dt>
+                              <dd>{formatRate(plan.constructionCost)}</dd>
+                            </div>
+                          </dl>
+                          <div className="space-y-1 text-xs text-slate-500">
+                            <p>License: {plan.licenseType || 'n/a'} · Delivery: {plan.delivery || 'n/a'}</p>
+                            <p>Assets: {plan.renderImages?.length || 0} renders {plan.walkthrough ? '· Walkthrough' : ''}</p>
+                            {plan.conceptPlan ? (
+                              <a href={plan.conceptPlan} target="_blank" rel="noreferrer" className="text-slate-900 underline">
+                                Open concept plan
+                              </a>
+                            ) : null}
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Materials</p>
+                            <ChipRow items={plan.materials} />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-sm space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Service bundles</p>
+                      <h2 className="text-xl font-semibold text-slate-900">Programs synced to Design Studio</h2>
+                      <p className="text-sm text-slate-500">Hourly, weekly, and monthly scopes from your dashboard.</p>
+                    </div>
+                    <Link to="/dashboard/firm" className="text-xs font-semibold text-slate-900 underline">
+                      Update from dashboard
+                    </Link>
+                  </div>
+
+                  {serviceBundles.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/80 p-6 text-sm text-slate-500">
+                      No bundles available yet.
+                    </div>
+                  ) : (
+                    <div className="grid gap-5 lg:grid-cols-2">
+                      {serviceBundles.map((bundle) => (
+                        <article key={bundle.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-5 shadow-sm space-y-4">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">{bundle.cadence || 'Cadence'}</p>
+                            <h3 className="text-base font-semibold text-slate-900">{bundle.bundleName || 'Unnamed bundle'}</h3>
+                            <p className="text-sm text-slate-500">{bundle.scope || 'Scope pending'}</p>
+                          </div>
+                          <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Price</dt>
+                              <dd>{bundle.price && Number.isFinite(Number(bundle.price)) ? `$${Number(bundle.price).toLocaleString()}` : bundle.price || 'Custom'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Turnaround</dt>
+                              <dd>{bundle.turnaroundTime || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">File format</dt>
+                              <dd>{bundle.fileFormat || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Skill level</dt>
+                              <dd>{bundle.skillLevel || '-'}</dd>
+                            </div>
+                          </dl>
+                          <div className="space-y-1 text-xs text-slate-500">
+                            <p>Revisions: {bundle.revisionsAllowed || 'n/a'}</p>
+                            <p>Deliverables: {bundle.deliverables?.length || 0}</p>
+                            {bundle.references?.length ? <p>References: {bundle.references.join(', ')}</p> : null}
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Deliverables</p>
+                            <ChipRow items={bundle.deliverables} />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section id="catalog" className="rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-sm space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Catalog</p>
+                      <h2 className="text-xl font-semibold text-slate-900">Studio bundles</h2>
+                      <p className="text-sm text-slate-500">Drafts stay private until you publish.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openCreateForm('create')}
+                      className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800"
+                    >
+                      <Plus size={16} /> Add studio
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500">Use the controls below to edit tiles and long-form detail pages.</p>
+                  {renderStudios()}
+                </section>
+
+                {formVisible ? (
+                  <StudioForm
+                    form={form}
+                    onChange={setForm}
+                    onCancel={() => {
+                      setFormVisible(false);
+                      setFormIntent(null);
+                      setForm(EMPTY_STUDIO_FORM);
+                    }}
+                    onSubmit={handleSubmit}
+                    saving={saving}
+                    onHeroUpload={handleHeroUpload}
+                    onGalleryUpload={handleGalleryUpload}
+                    uploading={uploading}
+                    heroFileInputRef={heroFileInputRef}
+                    galleryFileInputRef={galleryFileInputRef}
+                    intent={formIntent}
+                  />
+                ) : null}
+              </div>
+
+              <aside className="space-y-5">
+                <QuickActionList onCreateStudio={() => openCreateForm("create")} />
+                <SyncSummaryCard
+                  planUploads={planUploads}
+                  serviceBundles={serviceBundles}
+                  draftCount={studiosState.meta?.draftCount ?? 0}
+                />
+              </aside>
+            </div>
+          )}
+        </div>
       </main>
       <Footer />
     </div>
   );
 }
-
