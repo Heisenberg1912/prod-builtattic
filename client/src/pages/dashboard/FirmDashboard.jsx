@@ -1,10 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import PlanUploadPanel from "../../components/dashboard/PlanUploadPanel.jsx";
-import ServiceBundlePanel from "../../components/dashboard/ServiceBundlePanel.jsx";
+import ServicePackManager from "../../components/dashboard/ServicePackManager.jsx";
+import MeetingScheduler from "../../components/dashboard/MeetingScheduler.jsx";
 import FeedbackPanel from "../../components/dashboard/FeedbackPanel.jsx";
 import StudioDashboardCard from "../../components/studio/StudioDashboardCard.jsx";
 import { fetchFirmDashboard } from "../../services/dashboard.js";
+import {
+  applyFallback,
+  getFirmAvatarFallback,
+  getFirmAvatarImage,
+  getFirmCoverFallback,
+  getFirmCoverImage,
+} from "../../utils/imageFallbacks.js";
 
 const InsightStat = ({ label, value, helper, accent = "bg-slate-900/5" }) => (
   <div className={`rounded-2xl border border-slate-200 ${accent} px-4 py-5 shadow-sm`}>
@@ -99,6 +107,41 @@ const formatPercentChange = (delta) => {
   return `${direction}${Math.abs(delta).toFixed(1)}% vs last cycle`;
 };
 
+const uniqueList = (items = []) => {
+  if (!Array.isArray(items)) return [];
+  return Array.from(new Set(items.map((entry) => (typeof entry === "string" ? entry : entry?.title || entry?.name || null)).filter(Boolean)));
+};
+
+const formatDateLabel = (value) => {
+  if (!value) return null;
+  try {
+    return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return value;
+  }
+};
+
+const formatPlanHighlights = (plan) => {
+  if (!plan) return [];
+  const highlights = [];
+  const category = [plan.category, plan.subtype].filter(Boolean).join(" · ");
+  if (category) highlights.push(category);
+  if (plan.primaryStyle) highlights.push(plan.primaryStyle);
+  if (plan.areaSqft && Number(plan.areaSqft)) {
+    highlights.push(`${Number(plan.areaSqft).toLocaleString()} sqft`);
+  }
+  if (Array.isArray(plan.materials) && plan.materials.length) {
+    highlights.push(`${plan.materials.length} material${plan.materials.length === 1 ? "" : "s"}`);
+  }
+  if (Array.isArray(plan.renderImages) && plan.renderImages.length) {
+    highlights.push(`${plan.renderImages.length} render${plan.renderImages.length === 1 ? "" : "s"}`);
+  }
+  if (plan.walkthrough) {
+    highlights.push("Walkthrough ready");
+  }
+  return highlights;
+};
+
 const buildStudioEditHref = (studio, section) => {
   const base = studio?.slug ? `/portal/studio?edit=${encodeURIComponent(studio.slug)}` : "/portal/studio";
   if (!section) return base;
@@ -116,12 +159,88 @@ const editingShortcutsConfig = [
 
 const firmNavSections = [
   { id: "overview", label: "Overview" },
+  { id: "firm-profile", label: "Firm page" },
   { id: "actions", label: "Quick actions" },
   { id: "pipeline", label: "Studios" },
   { id: "workspace", label: "Workspace" },
   { id: "workflow", label: "Workflow" },
   { id: "feedback", label: "Feedback" },
 ];
+
+const DashboardSidebar = ({
+  firm,
+  summary,
+  statCards,
+  sections,
+  firmPortfolioLink,
+  onNavigate,
+  className = "",
+}) => {
+  const sidebarSummary =
+    summary ||
+    firm?.tagline ||
+    firm?.summary ||
+    "Everything you publish across Builtattic lives in this workspace.";
+
+  const handleNavClick = () => {
+    if (typeof onNavigate === "function") {
+      onNavigate();
+    }
+  };
+
+  return (
+    <aside className={`rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-5 ${className}`}>
+      <div className="space-y-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Design Studio</p>
+        <h2 className="text-2xl font-semibold text-slate-900">{firm?.name || "Your studio"}</h2>
+        <p className="text-sm text-slate-600">{sidebarSummary}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to="/portal/studio"
+          className="inline-flex flex-1 items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+        >
+          Open workspace
+        </Link>
+        <Link
+          to={firmPortfolioLink}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex flex-1 items-center justify-center rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
+        >
+          View public
+        </Link>
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Snapshot</p>
+        <div className="mt-3 space-y-2">
+          {statCards.map((card) => (
+            <div key={card.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">{card.label}</p>
+              <p className="text-lg font-semibold text-slate-900">{card.value ?? "-"}</p>
+              {card.helper ? <p className="text-xs text-slate-500">{card.helper}</p> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Navigate</p>
+        <nav className="mt-3 space-y-1">
+          {sections.map((section) => (
+            <a
+              key={section.id}
+              href={`#${section.id}`}
+              onClick={handleNavClick}
+              className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+            >
+              {section.label}
+            </a>
+          ))}
+        </nav>
+      </div>
+    </aside>
+  );
+};
 
 const StudioEditingPanel = ({ studio }) => {
   const shortcuts = editingShortcutsConfig.map((shortcut) => ({
@@ -171,20 +290,26 @@ export default function FirmDashboard() {
   const mountedRef = useRef(true);
 
   const refreshDashboard = useCallback(
-    async (sectionId) => {
+    async (sectionId = null, options = {}) => {
+      const silent = Boolean(options.silent);
       if (sectionId) {
         setSectionStatus((prev) => ({
           ...prev,
           [sectionId]: { ...prev[sectionId], loading: true, error: null },
         }));
-      } else {
+      } else if (!silent) {
         setState((prev) => ({ ...prev, loading: true, error: null }));
       }
 
       try {
         const payload = await fetchFirmDashboard();
         if (!mountedRef.current) return payload;
-        setState({ loading: false, data: payload, error: payload?.error || null });
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          data: payload,
+          error: payload?.error || null,
+        }));
         if (sectionId) {
           setSectionStatus((prev) => ({
             ...prev,
@@ -201,6 +326,8 @@ export default function FirmDashboard() {
             ...prev,
             [sectionId]: { loading: false, error: message },
           }));
+        } else if (silent) {
+          setState((prev) => ({ ...prev, loading: false, error: message }));
         } else {
           setState({ loading: false, data: null, error: message });
         }
@@ -225,6 +352,9 @@ export default function FirmDashboard() {
   const metrics = data?.metrics || {};
   const studios = data?.studios || [];
   const nextActions = data?.nextActions || [];
+  const servicePacks = data?.servicePacks || [];
+  const meetings = data?.meetings || [];
+  const topNextActions = useMemo(() => nextActions.slice(0, 3), [nextActions]);
 
   const currencyCode = metrics.currency || "USD";
   const statCards = useMemo(() => {
@@ -293,6 +423,7 @@ export default function FirmDashboard() {
     const base = [
       { label: "Create studio tile", helper: "Launch a new listing in minutes.", to: "/portal/studio" },
       { label: "Share workspace", helper: "Send the Design Studio brief form.", to: "/dashboard/firm#workspace" },
+      { label: "Edit firm page", helper: "Sync hero, summary, and services.", to: "/portal/studio#firm-profile" },
       { label: "Invite collaborator", helper: "Add an associate to your next project.", to: "/associates" },
       { label: "Sync pricing", helper: "Update bundles and payment CTAs.", to: "/portal/studio?section=pricing" },
     ];
@@ -303,8 +434,97 @@ export default function FirmDashboard() {
       seen.add(action.label);
       deduped.push(action);
     });
-    return deduped.slice(0, 4);
+    return deduped.slice(0, 5);
   }, [draftStudios.length, feedback.count, nextActions.length, publishedStudios.length]);
+
+  const planUploads = data?.planUploads || [];
+  const featuredPlan = planUploads[0];
+  const planRenderImages = Array.isArray(featuredPlan?.renderImages)
+    ? featuredPlan.renderImages.filter((url) => typeof url === "string" && /^https?:\/\//i.test(url))
+    : [];
+  const conceptHeroImage = planRenderImages[0] || null;
+  const firmHeroImage = conceptHeroImage || getFirmCoverImage(firm);
+  const firmHeroFallback = getFirmCoverFallback(firm);
+  const firmAvatarImage = getFirmAvatarImage(firm);
+  const firmAvatarFallback = getFirmAvatarFallback(firm);
+  const firmServices = useMemo(() => uniqueList([...(firm?.services || []), ...(firm?.profile?.services || [])]), [firm]);
+  const firmRegions = useMemo(
+    () => uniqueList([...(firm?.operatingRegions || []), ...(firm?.regions || []), ...(firm?.profile?.regions || [])]),
+    [firm],
+  );
+  const firmSummary = firm?.tagline || firm?.summary || firm?.bio;
+  const firmLastUpdatedRaw = firm?.profileUpdatedAt || firm?.profile?.updatedAt || firm?.updatedAt;
+  const firmLastUpdated = formatDateLabel(firmLastUpdatedRaw);
+  const firmProfileStats = useMemo(
+    () => [
+      { label: "Services", value: firmServices.length || "—", helper: firmServices.slice(0, 3).join(" • ") || "Add via workspace" },
+      { label: "Regions", value: firmRegions.length || "—", helper: firmRegions.slice(0, 3).join(" • ") || "Set delivery areas" },
+      { label: "Published", value: publishedStudios.length || "0", helper: "Live bundles" },
+      { label: "Last sync", value: firmLastUpdated || "Pending", helper: firmLastUpdated ? "Profile updated" : "Sync required" },
+    ],
+    [firmRegions, firmServices, firmLastUpdated, publishedStudios.length],
+  );
+  const planHighlights = useMemo(() => formatPlanHighlights(featuredPlan), [featuredPlan]);
+  const heroBadgeLabel = featuredPlan ? "Concept hosting preview" : "Firm profile";
+  const heroTitle = featuredPlan?.projectTitle || firm?.name || "Your studio";
+  const heroDescription =
+    featuredPlan?.description ||
+    firmSummary ||
+    "Upload renders and walkthroughs so the Design Studio listing feels current.";
+  const heroChips = featuredPlan ? planHighlights : firmServices.slice(0, 4);
+  const heroSubtext = featuredPlan?.updatedAt
+    ? `Synced ${formatDateLabel(featuredPlan.updatedAt)}`
+    : firmSummary
+      ? "Marketplace listing"
+      : null;
+  const firmPortfolioLink = useMemo(
+    () => ({
+      pathname: "/firmportfolio",
+      search: firm?.slug ? `?slug=${encodeURIComponent(firm.slug)}` : "",
+      state: { firm },
+    }),
+    [firm],
+  );
+  const overviewHighlights = useMemo(
+    () => {
+      const previewChips = featuredPlan ? planHighlights.slice(0, 3) : firmServices.slice(0, 3);
+      const planSyncLabel =
+        planUploads.length > 0 ? `${planUploads.length} plan sync${planUploads.length === 1 ? "" : "s"}` : null;
+      const packLabel =
+        servicePacks.length > 0 ? `${servicePacks.length} service pack${servicePacks.length === 1 ? "" : "s"}` : null;
+      return [
+        {
+          label: featuredPlan ? "Featured concept" : "Firm profile",
+          title: heroTitle,
+          description: heroDescription,
+          chips: previewChips,
+          link: featuredPlan ? "#concept-hosting" : "/portal/studio#firm-profile",
+          linkLabel: featuredPlan ? "Manage uploads" : "Edit profile",
+        },
+        {
+          label: "Marketplace status",
+          title: `${publishedStudios.length || 0} live · ${draftStudios.length || 0} draft`,
+          description: publishedStudios.length
+            ? "Keep weekly publish cadence so the marketplace stays fresh."
+            : "Publish a tile to activate your Design Studio listing.",
+          chips: [planSyncLabel, packLabel].filter(Boolean),
+          link: "/portal/studio",
+          linkLabel: publishedStudios.length ? "Manage studios" : "Create studio",
+        },
+      ];
+    },
+    [
+      draftStudios.length,
+      featuredPlan,
+      firmServices,
+      heroDescription,
+      heroTitle,
+      planHighlights,
+      planUploads.length,
+      publishedStudios.length,
+      servicePacks.length,
+    ],
+  );
 
   if (loading) {
     return (
@@ -360,83 +580,153 @@ export default function FirmDashboard() {
     const message = getSectionStatus(sectionId).error;
     if (!message) return null;
     return (
-      <p className="text-xs text-rose-600">{helperText ? `${message} — ${helperText}` : message}</p>
+      <p className="text-xs text-rose-600">{helperText ? `${message} - ${helperText}` : message}</p>
     );
   };
 
   const feedbackStatus = getSectionStatus("feedback");
+  const profileRefreshing = isSectionRefreshing("profile");
   const pipelineRefreshing = isSectionRefreshing("pipeline");
   const workspaceRefreshing = isSectionRefreshing("workspace");
   const workflowRefreshing = isSectionRefreshing("workflow");
 
-  const renderNavLinks = (onItemClick) => (
-    <nav className="space-y-1">
-      {firmNavSections.map((section) => (
-        <a
-          key={section.id}
-          href={`#${section.id}`}
-          onClick={onItemClick}
-          className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
-        >
-          {section.label}
-        </a>
-      ))}
-    </nav>
-  );
-
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 md:px-8">
-        <aside className="sticky top-6 hidden w-64 shrink-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:block">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Navigate</p>
-          {renderNavLinks()}
-        </aside>
-        <div className="flex-1 space-y-8">
+      <div className="mx-auto max-w-7xl px-4 py-6 md:px-8">
+        <div className="lg:grid lg:grid-cols-[320px,1fr] lg:gap-8">
           <div className="lg:hidden">
             <button
               type="button"
+              aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen((value) => !value)}
-              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
+              className="w-full rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
             >
-              {sidebarOpen ? "Hide menu" : "Show menu"}
+              {sidebarOpen ? "Hide sidebar" : "Open sidebar"}
             </button>
             {sidebarOpen ? (
-              <div className="mt-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                {renderNavLinks(() => setSidebarOpen(false))}
-              </div>
+              <DashboardSidebar
+                firm={firm}
+                summary={firmSummary}
+                statCards={statCards}
+                sections={firmNavSections}
+                firmPortfolioLink={firmPortfolioLink}
+                onNavigate={() => setSidebarOpen(false)}
+                className="mt-4"
+              />
             ) : null}
           </div>
-
-          <section id="overview" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-xs font-semibold tracking-[0.4em] text-slate-400 uppercase">Design Studio Control</p>
-                <h1 className="text-3xl font-semibold text-slate-900">{firm.name || "Your studio"}</h1>
-                <p className="text-sm text-slate-600 max-w-xl">
-                  {firm.tagline || "Everything published by your team lives here. Use the quick actions to move faster."}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  to="/portal/studio"
-                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-                >
-                  Open workspace
-                </Link>
-                <Link
-                  to="/studio"
-                  className="inline-flex items-center justify-center rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
-                >
-                  View public page
-                </Link>
-              </div>
+          <div className="hidden lg:block">
+            <div className="sticky top-6">
+              <DashboardSidebar
+                firm={firm}
+                summary={firmSummary}
+                statCards={statCards}
+                sections={firmNavSections}
+                firmPortfolioLink={firmPortfolioLink}
+              />
             </div>
-            <div className="mt-6 grid gap-4 lg:grid-cols-3">
-              {statCards.map((card, index) => (
-                <InsightStat key={card.label} {...card} accent={index === 0 ? "bg-emerald-50" : "bg-white"} />
-              ))}
-            </div>
-          </section>
+          </div>
+          <div className="mt-6 space-y-8 lg:col-start-2 lg:mt-0">
+            <section id="overview" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+              <div className="grid gap-6 lg:grid-cols-[1.25fr,0.75fr]">
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold tracking-[0.4em] text-slate-400 uppercase">Design Studio control</p>
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <h1 className="text-3xl font-semibold text-slate-900">{firm.name || "Your studio"}</h1>
+                        <p className="text-sm text-slate-600 max-w-2xl">
+                          {firm.tagline ||
+                            "Everything published by your team lives here. Use the quick actions to move faster."}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          to="/portal/studio"
+                          className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                        >
+                          Open workspace
+                        </Link>
+                        <Link
+                          to={firmPortfolioLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
+                        >
+                          View public page
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {overviewHighlights.map((item) => (
+                      <div
+                        key={item.label}
+                        className="flex h-full flex-col rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">{item.label}</p>
+                        <h3 className="mt-2 text-lg font-semibold text-slate-900">{item.title}</h3>
+                        <p className="mt-1 text-sm text-slate-600">{item.description}</p>
+                        {item.chips?.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                            {item.chips.map((chip, index) => (
+                              <span
+                                key={`${item.label}-${chip}-${index}`}
+                                className="rounded-full border border-slate-200 bg-white/70 px-3 py-1"
+                              >
+                                {chip}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {item.link ? (
+                          item.link.startsWith("#") ? (
+                            <a
+                              href={item.link}
+                              className="mt-4 inline-flex text-xs font-semibold text-slate-900 underline"
+                            >
+                              {item.linkLabel}
+                            </a>
+                          ) : (
+                            <Link
+                              to={item.link}
+                              className="mt-4 inline-flex text-xs font-semibold text-slate-900 underline"
+                            >
+                              {item.linkLabel}
+                            </Link>
+                          )
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Workflow focus</p>
+                  {topNextActions.length ? (
+                    <ul className="mt-3 space-y-3">
+                      {topNextActions.map((action, index) => (
+                        <li key={`${action.title}-${index}`} className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-sm font-semibold text-slate-900">{action.title}</p>
+                          <p className="text-xs text-slate-500">{action.detail}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-500">No workflow reminders right now.</p>
+                  )}
+                  {nextActions.length > topNextActions.length ? (
+                    <Link to="#workflow" className="mt-4 inline-flex text-xs font-semibold text-slate-900 underline">
+                      See full queue
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                {statCards.map((card, index) => (
+                  <InsightStat key={card.label} {...card} accent={index === 0 ? "bg-emerald-50" : "bg-white"} />
+                ))}
+              </div>
+            </section>
 
           <SectionShell
             id="actions"
@@ -449,6 +739,127 @@ export default function FirmDashboard() {
                 <QuickActionButton key={action.label} {...action} />
               ))}
             </div>
+          </SectionShell>
+
+          <SectionShell
+            id="concept-hosting"
+            eyebrow="Concept hosting"
+            title="Sync plan media"
+            description="Upload renders, walkthroughs, and plan docs so clients always see your latest work."
+            action={
+              <Link to="/portal/studio#concept-hosting" className="text-xs font-semibold text-slate-900 underline">
+                Open workspace
+              </Link>
+            }
+          >
+          <PlanUploadPanel
+            role="firm"
+            workspaceName="Design Studio"
+            initialPlans={planUploads}
+            onPlanChange={() => refreshDashboard(null, { silent: true })}
+          />
+          </SectionShell>
+
+          <SectionShell
+            id="firm-profile"
+            eyebrow="Design Studio"
+            title="Firm page sync"
+            description="Check what clients see on the firm listing and jump straight into the editor."
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                {renderRefreshButton("profile", "Sync profile")}
+                <Link to="/portal/studio#firm-profile" className="text-xs font-semibold text-slate-900 underline">
+                  Edit firm page
+                </Link>
+              </div>
+            }
+          >
+            {renderSectionError("profile", "This preview may be stale.")}
+            {profileRefreshing ? (
+              <SkeletonRows rows={3} heightClass="h-24" />
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
+              <div className="relative overflow-hidden rounded-2xl border border-slate-200">
+                <img
+                  src={firmHeroImage}
+                  alt={heroTitle}
+                  className="h-60 w-full object-cover"
+                  onError={(event) => applyFallback(event, firmHeroFallback)}
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-slate-900/80 via-slate-900/50 to-transparent" />
+                <div className="relative z-10 flex flex-col gap-3 p-5 text-white">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={firmAvatarImage}
+                      alt={`${firm?.name || "Design Studio"} avatar`}
+                      className="h-12 w-12 rounded-2xl border border-white/50 object-cover"
+                      onError={(event) => applyFallback(event, firmAvatarFallback)}
+                    />
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.35em] text-white/70">{heroBadgeLabel}</p>
+                      <h3 className="text-xl font-semibold">{heroTitle}</h3>
+                      {heroSubtext ? <p className="text-[11px] text-white/70">{heroSubtext}</p> : null}
+                    </div>
+                  </div>
+                  <p className="text-sm text-white/90">{heroDescription}</p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-white/80">
+                    {heroChips.map((chip) => (
+                      <span key={chip} className="rounded-full border border-white/40 px-3 py-1">
+                        {chip}
+                      </span>
+                    ))}
+                    {featuredPlan ? (
+                      <Link
+                        to="#concept-hosting"
+                        className="rounded-full border border-white/60 px-3 py-1 text-xs font-semibold hover:bg-white/10"
+                      >
+                        Manage uploads
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Profile stats</p>
+                    <dl className="mt-3 space-y-2 text-sm text-slate-600">
+                      {firmProfileStats.map((stat) => (
+                        <div key={stat.label} className="flex items-center justify-between gap-4">
+                          <dt className="font-semibold text-slate-900">{stat.label}</dt>
+                          <dd className="text-right">
+                            <p className="font-semibold text-slate-900">{stat.value}</p>
+                            <p className="text-xs text-slate-500">{stat.helper}</p>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Quick links</p>
+                    <Link
+                      to={firmPortfolioLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-slate-300"
+                    >
+                      View public page
+                    </Link>
+                    <Link
+                      to="/portal/studio#firm-profile"
+                      className="block rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-slate-300"
+                    >
+                      Edit firm profile
+                    </Link>
+                    <Link
+                      to="/portal/studio"
+                      className="block rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-slate-300"
+                    >
+                      Manage studios
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
           </SectionShell>
 
           <SectionShell
@@ -552,6 +963,24 @@ export default function FirmDashboard() {
             )}
           </SectionShell>
 
+          <ServicePackManager
+            ownerType="firm"
+            initialPacks={servicePacks}
+            heading="Service packs"
+            eyebrow="Client-ready bundles"
+            description="Publish curated packs that explain how to buy your studio without a long back-and-forth."
+            emptyMessage="No packs yet. Capture your offer structure so the marketplace team can route qualified demand."
+          />
+
+          <MeetingScheduler
+            ownerType="firm"
+            initialMeetings={meetings}
+            heading="Meeting schedule"
+            eyebrow="Buyer syncs"
+            description="Plan onboarding calls, design reviews, and procurement walkthroughs tied to each pack."
+            emptyMessage="Log upcoming syncs to keep internal ops aligned with the marketplace queue."
+          />
+
           <div id="feedback">
             <FeedbackPanel
               sectionLabel="Design Studio"
@@ -569,14 +998,11 @@ export default function FirmDashboard() {
               }
             />
           </div>
-
-          <PlanUploadPanel role="firm" workspaceName="Design Studio" />
-          <ServiceBundlePanel role="firm" workspaceName="Design Studio" />
         </div>
       </div>
     </div>
+  </div>
   );
 }
-
 
 

@@ -1,0 +1,18 @@
+export async function fetchMarketplaceAssociates(params = {}) {
+  try {
+    const { data } = await client.get("/marketplace/associates", { params });
+    const items = (data?.items || []).map(normalizeAssociate);
+    return {
+      items: filterAssociates(items, params),
+      meta: {
+        total: data?.meta?.total ?? items.length,
+        web3: data?.meta?.web3 || null,
+      },
+    };
+  } catch {
+    const filtered = filterAssociates(LOCAL_ASSOCIATES, params);
+    return { items: filtered, meta: { total: filtered.length, web3: null } };
+  }
+}
+
+

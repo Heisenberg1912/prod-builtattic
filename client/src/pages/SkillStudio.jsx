@@ -4,6 +4,7 @@ import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
 import AssociateProfileEditor from "../components/associate/AssociateProfileEditor.jsx";
 import AssociatePortfolioShowcase from "../components/associate/AssociatePortfolioShowcase.jsx";
+import PortfolioMediaPlayer from "../components/associate/PortfolioMediaPlayer.jsx";
 import { deriveProfileStats, formatCurrency } from "../utils/associateProfile.js";
 
 const heroStats = [
@@ -63,7 +64,14 @@ const SkillStudio = () => {
               </div>
             }
           />
-          <AssociatePortfolioShowcase profile={profile} />
+          <div className="space-y-6">
+            <AssociatePortfolioShowcase profile={profile} />
+            <PortfolioMediaPlayer
+              items={profile?.portfolioMedia}
+              title="Portfolio tiles"
+              subtitle="Click any tile to preview what buyers see on your Skill Studio page."
+            />
+          </div>
         </section>
 
         <section className="grid gap-6 md:grid-cols-3">

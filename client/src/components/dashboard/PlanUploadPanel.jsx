@@ -1,12 +1,13 @@
-import React, { useMemo, useState } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { toast } from "react-hot-toast";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, FileText, ExternalLink, Copy } from "lucide-react";
+import { uploadStudioAsset } from "../../services/uploads.js";
 import {
-  getWorkspaceCollections,
-  stringifyList,
-  upsertPlanUpload,
-  removePlanUpload,
-} from "../../utils/workspaceSync.js";
+  fetchPlanUploads,
+  createPlanUpload as createPlanUploadApi,
+  updatePlanUpload as updatePlanUploadApi,
+  deletePlanUpload as deletePlanUploadApi,
+} from "../../services/collaboration.js";
 
 const defaultPlanForm = () => ({
   id: null,
@@ -37,6 +38,16 @@ const splitList = (value) => {
     .filter(Boolean);
 };
 
+const stringifyList = (list = []) => (Array.isArray(list) ? list.join("\n") : "");
+
+const normalizeText = (value) => (typeof value === "string" ? value.trim() : "");
+
+const toNumberValue = (value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
 const numericString = (value) => {
   if (value === null || value === undefined || value === "") return "";
   const asNumber = Number(value);
@@ -56,20 +67,226 @@ const formatRate = (value) => {
   return Number.isFinite(numeric) ? `$${numeric}/sqft` : "-";
 };
 
-export default function PlanUploadPanel({ role = "associate", workspaceName = "Skill Studio" }) {
-  const [collections, setCollections] = useState(() => getWorkspaceCollections(role));
+const deriveAssetMeta = (value) => {
+  if (!value) return { fileName: "Uploaded file", host: null };
+  try {
+    const parsed = new URL(value);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const fileName = decodeURIComponent(segments.pop() || parsed.hostname || "Uploaded file");
+    return {
+      fileName,
+      host: parsed.hostname?.replace(/^www\./, "") || null,
+    };
+  } catch {
+    return {
+      fileName: value,
+      host: null,
+    };
+  }
+};
+
+const truncateLabel = (value, limit = 42) => {
+  if (!value) return value;
+  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+};
+
+export default function PlanUploadPanel({
+  role = "associate",
+  workspaceName = "Skill Studio",
+  initialPlans = [],
+  onPlanChange,
+}) {
+  const ownerType = role === "firm" ? "firm" : "associate";
+  const [planUploads, setPlanUploads] = useState(initialPlans || []);
   const [form, setForm] = useState(() => defaultPlanForm());
   const [saving, setSaving] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+  const [mediaUploads, setMediaUploads] = useState({
+    conceptPlan: false,
+    renderImages: false,
+    walkthrough: false,
+  });
+  const [linkInputsVisible, setLinkInputsVisible] = useState({
+    conceptPlan: false,
+    walkthrough: false,
+  });
 
-  const planUploads = useMemo(() => collections.planUploads || [], [collections]);
+  const conceptPlanInputRef = useRef(null);
+  const renderImagesInputRef = useRef(null);
+  const walkthroughInputRef = useRef(null);
+
+  const planMediaKindBase = role === "firm" ? "firm_plan" : "associate_plan";
+
+  useEffect(() => {
+    setPlanUploads(initialPlans || []);
+  }, [initialPlans]);
+
+  const loadPlanUploads = useCallback(async () => {
+    setListLoading(true);
+    try {
+      const response = await fetchPlanUploads({ ownerType });
+      if (Array.isArray(response?.planUploads)) {
+        setPlanUploads(response.planUploads);
+      }
+    } catch (error) {
+      console.error("plan_upload_fetch_error", error);
+      toast.error("Unable to load plan uploads");
+    } finally {
+      setListLoading(false);
+    }
+  }, [ownerType]);
+
+  useEffect(() => {
+    loadPlanUploads();
+  }, [loadPlanUploads]);
+
+  const renderAssetPreview = (field, url, { label }) => {
+    if (!url) return null;
+    const meta = deriveAssetMeta(url);
+    return (
+      <div className="mt-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+            <FileText size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-900">{truncateLabel(meta.fileName)}</p>
+            {meta.host ? <p className="text-xs text-slate-500">{meta.host}</p> : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
+            >
+              <ExternalLink size={14} />
+              View
+            </a>
+            <button
+              type="button"
+              onClick={() => handleCopyLink(url)}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
+            >
+              <Copy size={14} />
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => handleClearAsset(field)}
+              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:border-rose-300"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">{label}</p>
+      </div>
+    );
+  };
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleCopyLink = async (value) => {
+    if (!value) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        toast.success("Link copied to clipboard");
+        return;
+      }
+    } catch (error) {
+      console.error("asset_copy_error", error);
+    }
+    toast.error("Unable to copy link");
+  };
+
+  const handleClearAsset = (field) => {
+    setForm((prev) => ({ ...prev, [field]: "" }));
+    setLinkInputsVisible((prev) => ({ ...prev, [field]: false }));
+  };
+
+  const toggleLinkInput = (field) => {
+    setLinkInputsVisible((prev) => ({ ...prev, [field]: !prev[field] }));
+  };
+
+  const notifyPlanChange = () => {
+    if (typeof onPlanChange === "function") {
+      onPlanChange();
+    }
+  };
+
   const resetForm = () => {
     setForm(defaultPlanForm());
+  };
+
+  const handlePlanMediaUpload = async (field, files, { secure = false, kindSuffix } = {}) => {
+    if (!files?.length) return;
+    setMediaUploads((prev) => ({ ...prev, [field]: true }));
+    try {
+      const uploads = [];
+      for (const file of files) {
+        const { url } = await uploadStudioAsset(file, {
+          kind: `${planMediaKindBase}_${kindSuffix || field}`,
+          secure,
+        });
+        if (!url) {
+          throw new Error("Upload failed. Try another file.");
+        }
+        uploads.push(url);
+      }
+      setForm((prev) => {
+        if (field === "renderImages") {
+          const currentList = splitList(prev.renderImages);
+          const combined = [...currentList, ...uploads];
+          return { ...prev, renderImages: combined.join("\n") };
+        }
+        return { ...prev, [field]: uploads[0] || "" };
+      });
+      toast.success(
+        uploads.length > 1
+          ? `${uploads.length} assets uploaded`
+          : "Asset uploaded"
+      );
+    } catch (error) {
+      console.error("plan_media_upload_error", error);
+      toast.error(error?.message || "Unable to upload media.");
+    } finally {
+      setMediaUploads((prev) => ({ ...prev, [field]: false }));
+    }
+  };
+
+  const handleRenderMediaUpload = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length) return;
+    await handlePlanMediaUpload("renderImages", files, {
+      secure: false,
+      kindSuffix: "render",
+    });
+  };
+
+  const handleConceptPlanUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    await handlePlanMediaUpload("conceptPlan", [file], {
+      secure: true,
+      kindSuffix: "concept",
+    });
+  };
+
+  const handleWalkthroughUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    await handlePlanMediaUpload("walkthrough", [file], {
+      secure: false,
+      kindSuffix: "walkthrough",
+    });
   };
 
   const handleSubmit = async (event) => {
@@ -84,15 +301,38 @@ export default function PlanUploadPanel({ role = "associate", workspaceName = "S
     }
     setSaving(true);
     try {
-      const nextPlans = upsertPlanUpload(role, {
-        ...form,
-        renderImages: form.renderImages,
-        materials: form.materials,
-        tags: form.tags,
-        climateSuitability: form.climate,
-      });
-      setCollections((prev) => ({ ...prev, planUploads: nextPlans }));
-      toast.success(`Plan synced to ${workspaceName}`);
+      const payload = {
+        ownerType,
+        projectTitle: normalizeText(form.projectTitle),
+        category: normalizeText(form.category),
+        subtype: normalizeText(form.subtype),
+        primaryStyle: normalizeText(form.primaryStyle),
+        conceptPlan: normalizeText(form.conceptPlan),
+        renderImages: splitList(form.renderImages),
+        walkthrough: normalizeText(form.walkthrough),
+        areaSqft: toNumberValue(form.areaSqft),
+        floors: toNumberValue(form.floors),
+        materials: splitList(form.materials),
+        climate: normalizeText(form.climate),
+        designRate: toNumberValue(form.designRate),
+        constructionCost: toNumberValue(form.constructionCost),
+        licenseType: normalizeText(form.licenseType),
+        delivery: normalizeText(form.delivery),
+        description: normalizeText(form.description),
+        tags: splitList(form.tags),
+      };
+      const response = form.id
+        ? await updatePlanUploadApi(form.id, payload)
+        : await createPlanUploadApi(payload);
+      const savedPlan = response?.planUpload;
+      if (savedPlan) {
+        setPlanUploads((prev) => {
+          const next = prev.filter((entry) => entry.id !== savedPlan.id);
+          return [savedPlan, ...next];
+        });
+        toast.success(`Plan synced to ${workspaceName}`);
+        notifyPlanChange();
+      }
       resetForm();
     } catch (error) {
       console.error("plan_sync_error", error);
@@ -125,10 +365,17 @@ export default function PlanUploadPanel({ role = "associate", workspaceName = "S
     });
   };
 
-  const handleDelete = (plan) => {
-    const nextPlans = removePlanUpload(role, plan.id);
-    setCollections((prev) => ({ ...prev, planUploads: nextPlans }));
-    toast.success("Plan removed");
+  const handleDelete = async (plan) => {
+    if (!plan?.id) return;
+    try {
+      await deletePlanUploadApi(plan.id, { ownerType });
+      setPlanUploads((prev) => prev.filter((entry) => entry.id !== plan.id));
+      toast.success("Plan removed");
+      notifyPlanChange();
+    } catch (error) {
+      console.error("plan_delete_error", error);
+      toast.error("Unable to delete plan");
+    }
   };
 
   return (
@@ -185,20 +432,68 @@ export default function PlanUploadPanel({ role = "associate", workspaceName = "S
               placeholder="Tropical modern"
             />
           </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Concept plan (PDF / DWG link)
+          <div className="text-sm font-semibold text-slate-700">
+            <div className="flex items-center justify-between gap-2">
+              <span>Concept plan (PDF / DWG link)</span>
+              <button
+                type="button"
+                onClick={() => conceptPlanInputRef.current?.click()}
+                disabled={mediaUploads.conceptPlan}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {mediaUploads.conceptPlan ? "Uploading..." : "Upload file"}
+              </button>
+            </div>
+            {form.conceptPlan
+              ? renderAssetPreview("conceptPlan", form.conceptPlan, {
+                  label: "Secure link generated after upload",
+                })
+              : null}
+            {form.conceptPlan ? (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => toggleLinkInput("conceptPlan")}
+                  className="text-xs font-semibold text-slate-600 underline"
+                >
+                  {linkInputsVisible.conceptPlan ? "Hide raw link" : "Paste link manually"}
+                </button>
+              </div>
+            ) : null}
+            {(!form.conceptPlan || linkInputsVisible.conceptPlan) && (
+              <input
+                name="conceptPlan"
+                value={form.conceptPlan}
+                onChange={handleInputChange}
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder="https://files..."
+              />
+            )}
+            <p className="mt-1 text-xs font-normal text-slate-500">
+              Upload a PDF/DWG or paste a hosted link.
+            </p>
             <input
-              name="conceptPlan"
-              value={form.conceptPlan}
-              onChange={handleInputChange}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              placeholder="https://files..."
+              ref={conceptPlanInputRef}
+              type="file"
+              accept=".pdf,.dwg,.dxf,.zip,.rar,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg"
+              className="hidden"
+              onChange={handleConceptPlanUpload}
             />
-          </label>
+          </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="text-sm font-semibold text-slate-700">
-            Render images (one per line)
+          <div className="text-sm font-semibold text-slate-700">
+            <div className="flex items-center justify-between gap-2">
+              <span>Render images (one per line)</span>
+              <button
+                type="button"
+                onClick={() => renderImagesInputRef.current?.click()}
+                disabled={mediaUploads.renderImages}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {mediaUploads.renderImages ? "Uploading..." : "Upload media"}
+              </button>
+            </div>
             <textarea
               name="renderImages"
               value={form.renderImages}
@@ -207,17 +502,66 @@ export default function PlanUploadPanel({ role = "associate", workspaceName = "S
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               placeholder={"https://example.com/render-1\nhttps://example.com/render-2"}
             />
-          </label>
-          <label className="text-sm font-semibold text-slate-700">
-            Walkthrough (optional)
+            <p className="mt-1 text-xs font-normal text-slate-500">
+              Upload images or paste hosted URLs. Multiple uploads append automatically.
+            </p>
             <input
-              name="walkthrough"
-              value={form.walkthrough}
-              onChange={handleInputChange}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              placeholder="Video or twin link"
+              ref={renderImagesInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleRenderMediaUpload}
             />
-          </label>
+          </div>
+          <div className="text-sm font-semibold text-slate-700">
+            <div className="flex items-center justify-between gap-2">
+              <span>Walkthrough (optional)</span>
+              <button
+                type="button"
+                onClick={() => walkthroughInputRef.current?.click()}
+                disabled={mediaUploads.walkthrough}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {mediaUploads.walkthrough ? "Uploading..." : "Upload clip"}
+              </button>
+            </div>
+            {form.walkthrough
+              ? renderAssetPreview("walkthrough", form.walkthrough, {
+                  label: "Link used for walkthrough playback",
+                })
+              : null}
+            {form.walkthrough ? (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => toggleLinkInput("walkthrough")}
+                  className="text-xs font-semibold text-slate-600 underline"
+                >
+                  {linkInputsVisible.walkthrough ? "Hide raw link" : "Paste link manually"}
+                </button>
+              </div>
+            ) : null}
+            {(!form.walkthrough || linkInputsVisible.walkthrough) && (
+              <input
+                name="walkthrough"
+                value={form.walkthrough}
+                onChange={handleInputChange}
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                placeholder="Video or twin link"
+              />
+            )}
+            <p className="mt-1 text-xs font-normal text-slate-500">
+              Upload MP4/WebM clips or paste an external walkthrough URL.
+            </p>
+            <input
+              ref={walkthroughInputRef}
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={handleWalkthroughUpload}
+            />
+          </div>
         </div>
         <div className="grid gap-4 md:grid-cols-4">
           <label className="text-sm font-semibold text-slate-700">
@@ -360,7 +704,13 @@ export default function PlanUploadPanel({ role = "associate", workspaceName = "S
 
       <div className="space-y-3">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Hosted plans</p>
-        {planUploads.length === 0 ? (
+        {listLoading ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={`plan-skeleton-${index}`} className="h-32 rounded-2xl bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        ) : planUploads.length === 0 ? (
           <p className="text-sm text-slate-500">No plans synced yet. Add your first concept to expose it inside {workspaceName}.</p>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">

@@ -8,8 +8,13 @@ const baseFieldClasses =
 
 const joinClasses = (extra = "") => [baseFieldClasses, extra].filter(Boolean).join(" ");
 
-const Input = (props) => <input {...props} className={joinClasses(props.className)} />;
-const TextArea = (props) => <textarea {...props} className={joinClasses(props.className)} />;
+const Input = ({ className = "", ...props }) => <input {...props} className={joinClasses(className)} />;
+const TextArea = ({ className = "", ...props }) => <textarea {...props} className={joinClasses(className)} />;
+const Select = ({ className = "", children, ...props }) => (
+  <select {...props} className={joinClasses(className)}>
+    {children}
+  </select>
+);
 const Hint = ({ children }) => <p className="text-xs text-slate-500">{children}</p>;
 
 const SectionCard = ({ title, description, children }) => (
@@ -104,6 +109,10 @@ const StudioForm = ({
     const value = event?.target?.value;
     onChange((prev) => ({ ...prev, [key]: value }));
   };
+  const handleCheckboxChange = (key) => (event) => {
+    const { checked } = event?.target || {};
+    onChange((prev) => ({ ...prev, [key]: checked }));
+  };
 
   const previewHref = form.slug ? `/studio/${form.slug}` : null;
   const intentMeta = intent ? INTENT_COPY[intent] : null;
@@ -186,6 +195,156 @@ const StudioForm = ({
                   onChange={onGalleryUpload}
                 />
               </div>
+            </FormField>
+          </SectionCard>
+
+          <SectionCard title="Commercials & taxonomy" description="Pricing, style, and marketplace filters">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Pricing (total)">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.price}
+                  onChange={handleChange("price")}
+                  placeholder="180000"
+                />
+              </FormField>
+              <FormField label="Currency">
+                <Input value={form.currency} onChange={handleChange("currency")} placeholder="USD" />
+              </FormField>
+              <FormField label="Price per sq ft" hint="Shown on the detail card if provided">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.priceSqft}
+                  onChange={handleChange("priceSqft")}
+                  placeholder="220"
+                />
+              </FormField>
+              <FormField label="Style" hint="Eg. Tropical modern, Brutalist">
+                <Input value={form.style} onChange={handleChange("style")} placeholder="Low-carbon contemporary" />
+              </FormField>
+            </div>
+            <FormField label="Categories" hint="Comma separated tags buyers can filter on">
+              <Input
+                value={form.categories}
+                onChange={handleChange("categories")}
+                placeholder="Residential, Prototype"
+              />
+            </FormField>
+            <FormField label="Tags" hint="Comma separated micro attributes like prefab, BIM ready">
+              <Input value={form.tags} onChange={handleChange("tags")} placeholder="Prefab, BIM ready" />
+            </FormField>
+            <FormField label="Highlights" hint="One bullet per line">
+              <TextArea value={form.highlights} onChange={handleChange("highlights")} rows={3} />
+            </FormField>
+          </SectionCard>
+
+          <SectionCard title="Specifications" description="Sizing and room mix showcased on the listing page">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Built area">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.areaSqft}
+                  onChange={handleChange("areaSqft")}
+                  placeholder="2400"
+                />
+              </FormField>
+              <FormField label="Plot size">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.plotAreaSqft}
+                  onChange={handleChange("plotAreaSqft")}
+                  placeholder="3200"
+                />
+              </FormField>
+            </div>
+            <FormField label="Area unit">
+              <Select value={form.areaUnit} onChange={handleChange("areaUnit")}>
+                <option value="sq ft">sq ft</option>
+                <option value="m2">m²</option>
+              </Select>
+            </FormField>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FormField label="Bedrooms">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.bedrooms}
+                  onChange={handleChange("bedrooms")}
+                  placeholder="3"
+                />
+              </FormField>
+              <FormField label="Bathrooms">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.bathrooms}
+                  onChange={handleChange("bathrooms")}
+                  placeholder="2"
+                />
+              </FormField>
+              <FormField label="Floors">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.floors}
+                  onChange={handleChange("floors")}
+                  placeholder="2"
+                />
+              </FormField>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Location & logistics" description="Help buyers understand where you deliver from">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FormField label="City">
+                <Input value={form.city} onChange={handleChange("city")} placeholder="Bengaluru" />
+              </FormField>
+              <FormField label="Country">
+                <Input value={form.country} onChange={handleChange("country")} placeholder="India" />
+              </FormField>
+              <FormField label="Timezone">
+                <Input value={form.timezone} onChange={handleChange("timezone")} placeholder="UTC+05:30" />
+              </FormField>
+            </div>
+            <FormField label="Delivery notes" hint="Describe what the buyer receives after purchase">
+              <TextArea value={form.deliveryNotes} onChange={handleChange("deliveryNotes")} rows={3} />
+            </FormField>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Fulfilment type">
+                <Input value={form.fulfilmentType} onChange={handleChange("fulfilmentType")} placeholder="Digital kit" />
+              </FormField>
+              <FormField label="Handover method">
+                <Input value={form.handoverMethod} onChange={handleChange("handoverMethod")} placeholder="Virtual walkthrough" />
+              </FormField>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Lead time (weeks)">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.leadTimeWeeks}
+                  onChange={handleChange("leadTimeWeeks")}
+                  placeholder="6"
+                />
+              </FormField>
+              <FormField label="Includes installation?">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.includesInstallation)}
+                    onChange={handleCheckboxChange("includesInstallation")}
+                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                  />
+                  On-site partner install available
+                </label>
+              </FormField>
+            </div>
+            <FormField label="Delivery checklist" hint="One line per deliverable (spec set, BIM, 3D, etc.)">
+              <TextArea value={form.deliveryItems} onChange={handleChange("deliveryItems")} rows={3} />
             </FormField>
           </SectionCard>
         </div>

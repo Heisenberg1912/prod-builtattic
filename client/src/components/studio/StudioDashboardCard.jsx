@@ -28,10 +28,27 @@ const StudioDashboardCard = ({ studio, onEdit }) => {
   const navigate = useNavigate();
   const heroImage = getStudioImageUrl(studio);
   const price = formatCurrency(studio?.price, studio?.currency || "USD");
-  const priceSqft = studio?.priceSqft ? `${studio.priceSqft.toLocaleString()} ${studio.currency || "USD"} / sq ft` : null;
-  const updatedAt = studio?.updatedAt ? new Date(studio.updatedAt).toLocaleDateString() : "—";
+  const priceSqft =
+    studio?.priceSqft && Number.isFinite(Number(studio.priceSqft))
+      ? `${Number(studio.priceSqft).toLocaleString()} ${studio.currency || "USD"} / ${studio?.areaUnit || "sq ft"}`
+      : null;
+  const updatedAt = studio?.updatedAt ? new Date(studio.updatedAt).toLocaleDateString() : "-";
   const status = (studio?.status || "draft").toUpperCase();
   const previewHref = studio?.slug ? `/studio/${studio.slug}` : null;
+  const hasSpecs =
+    Number.isFinite(Number(studio?.areaSqft)) ||
+    Number.isFinite(Number(studio?.bedrooms)) ||
+    Number.isFinite(Number(studio?.bathrooms)) ||
+    Number.isFinite(Number(studio?.floors));
+  const hasPrograms = Array.isArray(studio?.programs) && studio.programs.length > 0;
+  const completenessChecks = [
+    { label: "Hero image", ok: Boolean(heroImage), helper: "Add a hero image to lift CTR.", href: buildEditorLink(studio, "gallery") },
+    { label: "Pricing", ok: Boolean(price || priceSqft), helper: "Share total price or rate card.", href: buildEditorLink(studio, "pricing") },
+    { label: "Specs", ok: hasSpecs, helper: "Bedrooms, baths, plot size, floors.", href: buildEditorLink(studio, "details") },
+    { label: "Programs", ok: hasPrograms, helper: "List what this studio sells.", href: buildEditorLink(studio, "products") },
+  ];
+  const incompleteChecks = completenessChecks.filter((entry) => !entry.ok);
+
   const handleCardClick = (event) => {
     if (!previewHref) return;
     if (event.target.closest("a, button")) return;
@@ -119,6 +136,38 @@ const StudioDashboardCard = ({ studio, onEdit }) => {
             {studio?.style ? (
               <span className="rounded-full border border-slate-200 px-3 py-1">Style: {studio.style}</span>
             ) : null}
+          </div>
+
+          <div
+            className={`rounded-2xl border px-4 py-3 text-sm ${
+              incompleteChecks.length
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-emerald-200 bg-emerald-50 text-emerald-900"
+            }`}
+          >
+            {incompleteChecks.length ? (
+              <>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em]">Needs attention</p>
+                <ul className="mt-2 space-y-1">
+                  {incompleteChecks.map((item) => (
+                    <li key={item.label} className="flex items-center justify-between gap-2">
+                      <span>{item.label}</span>
+                      <Link
+                        to={item.href}
+                        className="text-xs font-semibold underline underline-offset-2"
+                      >
+                        Fix
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em]">Launch ready</p>
+                <p className="mt-1 text-sm">All key details are filled. Keep the gallery fresh to stay featured.</p>
+              </>
+            )}
           </div>
 
           <div className="grid gap-2 md:grid-cols-2">

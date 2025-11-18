@@ -1,0 +1,27 @@
+export async function fetchStudios(params = {}) {
+  try {
+    const { data } = await client.get("/marketplace/studios", { params });
+    const items = decorateStudiosWithProfiles((data?.items || []).map(normalizeStudio));
+    const meta = data?.meta || {};
+    return {
+      items,
+      meta: {
+        total: meta.total ?? items.length,
+        facets: meta.facets || buildStudioFacets(items),
+        web3: meta.web3 || null,
+      },
+    };
+  } catch {
+    const filtered = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
+    return {
+      items: filtered,
+      meta: {
+        total: filtered.length,
+        facets: buildStudioFacets(filtered),
+        web3: null,
+      },
+    };
+  }
+}
+
+

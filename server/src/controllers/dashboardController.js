@@ -8,6 +8,9 @@ import Product from '../models/Product.js';
 import Asset from '../models/Asset.js';
 import User from '../models/User.js';
 import Rating from '../models/Rating.js';
+import ServicePack from '../models/ServicePack.js';
+import MeetingSchedule from '../models/MeetingSchedule.js';
+import PlanUpload from '../models/PlanUpload.js';
 import {
   ensureAssociateProfile as provisionAssociateProfile,
   ensureFirmMembership as provisionFirmMembership,
@@ -133,6 +136,52 @@ const mapAsset = (asset) => ({
   secure: asset.secure,
 });
 
+const mapServicePackEntry = (pack) => ({
+  id: pack._id.toString(),
+  title: pack.title,
+  summary: pack.summary || '',
+  price: pack.price ?? null,
+  currency: pack.currency || 'USD',
+  deliverables: Array.isArray(pack.deliverables) ? pack.deliverables : [],
+  duration: pack.duration || '',
+  availability: pack.availability || '',
+  meetingPrep: pack.meetingPrep || '',
+  status: pack.status || 'draft',
+  updatedAt: pack.updatedAt,
+});
+
+const mapMeetingScheduleEntry = (meeting) => ({
+  id: meeting._id.toString(),
+  title: meeting.title,
+  status: meeting.status,
+  scheduledFor: meeting.scheduledFor,
+  durationMinutes: meeting.durationMinutes ?? null,
+  meetingLink: meeting.meetingLink || '',
+  attendees: Array.isArray(meeting.attendees) ? meeting.attendees : [],
+  agenda: meeting.agenda || '',
+});
+
+const mapPlanUploadEntry = (plan) => ({
+  id: plan._id.toString(),
+  projectTitle: plan.projectTitle,
+  category: plan.category || '',
+  subtype: plan.subtype || '',
+  primaryStyle: plan.primaryStyle || '',
+  conceptPlan: plan.conceptPlan || '',
+  renderImages: Array.isArray(plan.renderImages) ? plan.renderImages : [],
+  walkthrough: plan.walkthrough || '',
+  areaSqft: plan.areaSqft ?? null,
+  floors: plan.floors ?? null,
+  materials: Array.isArray(plan.materials) ? plan.materials : [],
+  climate: plan.climate || '',
+  designRate: plan.designRate ?? null,
+  constructionCost: plan.constructionCost ?? null,
+  licenseType: plan.licenseType || '',
+  delivery: plan.delivery || '',
+  description: plan.description || '',
+  tags: Array.isArray(plan.tags) ? plan.tags : [],
+});
+
 const obfuscateAuthor = (email) => {
   if (!email) return 'Marketplace buyer';
   const [name, domain] = email.split('@');
@@ -207,11 +256,30 @@ export const getAssociateDashboard = async (req, res, next) => {
   try {
     if (!req.user?._id) throw httpError(401, 'Unauthorized');
     await ensureAssociateProfile(req.user._id);
-    const [profile, leads, orders] = await Promise.all([
-      AssociateProfile.findOne({ user: req.user._id }).lean(),
-      Lead.find({ ownerSalesId: req.user._id }).sort({ updatedAt: -1 }).limit(6).lean(),
-      Order.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(6).lean(),
-    ]);
+    const profilePromise = AssociateProfile.findOne({ user: req.user._id }).lean();
+    const leadsPromise = Lead.find({ ownerSalesId: req.user._id }).sort({ updatedAt: -1 }).limit(6).lean();
+    const ordersPromise = Order.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(6).lean();
+    const [profile, leads, orders] = await Promise.all([profilePromise, leadsPromise, ordersPromise]);
+
+    let servicePacks = [];
+    let meetings = [];
+    let planUploads = [];
+    if (profile?._id) {
+      [servicePacks, meetings, planUploads] = await Promise.all([
+        ServicePack.find({ ownerType: 'associate', ownerId: profile._id })
+          .sort({ updatedAt: -1 })
+          .limit(6)
+          .lean(),
+        MeetingSchedule.find({ ownerType: 'associate', ownerId: profile._id })
+          .sort({ scheduledFor: 1 })
+          .limit(6)
+          .lean(),
+        PlanUpload.find({ ownerType: 'associate', ownerId: profile._id })
+          .sort({ updatedAt: -1 })
+          .limit(12)
+          .lean(),
+      ]);
+    }
 
     const metrics = {
       profileCompleteness: calculateCompleteness(profile),
@@ -235,6 +303,9 @@ export const getAssociateDashboard = async (req, res, next) => {
         note: profile?.availability || null,
       },
       feedback,
+      servicePacks: servicePacks.map(mapServicePackEntry),
+      meetings: meetings.map(mapMeetingScheduleEntry),
+      planUploads: planUploads.map(mapPlanUploadEntry),
     };
 
     res.json(response);
@@ -278,6 +349,11 @@ export const getFirmDashboard = async (req, res, next) => {
     });
 
     const feedback = await buildFeedbackSummary('firm', firmId, firm);
+    const [servicePacks, meetings, planUploads] = await Promise.all([
+      ServicePack.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(6).lean(),
+      MeetingSchedule.find({ ownerType: 'firm', ownerId: firmId }).sort({ scheduledFor: 1 }).limit(6).lean(),
+      PlanUpload.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(12).lean(),
+    ]);
 
     res.json({
       ok: true,
@@ -294,6 +370,9 @@ export const getFirmDashboard = async (req, res, next) => {
       documents: assets.map(mapAsset),
       orders: mappedOrders,
       feedback,
+      servicePacks: servicePacks.map(mapServicePackEntry),
+      meetings: meetings.map(mapMeetingScheduleEntry),
+      planUploads: planUploads.map(mapPlanUploadEntry),
       nextActions: [
         {
           title: 'Publish a new design bundle',

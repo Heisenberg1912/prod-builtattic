@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import Footer from "../components/Footer.jsx";
+import PortfolioMediaPlayer from "../components/associate/PortfolioMediaPlayer.jsx";
 import { fetchMarketplaceAssociateProfile } from "../services/marketplace.js";
 
 const formatCurrency = (value, currency) => {
@@ -50,99 +51,16 @@ const formatAddonPrice = (addon, fallbackCurrency) => {
   );
 };
 
-const detectMediaType = (url = "") => {
-  const source = (url || "").toLowerCase();
-  if (source.includes("youtube.com") || source.includes("vimeo.com")) return "embed";
-  if (source.match(/\.(mp4|mov|webm)$/)) return "video";
-  if (source.match(/\.(pdf|ppt|pptx|doc|docx)$/)) return "document";
-  if (source.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return "image";
-  return "document";
+const formatLinkLabel = (url) => {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname?.replace(/^www\./, "") || parsed.href;
+  } catch {
+    return url.replace(/^https?:\/\//i, "");
+  }
 };
 
-const PortfolioCarousel = ({ items }) => {
-  const mediaItems = Array.isArray(items) ? items.filter((item) => item?.mediaUrl) : [];
-  const [index, setIndex] = useState(0);
-  if (!mediaItems.length) {
-    return (
-      <div className="border-2 border-dashed border-gray-300 rounded-xl h-32 flex items-center justify-center bg-gray-50">
-        <span className="text-gray-400">Portfolio coming soon.</span>
-      </div>
-    );
-  }
-  const current = mediaItems[index];
-  const mediaType = detectMediaType(current.mediaUrl);
-  return (
-    <div className="space-y-3">
-      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-black">
-        {mediaType === "embed" ? (
-          <iframe
-            src={current.mediaUrl}
-            title={current.title || `Portfolio media ${index + 1}`}
-            className="w-full h-64 md:h-72"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        ) : mediaType === "video" ? (
-          <video controls className="w-full h-64 md:h-72 object-cover">
-            <source src={current.mediaUrl} />
-          </video>
-        ) : mediaType === "image" ? (
-          <img
-            src={current.mediaUrl}
-            alt={current.title || `Portfolio media ${index + 1}`}
-            className="w-full h-64 md:h-72 object-cover"
-          />
-        ) : (
-          <div className="w-full h-64 md:h-72 flex flex-col items-center justify-center bg-white text-slate-700">
-            <p className="text-sm font-semibold">Document preview unavailable</p>
-            <a
-              href={current.mediaUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
-            >
-              Open document
-            </a>
-          </div>
-        )}
-        {mediaItems.length > 1 && (
-          <>
-            <button
-              type="button"
-              onClick={() => setIndex((prev) => (prev === 0 ? mediaItems.length - 1 : prev - 1))}
-              className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-gray-700 shadow hover:bg-white"
-            >
-              Prev
-            </button>
-            <button
-              type="button"
-              onClick={() => setIndex((prev) => (prev === mediaItems.length - 1 ? 0 : prev + 1))}
-              className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-gray-700 shadow hover:bg-white"
-            >
-              Next
-            </button>
-          </>
-        )}
-      </div>
-      <div>
-        {current.title ? <p className="text-base font-semibold text-gray-900">{current.title}</p> : null}
-        {current.description ? <p className="text-sm text-gray-600">{current.description}</p> : null}
-      </div>
-      {mediaItems.length > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          {mediaItems.map((_, dotIndex) => (
-            <button
-              key={`media-dot-${dotIndex}`}
-              type="button"
-              onClick={() => setIndex(dotIndex)}
-              className={`h-2 w-2 rounded-full transition ${dotIndex === index ? "bg-blue-600" : "bg-gray-300 hover:bg-gray-400"}`}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const AssociatePortfolio = () => {
   const routerLocation = useLocation();
@@ -286,6 +204,8 @@ const AssociatePortfolio = () => {
       warranty: associate.warranty || null,
       prepChecklist: associate.prepChecklist || [],
       contactEmail: associate.user?.email || associate.contactEmail || null,
+      keyProjects: Array.isArray(associate.keyProjects) ? associate.keyProjects : [],
+      portfolioLinks: Array.isArray(associate.portfolioLinks) ? associate.portfolioLinks : [],
     };
   }, [associate]);
 
@@ -341,6 +261,8 @@ const AssociatePortfolio = () => {
     warranty,
     prepChecklist,
     contactEmail,
+    keyProjects,
+    portfolioLinks,
   } = view;
 
   const renderChipGroup = (label, items) => {
@@ -380,307 +302,448 @@ const AssociatePortfolio = () => {
       : null,
     booking?.bufferMinutes ? `${booking.bufferMinutes} min buffer` : null,
   ].filter(Boolean);
+  const projectSpotlights = Array.isArray(keyProjects) ? keyProjects.slice(0, 3) : [];
+  const resourceLinks = Array.isArray(portfolioLinks) ? portfolioLinks.filter(Boolean) : [];
 
   return (
-    <div className="bg-gray-50 min-h-screen flex flex-col font-sans">
-      <div className="relative w-full h-80 md:h-[420px]">
-        <img src={cover} alt={title} className="w-full h-full object-cover rounded-b-xl" />
-        <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center">
-          <img
-            src={profile}
-            alt="Profile"
-            className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-white object-cover bg-gray-200 mb-4"
-          />
-          <h1 className="text-3xl md:text-5xl font-bold text-white text-center">{title}</h1>
+    <div className="bg-gradient-to-b from-white via-slate-50 to-white min-h-screen flex flex-col text-slate-900">
+      <div className="relative isolate">
+        <div className="absolute inset-0">
+          <img src={cover} alt={title} className="h-[360px] w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-white/80 to-white" />
         </div>
-      </div>
-
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-8 space-y-10">
-        <div className="bg-white shadow-md rounded-xl p-6 space-y-6">
-          <div className="flex flex-wrap gap-4">
-            {type && (
-              <span className="bg-stone-100 text-stone-800 px-4 py-2 rounded-full text-sm font-medium">
-                {type}
-              </span>
-            )}
-            {location && (
-              <span className="bg-stone-100 text-stone-800 px-4 py-2 rounded-full text-sm font-medium">
-                {location}
-              </span>
-            )}
-            {price && (
-              <span className="bg-stone-100 text-stone-800 px-4 py-2 rounded-full text-sm font-medium">
-                {price}
-              </span>
-            )}
-          </div>
-          <p className="text-stone-700 text-base md:text-lg leading-relaxed">
-            <span className="font-semibold">Bio: </span>
-            {bio}
-          </p>
-          {serviceBadges.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-stone-100">
-              {serviceBadges.map((badge, index) => (
-                <span
-                  key={`${badge}-${index}`}
-                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
-                >
-                  {badge}
-                </span>
-              ))}
-            </div>
-          )}
-          {contactEmail && (
-            <a
-              href={`mailto:${contactEmail}`}
-              className="inline-flex items-center text-sm font-medium text-slate-700 underline decoration-dotted"
-            >
-              Contact: {contactEmail}
-            </a>
-          )}
-        </div>
-
-        {stats.length > 0 && (
-          <section className="bg-white p-6 rounded-xl shadow-md space-y-4">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900">Snapshot</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {stats.map((stat) => (
-                <div
-                  key={stat.label}
-                  className="rounded-lg border border-stone-200 bg-stone-50 p-4"
-                >
-                  <p className="text-xs uppercase tracking-wide text-stone-500">
-                    {stat.label}
-                  </p>
-                  <p className="text-lg font-semibold text-stone-900">{stat.value}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {hasCapabilities && (
-          <section className="bg-white p-6 rounded-xl shadow-md space-y-6">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900">
-              Capabilities & Toolset
-            </h2>
-            <div className="grid gap-6 md:grid-cols-2">
-              {renderChipGroup("Specialisations", specialisations)}
-              {renderChipGroup("Expertise & Focus", expertise)}
-              {renderChipGroup("Design Software", softwares)}
-              {renderChipGroup("Languages", languages)}
-              {renderChipGroup("Certifications", certifications)}
-            </div>
-          </section>
-        )}
-
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-4">Portfolio</h2>
-          <PortfolioCarousel items={portfolioMedia} />
-        </div>
-
-        {deliverables.length > 0 && (
-          <section className="bg-white p-6 rounded-xl shadow-md">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-4">
-              Key Deliverables
-            </h2>
-            <ul className="space-y-2 text-stone-700">
-              {deliverables.map((item, index) => (
-                <li key={`${item}-${index}`} className="flex items-start gap-2">
-                  <span className="mt-1 h-2 w-2 rounded-full bg-stone-400" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        <div className="bg-white p-6 rounded-xl shadow-md">
-          <h2 className="text-lg md:text-xl font-semibold text-gray-900 mb-4">
-            Work History
-          </h2>
-          {workHistory && workHistory.length > 0 ? (
-            <ul className="space-y-4">
-              {workHistory.map((item, idx) => (
-                <li key={idx} className="bg-stone-50 p-4 rounded-xl shadow-sm space-y-1">
-                  <div className="font-bold text-stone-800 text-lg">{item.role}</div>
-                  <div className="text-stone-700">{item.company}</div>
-                  <div className="text-stone-500 text-sm">{item.duration}</div>
-                  <div className="mt-1 text-stone-600 text-sm">{item.description}</div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-stone-500">No work history available.</div>
-          )}
-        </div>
-
-        {(booking || availabilityWindows.length > 0) && (
-          <section className="bg-white p-6 rounded-xl shadow-md space-y-6">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900">
-              Booking Playbook
-            </h2>
-            {bookingHighlights.length > 0 && (
-              <div className="flex flex-wrap gap-3">
-                {bookingHighlights.map((item) => (
+        <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-24 text-slate-900 space-y-10">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:gap-10">
+            <img
+              src={profile}
+              alt={`${title} avatar`}
+              className="h-28 w-28 rounded-2xl border-4 border-white object-cover shadow-2xl md:h-36 md:w-36 bg-white"
+            />
+            <div className="flex-1 space-y-4">
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Skill Studio associate</p>
+                <h1 className="text-3xl font-semibold md:text-5xl text-slate-900">{title}</h1>
+              </div>
+              <div className="flex flex-wrap gap-2 text-sm">
+                {[type, location, price].filter(Boolean).map((chip) => (
                   <span
-                    key={item}
-                    className="rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 text-xs font-medium"
+                    key={chip}
+                    className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold tracking-wide uppercase text-slate-600"
                   >
-                    {item}
+                    {chip}
                   </span>
                 ))}
               </div>
-            )}
-            {timezone && (
-              <p className="text-sm text-stone-600">
-                Primary timezone: <span className="font-medium">{timezone}</span>
-              </p>
-            )}
-            {booking?.timezones?.length ? (
-              <div>
-                <p className="text-sm font-semibold text-stone-600 mb-2">Supported timezones</p>
+              <p className="max-w-3xl text-base text-slate-700 leading-relaxed">{bio}</p>
+              {serviceBadges.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {booking.timezones.map((zone) => (
+                  {serviceBadges.map((badge, index) => (
                     <span
-                      key={zone}
-                      className="rounded-full bg-stone-100 text-stone-700 px-3 py-1 text-xs font-medium"
+                      key={`${badge}-${index}`}
+                      className="rounded-full bg-slate-900/5 px-3 py-1 text-xs font-semibold text-slate-800"
                     >
-                      {zone}
+                      {badge}
                     </span>
                   ))}
                 </div>
-              </div>
-            ) : null}
-            {availability && (
-              <p className="text-sm text-stone-600">
-                Availability: <span className="font-medium">{availability}</span>
-              </p>
-            )}
-            {availabilityWindows.length > 0 && (
-              <div>
-                <p className="text-sm font-semibold text-stone-600 mb-2">Weekly windows</p>
-                <ul className="grid gap-2 sm:grid-cols-2 text-sm text-stone-700">
-                  {availabilityWindows.map((availabilityWindow, index) => {
-                    const label = formatAvailabilityWindow(availabilityWindow);
-                    if (!label) return null;
-                    return (
-                      <li key={`${availabilityWindow.day}-${index}`} className="rounded-lg bg-stone-50 px-3 py-2">
-                        {label}
-                      </li>
-                    );
-                  })}
-                </ul>
+              )}
+            </div>
+            {contactEmail && (
+              <div className="flex flex-col gap-2">
+                <a
+                  href={`mailto:${contactEmail}`}
+                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:bg-slate-800"
+                >
+                  Email {title.split(" ")[0] || "associate"}
+                </a>
+                <p className="text-xs text-slate-500">Expect a reply within 24 hours.</p>
               </div>
             )}
-            {booking?.slots?.length ? (
-              <div>
-                <p className="text-sm font-semibold text-stone-600 mb-2">Upcoming slots</p>
-                <ul className="space-y-2 text-sm text-stone-700">
-                  {booking.slots.map((slot, index) => {
-                    const label = formatSlotWindow(slot);
-                    if (!label) return null;
-                    return (
-                      <li key={`${slot.date}-${slot.start}-${index}`} className="rounded-lg border border-stone-200 px-3 py-2">
-                        {label}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
-            {booking?.etaStages?.length ? (
-              <div>
-                <p className="text-sm font-semibold text-stone-600 mb-2">Engagement stages</p>
-                <ol className="space-y-2 text-sm text-stone-700">
-                  {booking.etaStages.map((stage, index) => (
-                    <li key={`${stage.label || stage.stage}-${index}`} className="flex gap-3">
-                      <span className="text-xs font-semibold text-stone-500">{index + 1}.</span>
-                      <span>
-                        {stage.label || stage.stage}
-                        {stage.minutes ? ` - ${stage.minutes} min` : null}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ) : null}
-            {booking?.communications && (
-              <div>
-                <p className="text-sm font-semibold text-stone-600 mb-2">Supported communication modes</p>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(booking.communications)
-                    .filter(([, enabled]) => enabled)
-                    .map(([mode]) => (
-                      <span
-                        key={mode}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
-                      >
-                        {mode}
-                      </span>
-                    ))}
+          </div>
+        </div>
+      </div>
+
+      <main className="relative z-10 -mt-12 pb-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+            <section className="space-y-6">
+              <article className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                <div className="flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                  {type ? <span>{type}</span> : null}
+                  {location ? <span>{location}</span> : null}
+                  {price ? <span>{price}</span> : null}
                 </div>
-              </div>
-            )}
-          </section>
-        )}
+                <p className="text-base leading-relaxed text-slate-700">{bio}</p>
+                <div className="flex flex-wrap gap-6 text-sm text-slate-500">
+                  {availability ? (
+                    <div>
+                      <p className="font-semibold text-slate-900">Availability</p>
+                      <p>{availability}</p>
+                    </div>
+                  ) : null}
+                  {timezone ? (
+                    <div>
+                      <p className="font-semibold text-slate-900">Timezone</p>
+                      <p>{timezone}</p>
+                    </div>
+                  ) : null}
+                  {currency ? (
+                    <div>
+                      <p className="font-semibold text-slate-900">Currency</p>
+                      <p>{currency}</p>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
 
-        {(addons.length > 0 || prepChecklist.length > 0) && (
-          <section className="bg-white p-6 rounded-xl shadow-md grid gap-6 md:grid-cols-2">
-            {addons.length > 0 && (
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3">Optional add-ons</h3>
-                <ul className="space-y-3 text-sm text-stone-700">
-                  {addons.map((addon) => (
-                    <li key={addon.id} className="rounded-lg border border-stone-200 p-3">
-                      <p className="font-semibold text-stone-900">{addon.name}</p>
-                      {Number.isFinite(Number(addon.price)) && (
-                        <p className="text-xs text-stone-500">
-                          {formatAddonPrice(addon, currency)}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {prepChecklist.length > 0 && (
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3">Prep checklist</h3>
-                <ul className="space-y-2 text-sm text-stone-700">
-                  {prepChecklist.map((item, index) => (
-                    <li key={`${item}-${index}`} className="flex gap-2">
-                      <span className="text-emerald-500">-</span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        )}
+              {stats.length > 0 && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Snapshot</p>
+                      <h2 className="text-lg font-semibold text-slate-900">Signals buyers review first</h2>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    {stats.map((stat) => (
+                      <div key={stat.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{stat.label}</p>
+                        <p className="mt-2 text-lg font-semibold text-slate-900">{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
-        {warranty && (
-          <section className="bg-white p-6 rounded-xl shadow-md space-y-3">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900">Warranty & Support</h2>
-            {warranty.durationDays && (
-              <p className="text-sm text-stone-700">
-                Coverage duration: <span className="font-medium">{warranty.durationDays} days</span>
-              </p>
-            )}
-            {warranty.coverage && (
-              <p className="text-sm text-stone-700">{warranty.coverage}</p>
-            )}
-            {warranty.contact && (
-              <a
-                href={`mailto:${warranty.contact}`}
-                className="inline-flex items-center text-sm font-medium text-slate-700 underline decoration-dotted"
-              >
-                Warranty contact: {warranty.contact}
-              </a>
-            )}
-          </section>
-        )}
+              {hasCapabilities && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-semibold text-slate-900">Capabilities & Toolset</h2>
+                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
+                      Skill Studio
+                    </span>
+                  </div>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {renderChipGroup("Specialisations", specialisations)}
+                    {renderChipGroup("Expertise & Focus", expertise)}
+                    {renderChipGroup("Design Software", softwares)}
+                    {renderChipGroup("Languages", languages)}
+                    {renderChipGroup("Certifications", certifications)}
+                  </div>
+                </section>
+              )}
+
+              <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-slate-900">Portfolio</h2>
+                  {portfolioMedia.length > 0 ? (
+                    <span className="text-xs font-semibold text-slate-500">{portfolioMedia.length} media</span>
+                  ) : null}
+                </div>
+                <PortfolioMediaPlayer
+                  items={portfolioMedia}
+                  title={null}
+                  subtitle={null}
+                  className="p-0 border-none shadow-none bg-transparent"
+                  variant="bare"
+                />
+              </section>
+
+              {deliverables.length > 0 && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
+                  <h2 className="text-lg font-semibold text-slate-900 mb-4">Key Deliverables</h2>
+                  <ul className="space-y-2 text-sm text-slate-700">
+                    {deliverables.map((item, index) => (
+                      <li key={`${item}-${index}`} className="flex items-start gap-2">
+                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {projectSpotlights.length > 0 && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-slate-900">Project spotlights</h2>
+                    <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                      Case studies
+                    </span>
+                  </div>
+                  <div className="space-y-4">
+                    {projectSpotlights.map((project, index) => (
+                      <article
+                        key={`${project.title || "project"}-${project.year || index}`}
+                        className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-base font-semibold text-slate-900">{project.title || "Project"}</p>
+                          {project.year ? (
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              {project.year}
+                            </span>
+                          ) : null}
+                        </div>
+                        {project.scope ? <p className="text-sm text-slate-600">{project.scope}</p> : null}
+                        <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                          {project.role ? <span>Role: {project.role}</span> : null}
+                          {project.category ? <span>{project.category}</span> : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-slate-900">Work History</h2>
+                  <span className="text-xs uppercase tracking-[0.35em] text-slate-400">Experience</span>
+                </div>
+                {workHistory && workHistory.length > 0 ? (
+                  <ul className="space-y-4">
+                    {workHistory.map((item, idx) => (
+                      <li key={idx} className="rounded-2xl border border-slate-100 bg-slate-50 p-4 shadow-sm space-y-1">
+                        <div className="text-base font-semibold text-slate-900">{item.role}</div>
+                        <div className="text-sm text-slate-600">{item.company}</div>
+                        <div className="text-xs text-slate-500 uppercase tracking-wide">{item.duration}</div>
+                        {item.description ? <p className="text-sm text-slate-600">{item.description}</p> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-slate-500">No work history available.</p>
+                )}
+              </section>
+
+              {resourceLinks.length > 0 && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
+                  <h2 className="text-lg font-semibold text-slate-900 mb-4">Reference links</h2>
+                  <ul className="space-y-3">
+                    {resourceLinks.map((link, index) => (
+                      <li key={`${link}-${index}`}>
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 hover:border-slate-200"
+                        >
+                          <span>{formatLinkLabel(link)}</span>
+                          <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                            Visit
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </section>
+
+            <aside className="space-y-6">
+              {(contactEmail || availability || timezone) && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                  <h3 className="text-base font-semibold text-slate-900">Buyer playbook</h3>
+                  <div className="space-y-3 text-sm text-slate-600">
+                    {contactEmail ? (
+                      <p>
+                        Contact:{" "}
+                        <a href={`mailto:${contactEmail}`} className="font-semibold text-slate-900 underline">
+                          {contactEmail}
+                        </a>
+                      </p>
+                    ) : null}
+                    {timezone ? (
+                      <p>
+                        Primary timezone: <span className="font-semibold text-slate-900">{timezone}</span>
+                      </p>
+                    ) : null}
+                    {availability ? (
+                      <p>
+                        Availability: <span className="font-semibold text-slate-900">{availability}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+              )}
+
+              {(booking || availabilityWindows.length > 0) && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-slate-900">Booking Playbook</h3>
+                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Operations</span>
+                  </div>
+                  {bookingHighlights.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {bookingHighlights.map((item) => (
+                        <span
+                          key={item}
+                          className="rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 text-xs font-semibold"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {booking?.timezones?.length ? (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                        Supported timezones
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {booking.timezones.map((zone) => (
+                          <span
+                            key={zone}
+                            className="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs font-medium"
+                          >
+                            {zone}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {availabilityWindows.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                        Weekly windows
+                      </p>
+                      <ul className="space-y-2 text-sm text-slate-700">
+                        {availabilityWindows.map((availabilityWindow, index) => {
+                          const label = formatAvailabilityWindow(availabilityWindow);
+                          if (!label) return null;
+                          return (
+                            <li
+                              key={`${availabilityWindow.day}-${index}`}
+                              className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2"
+                            >
+                              {label}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                  {booking?.slots?.length ? (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                        Upcoming slots
+                      </p>
+                      <ul className="space-y-2 text-sm text-slate-700">
+                        {booking.slots.map((slot, index) => {
+                          const label = formatSlotWindow(slot);
+                          if (!label) return null;
+                          return (
+                            <li
+                              key={`${slot.date}-${slot.start}-${index}`}
+                              className="rounded-2xl border border-slate-100 px-3 py-2"
+                            >
+                              {label}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {booking?.etaStages?.length ? (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                        Engagement stages
+                      </p>
+                      <ol className="space-y-2 text-sm text-slate-700">
+                        {booking.etaStages.map((stage, index) => (
+                          <li key={`${stage.label || stage.stage}-${index}`} className="flex gap-3">
+                            <span className="text-xs font-semibold text-slate-400">{index + 1}.</span>
+                            <span>
+                              {stage.label || stage.stage}
+                              {stage.minutes ? ` · ${stage.minutes} min` : null}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : null}
+                  {booking?.communications && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                        Communication modes
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(booking.communications)
+                          .filter(([, enabled]) => enabled)
+                          .map(([mode]) => (
+                            <span
+                              key={mode}
+                              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+                            >
+                              {mode}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {(addons.length > 0 || prepChecklist.length > 0) && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-6">
+                  {addons.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400 mb-3">
+                        Optional add-ons
+                      </h3>
+                      <ul className="space-y-3 text-sm text-slate-700">
+                        {addons.map((addon) => (
+                          <li key={addon.id} className="rounded-2xl border border-slate-100 p-3">
+                            <p className="font-semibold text-slate-900">{addon.name}</p>
+                            {Number.isFinite(Number(addon.price)) && (
+                              <p className="text-xs text-slate-500">{formatAddonPrice(addon, currency)}</p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {prepChecklist.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400 mb-3">
+                        Prep checklist
+                      </h3>
+                      <ul className="space-y-2 text-sm text-slate-700">
+                        {prepChecklist.map((item, index) => (
+                          <li key={`${item}-${index}`} className="flex gap-2">
+                            <span className="text-emerald-500">–</span>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {warranty && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-3">
+                  <h3 className="text-base font-semibold text-slate-900">Warranty & Support</h3>
+                  {warranty.durationDays ? (
+                    <p className="text-sm text-slate-700">
+                      Coverage duration: <span className="font-semibold text-slate-900">{warranty.durationDays} days</span>
+                    </p>
+                  ) : null}
+                  {warranty.coverage ? <p className="text-sm text-slate-700">{warranty.coverage}</p> : null}
+                  {warranty.contact ? (
+                    <a
+                      href={`mailto:${warranty.contact}`}
+                      className="inline-flex text-sm font-semibold text-slate-900 underline decoration-dotted"
+                    >
+                      Warranty contact: {warranty.contact}
+                    </a>
+                  ) : null}
+                </section>
+              )}
+            </aside>
+          </div>
+        </div>
       </main>
 
       <Footer />

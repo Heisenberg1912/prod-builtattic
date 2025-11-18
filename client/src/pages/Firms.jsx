@@ -471,8 +471,11 @@ const Firms = () => {
                         Rate firm
                       </button>
                       <Link
-                        to="/firmportfolio"
-                        state={{ firm }}
+                        to={{
+                          pathname: "/firmportfolio",
+                          search: firm.slug ? `?slug=${encodeURIComponent(firm.slug)}` : "",
+                          state: { firm },
+                        }}
                         className="px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:border-slate-300 transition"
                       >
                         View portfolio

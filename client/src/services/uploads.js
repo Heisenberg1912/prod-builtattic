@@ -19,5 +19,6 @@ export async function uploadStudioAsset(file, options = {}) {
     headers: { "Content-Type": "multipart/form-data" },
   });
   const asset = data?.asset;
-  return { ...data, asset, url: extractAssetUrl(asset) };
+  const fallbackUrl = data?.downloadUrl || extractAssetUrl(asset);
+  return { ...data, asset, url: fallbackUrl };
 }

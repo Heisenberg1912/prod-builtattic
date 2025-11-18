@@ -19,11 +19,22 @@ const sanitizeCurrency = (value) => {
 };
 
 const ensureCart = async (userId) => {
-  let cart = await Cart.findOne({ user: userId });
-  if (!cart) {
-    cart = await Cart.create({ user: userId, items: [] });
+  if (!userId) {
+    throw new Error('User id is required to load cart');
   }
-  return cart;
+  try {
+    const cart = await Cart.findOneAndUpdate(
+      { user: userId },
+      { $setOnInsert: { user: userId, items: [] } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    return cart;
+  } catch (error) {
+    if (error?.code === 11000) {
+      return Cart.findOne({ user: userId });
+    }
+    throw error;
+  }
 };
 
 const projectCart = (cart) => {

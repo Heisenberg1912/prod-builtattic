@@ -246,6 +246,15 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
     return undefined;
   };
 
+  const detectMediaKindFromUrl = (url = "") => {
+    const lower = url.toLowerCase();
+    if (lower.includes("youtube.com") || lower.includes("vimeo.com")) return "video";
+    if (lower.match(/\.(mp4|mov|webm)$/)) return "video";
+    if (lower.match(/\.(pdf|ppt|pptx|doc|docx)$/)) return "document";
+    if (lower.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return "image";
+    return null;
+  };
+
   const handleMediaUpload = async (index, file) => {
     if (!file) return;
     try {
@@ -463,64 +472,102 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
               />
             </Section>
 
-            <Section title="Portfolio media" description="Add image or video URLs. These power the carousel on your public card.">
+            <Section
+              title="Portfolio media"
+              description="Upload renders, walkthroughs, or decks. Each file becomes a clickable tile on Skill Studio (paste a hosted link only if needed)."
+            >
               <div className="space-y-4">
                 {portfolioMedia.length === 0 ? (
                   <p className="text-sm text-slate-500">No media yet. Add screenshots, renders, or hosted videos.</p>
                 ) : (
-                  portfolioMedia.map((item, index) => (
-                    <div key={`media-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-slate-900">Media #{index + 1}</p>
-                        <button
-                          type="button"
-                          onClick={() => handleMediaRemove(index)}
-                          className="text-xs font-semibold text-rose-600 hover:text-rose-500"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <label className="text-xs font-medium text-slate-600 space-y-1 block">
-                        Title / context
-                        <Input
-                          value={item.title}
-                          onChange={(event) => handleMediaChange(index, "title", event.target.value)}
-                          placeholder="Hospitality concept – The Gilded Acorn"
-                        />
-                      </label>
-                      <label className="text-xs font-medium text-slate-600 space-y-1 block">
-                        Description
-                        <TextArea
-                          rows={2}
-                          value={item.description}
-                          onChange={(event) => handleMediaChange(index, "description", event.target.value)}
-                          placeholder="Lead FF&E design, procurement, and installation."
-                        />
-                      </label>
-                      <label className="text-xs font-medium text-slate-600 space-y-1 block">
-                        Image / video / document URL
-                        <Input
-                          value={item.mediaUrl}
-                          onChange={(event) => handleMediaChange(index, "mediaUrl", event.target.value)}
-                          placeholder="https://images.builtattic.com/portfolio.jpg"
-                        />
-                        <div className="flex flex-wrap items-center gap-2">
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 cursor-pointer">
-                            <input
-                              type="file"
-                              accept="image/*,video/*,.pdf,.ppt,.pptx,.doc,.docx"
-                              className="hidden"
-                              onChange={(event) => handleMediaUpload(index, event.target.files?.[0])}
-                            />
-                            Upload file
-                          </label>
-                          {mediaUploadIndex === index ? (
-                            <span className="text-xs text-slate-500">Uploading…</span>
-                          ) : null}
+                  portfolioMedia.map((item, index) => {
+                    const previewKind = detectMediaKindFromUrl(item.mediaUrl || "");
+                    return (
+                      <div key={`media-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">Media #{index + 1}</p>
+                          <button
+                            type="button"
+                            onClick={() => handleMediaRemove(index)}
+                            className="text-xs font-semibold text-rose-600 hover:text-rose-500"
+                          >
+                            Remove
+                          </button>
                         </div>
-                      </label>
-                    </div>
-                  ))
+                        <label className="text-xs font-medium text-slate-600 space-y-1 block">
+                          Title / context
+                          <Input
+                            value={item.title}
+                            onChange={(event) => handleMediaChange(index, "title", event.target.value)}
+                            placeholder="Hospitality concept -- The Gilded Acorn"
+                          />
+                        </label>
+                        <label className="text-xs font-medium text-slate-600 space-y-1 block">
+                          Description
+                          <TextArea
+                            rows={2}
+                            value={item.description}
+                            onChange={(event) => handleMediaChange(index, "description", event.target.value)}
+                            placeholder="Lead FF&E design, procurement, and installation."
+                          />
+                        </label>
+                        <label className="text-xs font-medium text-slate-600 space-y-2 block">
+                          Media upload or hosted URL
+                          <Input
+                            value={item.mediaUrl}
+                            onChange={(event) => handleMediaChange(index, "mediaUrl", event.target.value)}
+                            placeholder="https://images.builtattic.com/portfolio.jpg"
+                          />
+                          <Hint>Uploading auto-generates a secure Builtattic URL. Paste a link only if the asset already lives elsewhere.</Hint>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 cursor-pointer">
+                              <input
+                                type="file"
+                                accept="image/*,video/*,.pdf,.ppt,.pptx,.doc,.docx"
+                                className="hidden"
+                                onChange={(event) => handleMediaUpload(index, event.target.files?.[0])}
+                              />
+                              Upload media
+                            </label>
+                            {mediaUploadIndex === index ? (
+                              <span className="text-xs text-slate-500">Uploading…</span>
+                            ) : item.mediaUrl ? (
+                              <a
+                                href={item.mediaUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs font-semibold text-slate-600 underline decoration-dotted"
+                              >
+                                Open current file
+                              </a>
+                            ) : null}
+                          </div>
+                          {item.mediaUrl ? (
+                            previewKind === "image" ? (
+                              <img
+                                src={item.mediaUrl}
+                                alt={item.title || `Portfolio media ${index + 1}`}
+                                className="rounded-xl border border-slate-100 bg-slate-50 object-cover max-h-48 w-full"
+                              />
+                            ) : previewKind === "video" ? (
+                              <video
+                                controls
+                                className="rounded-xl border border-slate-100 bg-slate-50 object-cover max-h-48 w-full"
+                              >
+                                <source src={item.mediaUrl} />
+                              </video>
+                            ) : (
+                              <p className="text-xs text-slate-500">
+                                Document attached -- buyers will get a download link when they click this tile.
+                              </p>
+                            )
+                          ) : (
+                            <p className="text-xs text-slate-400">Attach a file or link above to preview this tile.</p>
+                          )}
+                        </label>
+                      </div>
+                    );
+                  })
                 )}
                 <button
                   type="button"

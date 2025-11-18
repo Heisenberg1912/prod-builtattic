@@ -1,0 +1,59 @@
+*** Begin Patch
+*** Update File: client/src/pages/StudioDetail.jsx
+@@
+-import React, { useEffect, useMemo, useState } from "react";
++import React, { useCallback, useEffect, useMemo, useState } from "react";
+@@
+-  const serviceTiles = tileConfig.services;
+-  const productTiles = tileConfig.products;
+-  const serviceSummary = tileConfig.summary || DEFAULT_SERVICE_SUMMARY;
++  const serviceTiles = tileConfig.services;
++  const productTiles = tileConfig.products;
++  const serviceSummary = tileConfig.summary || DEFAULT_SERVICE_SUMMARY;
+   const contactEmail =
+     studio?.firm?.contact?.email ||
+     studio?.contactEmail ||
+@@
+-  const editStudioHref = studio?.slug
+-    ? /portal/studio?edit=
+-    : '/portal/studio';
++  const editStudioHref = studio?.slug
++    ? /portal/studio?edit=
++    : '/portal/studio';
++  const buildEditLink = useCallback(
++    (section) => {
++      if (!section) return editStudioHref;
++      const joinChar = editStudioHref.includes('?') ? '&' : '?';
++      return ${editStudioHref}section=;
++    },
++    [editStudioHref]
++  );
++  const editShortcuts = useMemo(() => {
++    if (!canEditStudio) return [];
++    return [
++      {
++        label: 'Listing details',
++        detail: 'Update title, pricing, specs, and availability.',
++        section: 'details',
++      },
++      {
++        label: 'Gallery & hero',
++        detail: 'Reorder media, swap hero imagery, or refresh highlights.',
++        section: 'gallery',
++      },
++      {
++        label: 'Service programs',
++        detail: 'Edit the tiles buyers see under "What this studio sells".',
++        section: 'services',
++      },
++      {
++        label: 'Products & delivery',
++        detail: 'Maintain catalogue-ready SKUs and delivery notes.',
++        section: 'products',
++      },
++    ].map((entry) => ({
++      ...entry,
++      href: buildEditLink(entry.section),
++    }));
++  }, [buildEditLink, canEditStudio]);
+*** End Patch

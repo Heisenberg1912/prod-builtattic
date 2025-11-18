@@ -23,7 +23,12 @@ import {
   Target,
   CalendarCheck,
 } from "lucide-react";
+import PlanUploadPanel from "../../components/dashboard/PlanUploadPanel.jsx";
+import ServicePackManager from "../../components/dashboard/ServicePackManager.jsx";
+import MeetingScheduler from "../../components/dashboard/MeetingScheduler.jsx";
 import AssociateProfileEditor from "../../components/associate/AssociateProfileEditor.jsx";
+import AssociatePortfolioShowcase from "../../components/associate/AssociatePortfolioShowcase.jsx";
+import PortfolioMediaPlayer from "../../components/associate/PortfolioMediaPlayer.jsx";
 import { fetchAssociatePortalProfile } from "../../services/portal.js";
 import { fetchAssociateDashboard } from "../../services/dashboard.js";
 import { deriveProfileStats, formatCurrency } from "../../utils/associateProfile.js";
@@ -358,6 +363,24 @@ const formatAvailabilityWindow = (window) => {
   if (!window.from || !window.to) return dayLabel || "";
   return `${dayLabel}: ${window.from} - ${window.to}`;
 };
+
+const formatPlanHighlights = (plan) => {
+  if (!plan) return [];
+  const highlights = [];
+  const category = [plan.category, plan.subtype].filter(Boolean).join(" · ");
+  if (category) highlights.push(category);
+  if (plan.primaryStyle) highlights.push(plan.primaryStyle);
+  if (plan.areaSqft && Number(plan.areaSqft)) {
+    highlights.push(`${Number(plan.areaSqft).toLocaleString()} sqft`);
+  }
+  if (Array.isArray(plan.renderImages) && plan.renderImages.length) {
+    highlights.push(`${plan.renderImages.length} render${plan.renderImages.length === 1 ? "" : "s"}`);
+  }
+  if (plan.walkthrough) {
+    highlights.push("Walkthrough ready");
+  }
+  return highlights;
+};
 function AssociateDashboard() {
   const [activeView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -476,6 +499,10 @@ function AssociateDashboard() {
   const dashboardApplications = dashboardData.applications || [];
   const dashboardNextActions = dashboardData.nextActions || [];
   const dashboardFeedback = dashboardData.feedback || {};
+  const dashboardServicePacks = dashboardData.servicePacks || [];
+  const dashboardMeetings = dashboardData.meetings || [];
+  const planUploads = dashboardData.planUploads || [];
+  const featuredPlan = planUploads[0] || null;
 
   const pipelineMatches = useMemo(() => {
     if (recommendedMatches.length) return recommendedMatches;
@@ -731,6 +758,8 @@ function AssociateDashboard() {
             error={profileState.error}
             profile={profileState.profile}
             meta={profileMeta}
+            featuredPlan={featuredPlan}
+            planUploads={planUploads}
             opportunityMatches={pipelineMatches}
             applications={displayApplications}
             activity={displayActivity}
@@ -741,6 +770,9 @@ function AssociateDashboard() {
             nextActions={dashboardNextActions}
             refreshButton={renderRefreshButton("overview", "Refresh insights")}
             sectionError={renderSectionError("overview", "Some insights might be cached.")}
+            servicePacks={dashboardServicePacks}
+            meetings={dashboardMeetings}
+            onPlanRefresh={() => refreshDashboard(null, { silent: true })}
           />
         );
       case "profile":
@@ -900,6 +932,8 @@ function OverviewView({
   error,
   profile,
   meta,
+  featuredPlan,
+  planUploads = [],
   opportunityMatches,
   applications,
   activity,
@@ -910,6 +944,9 @@ function OverviewView({
   nextActions,
   refreshButton,
   sectionError,
+  servicePacks = [],
+  meetings = [],
+  onPlanRefresh = () => {},
 }) {
   const completenessValue = Number.isFinite(metrics?.profileCompleteness)
     ? metrics.profileCompleteness
@@ -1098,26 +1135,67 @@ function OverviewView({
           </div>
         </div>
 
-        <MarketplacePreview profile={profile} meta={meta} loading={loading} />
+        <ServicePackManager
+          ownerType="associate"
+          initialPacks={servicePacks}
+          heading="Service packs"
+          eyebrow="Skill Studio services"
+          description="Package your go-to scope so ops can drop you into buyer pipelines instantly."
+          emptyMessage="No packs published yet. Add at least one pack so the marketplace team can route work."
+        />
+
+        <MeetingScheduler
+          ownerType="associate"
+          initialMeetings={meetings}
+          heading="Meeting schedule"
+          eyebrow="Syncs"
+          description="Track onboarding, review, and offboarding calls tied to each client."
+          emptyMessage="No syncs scheduled. Log your next touchpoints so everyone stays aligned."
+        />
+
+        <PlanUploadPanel
+          role="associate"
+          workspaceName="Skill Studio"
+          initialPlans={planUploads}
+          onPlanChange={onPlanRefresh}
+        />
+
+        <MarketplacePreview profile={profile} meta={meta} featuredPlan={featuredPlan} loading={loading} />
       </div>
     </div>
   );
 }
 
-function MarketplacePreview({ profile, meta, loading }) {
+function MarketplacePreview({ profile, meta, loading, featuredPlan }) {
   const avatar = getAssociateAvatar(profile) || getAssociateFallback(profile);
-  const summary = profile?.summary || "Add a short bio to highlight your expertise.";
-  const chips = [
-    ...(profile?.specialisations || []).slice(0, 2),
-    ...(profile?.softwares || []).slice(0, 2),
-  ];
+  const planHighlights = formatPlanHighlights(featuredPlan);
+  const planRenderImages = Array.isArray(featuredPlan?.renderImages)
+    ? featuredPlan.renderImages.filter((url) => typeof url === "string" && /^https?:\/\//i.test(url))
+    : [];
+  const heroImage = planRenderImages[0] || avatar;
+  const heroBadge = featuredPlan ? "Concept hosting preview" : "Associate";
+  const heroTitle = featuredPlan?.projectTitle || profile?.title || "Add a headline";
+  const heroMeta = featuredPlan
+    ? [featuredPlan.category, featuredPlan.primaryStyle].filter(Boolean).join(" · ") ||
+      `${profile?.location || "Location"} • ${profile?.availability || "Availability note"}`
+    : `${profile?.location || "Location"} • ${profile?.availability || "Availability note"}`;
+  const summary =
+    featuredPlan?.description ||
+    profile?.summary ||
+    "Add a short bio to highlight your expertise.";
+  const chips = (featuredPlan && planHighlights.length
+    ? planHighlights
+    : [
+        ...(profile?.specialisations || []).slice(0, 2),
+        ...(profile?.softwares || []).slice(0, 2),
+      ]) || [];
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="relative h-40 overflow-hidden rounded-t-3xl bg-slate-900/5">
         <img
-          src={avatar}
-          alt="Marketplace avatar"
+          src={heroImage}
+          alt="Marketplace hero"
           className="h-full w-full object-cover"
           onError={(event) => {
             event.currentTarget.src = getAssociateFallback(profile);
@@ -1128,13 +1206,11 @@ function MarketplacePreview({ profile, meta, loading }) {
       <div className="space-y-4 p-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Associate</p>
-            <h3 className="text-xl font-semibold text-slate-900">
-              {profile?.title || "Add a headline"}
-            </h3>
-            <p className="text-xs text-slate-500">
-              {profile?.location || "Location"} · {profile?.availability || "Availability note"}
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+              {heroBadge}
             </p>
+            <h3 className="text-xl font-semibold text-slate-900">{heroTitle}</h3>
+            <p className="text-xs text-slate-500">{heroMeta}</p>
           </div>
           <div className="text-right">
             <p className="text-sm font-semibold text-amber-500">
@@ -1160,7 +1236,7 @@ function MarketplacePreview({ profile, meta, loading }) {
               Experience
             </p>
             <p className="text-sm font-semibold text-slate-900">
-              {meta.stats.years || "–"} yrs
+              {meta.stats.years || "-"} yrs
             </p>
           </div>
         </div>
@@ -1186,14 +1262,13 @@ function MarketplacePreview({ profile, meta, loading }) {
             Preview listing <ExternalLink size={14} />
           </Link>
           <span className="text-xs text-slate-400">
-            {loading ? "Loading profile…" : meta.updatedAt ? `Last synced ${formatRelativeTime(meta.updatedAt)}` : "Not synced yet"}
+            {loading ? "Loading profile." : meta.updatedAt ? `Last synced ${formatRelativeTime(meta.updatedAt)}` : "Not synced yet"}
           </span>
         </div>
       </div>
     </div>
   );
-}
-function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
+}function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
   const lastUpdated = meta.updatedAt ? formatRelativeTime(meta.updatedAt) : "Never";
 
   return (
@@ -1224,10 +1299,20 @@ function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
         </div>
       </div>
 
-      <AssociateProfileEditor
-        onProfileUpdate={onProfileUpdate}
-        header={null}
-      />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]">
+        <AssociateProfileEditor onProfileUpdate={onProfileUpdate} header={null} />
+        <div className="space-y-4">
+          <PortfolioMediaPlayer
+            items={profile?.portfolioMedia}
+            title="Live portfolio tiles"
+            subtitle="Click through the carousel exactly how it appears on Skill Studio."
+          />
+          <AssociatePortfolioShowcase
+            profile={profile}
+            className="border border-slate-200 bg-white shadow-sm"
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1673,3 +1758,4 @@ function StatCard({ icon: Icon, label, value, helper, tone = "neutral" }) {
 }
 
 export default AssociateDashboard;
+

@@ -39,10 +39,13 @@ import associatePortalRouter from './routes/associatePortal.js';
 import studioPortalRouter from './routes/studioPortal.js';
 import firmPortalRouter from './routes/firmPortal.js';
 import vendorMaterialsRouter from './routes/vendorMaterials.js';
-import dashboardRouter from './routes/dashboard.js';
-import settingsRouter from './routes/settings.js';
+import dashboardRouter from './routes/dashboard.js';
+import settingsRouter from './routes/settings.js';
 import studioRequestsRouter from './routes/studioRequests.js';
-import ratingsRouter from './routes/ratings.js';
+import ratingsRouter from './routes/ratings.js';
+import servicePacksRouter from './routes/servicePacks.js';
+import meetingsRouter from './routes/meetings.js';
+import planUploadsRouter from './routes/planUploads.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -114,9 +117,12 @@ app.use(
   ],
   vendorMaterialsRouter
 );
-app.use(['/dashboard', '/api/dashboard'], dashboardRouter);
+app.use(['/dashboard', '/api/dashboard'], dashboardRouter);
 app.use(['/settings', '/api/settings'], settingsRouter);
-app.use(['/ratings', '/api/ratings'], ratingsRouter);
+app.use(['/ratings', '/api/ratings'], ratingsRouter);
+app.use(['/service-packs', '/api/service-packs'], servicePacksRouter);
+app.use(['/schedule/meetings', '/api/schedule/meetings'], meetingsRouter);
+app.use(['/plan-uploads', '/api/plan-uploads'], planUploadsRouter);
 
 app.get(['/health', '/api/health'], (_req, res) => {
   res.json({ ok: true });

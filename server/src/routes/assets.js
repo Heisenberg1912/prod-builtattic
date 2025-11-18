@@ -14,10 +14,10 @@ router.get('/:id/download', async (req, res) => {
     }
     const asset = await Asset.findById(req.params.id);
     if (!asset) return res.status(404).json({ ok: false, error: 'Asset not found' });
-    if (asset.storageProvider === 'remote' && asset.storagePath) {
-      return res.redirect(asset.storagePath);
+    if (!asset.secure && (asset.publicUrl || asset.storagePath)) {
+      return res.redirect(asset.publicUrl || asset.storagePath);
     }
-    const buffer = readDecryptedAsset(asset);
+    const buffer = await readDecryptedAsset(asset);
     res.setHeader('Content-Type', asset.mimeType || 'application/octet-stream');
     res.setHeader(
       'Content-Disposition',

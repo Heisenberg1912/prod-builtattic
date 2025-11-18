@@ -63,7 +63,7 @@ export const ASSOCIATE_DASHBOARD_FALLBACK = {
     count: 36,
     recent: [
       { id: 'assoc-feedback-1', score: 5, comment: 'Detailed drawings and fast replies. Great to work with.', author: 'Ops buyer', updatedAt: now() },
-      { id: 'assoc-feedback-2', score: 4, comment: 'Solid BIM handoff – would hire again.', author: 'Studio lead', updatedAt: now() },
+      { id: 'assoc-feedback-2', score: 4, comment: 'Solid BIM handoff ï¿½ would hire again.', author: 'Studio lead', updatedAt: now() },
     ],
   },
   metrics: {
@@ -106,6 +106,34 @@ export const ASSOCIATE_DASHBOARD_FALLBACK = {
 
   ],
 
+  servicePacks: [
+    {
+      id: 'assoc-pack-demo',
+      title: 'BIM coordination sprint',
+      summary: '40 hours of clash detection, RFIs, and a consolidated issue tracker.',
+      price: 3200,
+      currency: 'USD',
+      deliverables: ['Weekly model check-ins', 'RFI log', 'Issue tracker'],
+      duration: '2 weeks',
+      availability: 'Can start within 3 days',
+      meetingPrep: 'Share the latest federated model and scope tracker',
+      status: 'published',
+      updatedAt: now(),
+    },
+  ],
+
+  meetings: [
+    {
+      id: 'assoc-meeting-demo',
+      title: 'Onboarding sync',
+      status: 'scheduled',
+      scheduledFor: now(),
+      durationMinutes: 45,
+      meetingLink: 'https://meet.demo.skillstudio',
+      attendees: [{ name: 'Builtattic Ops', email: 'ops@builtattic.com', role: 'Buyer' }],
+      agenda: 'Align on deliverables for the BIM sprint pack.',
+    },
+  ],
   nextActions: [
 
     {
@@ -310,6 +338,37 @@ export const FIRM_DASHBOARD_FALLBACK = {
 
   ],
 
+  servicePacks: [
+    {
+      id: 'firm-pack-demo',
+      title: 'Studio services pack',
+      summary: 'Concept package, permit set QA, and supplier coordination.',
+      price: 52000,
+      currency: 'USD',
+      deliverables: ['Concept bundle', 'Permit QA', 'Procurement kickoff'],
+      duration: '6 weeks',
+      availability: 'Kickoff slots every Monday',
+      meetingPrep: 'Share site brief + materials register',
+      status: 'published',
+      updatedAt: now(),
+    },
+  ],
+
+  meetings: [
+    {
+      id: 'firm-meeting-demo',
+      title: 'Client onboarding',
+      status: 'scheduled',
+      scheduledFor: now(),
+      durationMinutes: 60,
+      meetingLink: 'https://meet.demo.designstudio',
+      attendees: [
+        { name: 'Ops Lead', email: 'ops@builtattic.com', role: 'Moderator' },
+        { name: 'Design Collective', email: 'studio@demo.builtattic.com', role: 'Host' },
+      ],
+      agenda: 'Walk through the service pack and delivery milestones.',
+    },
+  ],
   nextActions: [
 
     {
@@ -447,4 +506,7 @@ export const DASHBOARD_FALLBACKS = {
 
 
 export default DASHBOARD_FALLBACKS;
+
+
+
 

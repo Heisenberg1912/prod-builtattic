@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { getSettings, updateSettings } from "../services/settings.js";
@@ -358,41 +358,7 @@ const SESSION_ICON_MAP = {
   mobile: Smartphone,
 };
 
-const INITIAL_SESSIONS = [
-  {
-    id: "current",
-    device: "This browser",
-    browser: "",
-    location: "",
-    lastActive: "Just now",
-    ip: "Private",
-    current: true,
-    icon: "desktop",
-    trusted: true,
-  },
-  {
-    id: "laptop",
-    device: "MacBook Pro",
-    browser: "Safari 17",
-    location: "Mumbai, IN",
-    lastActive: "2 days ago",
-    ip: "43.89.14.22",
-    current: false,
-    icon: "laptop",
-    trusted: false,
-  },
-  {
-    id: "tablet",
-    device: "iPad Air",
-    browser: "Safari iOS",
-    location: "Pune, IN",
-    lastActive: "Last week",
-    ip: "122.178.64.11",
-    current: false,
-    icon: "tablet",
-    trusted: true,
-  },
-];
+const INITIAL_SESSIONS = [];
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -406,6 +372,20 @@ const Settings = () => {
   const [sessions, setSessions] = useState(() => buildInitialSessions());
   const [resetSending, setResetSending] = useState(false);
   const [lastResetRequest, setLastResetRequest] = useState(null);
+  const settingsRef = useRef(null);
+  const autoSaveTimer = useRef(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
+  const userHydrationKey = `${userProfile?.email || ""}|${userProfile?.name || ""}`;
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => () => {
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+    }
+  }, []);
 
   const isAuthenticated = Boolean(authState?.token);
   const normalizedRole = normalizeRole(authState?.role);
@@ -413,21 +393,24 @@ const Settings = () => {
 
   useEffect(() => {
     let isMounted = true;
+    const hydrateFromFallback = (nextSettings, message = "") => {
+      const merged = mergeSettingsWithDefaults(nextSettings);
+      const resolvedProfile = hydrateProfileWithUser(merged.profile, userProfile);
+      if (isMounted) {
+        setSettings({ ...merged, profile: resolvedProfile, hasChanges: false });
+        if (message) setError(message);
+      }
+    };
     async function loadSettings() {
+      setLoading(true);
       try {
         const data = await getSettings();
         if (!isMounted) return;
-        const merged = mergeSettingsWithDefaults(data);
-        const resolvedProfile = hydrateProfileWithUser(merged.profile, userProfile);
-        setSettings({ ...merged, profile: resolvedProfile, hasChanges: false });
-        setError("");
+        hydrateFromFallback(data, "");
       } catch (err) {
         if (!isMounted) return;
         if (err?.fallback) {
-          const fallback = mergeSettingsWithDefaults(err.fallback);
-          const resolvedProfile = hydrateProfileWithUser(fallback.profile, userProfile);
-          setSettings({ ...fallback, profile: resolvedProfile, hasChanges: false });
-          setError(err.message);
+          hydrateFromFallback(err.fallback, err.message);
         } else {
           setError(err?.message || "Unable to load settings");
         }
@@ -435,11 +418,18 @@ const Settings = () => {
         if (isMounted) setLoading(false);
       }
     }
+    if (!isAuthenticated) {
+      hydrateFromFallback({}, "Sign in to sync your settings");
+      setLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
     loadSettings();
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthenticated, userHydrationKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -482,74 +472,153 @@ const Settings = () => {
 
   const clearSuccess = () => setSuccess("");
 
+  const handleSave = useCallback(
+    async ({ silent = false } = {}) => {
+      const snapshot = settingsRef.current;
+      if (!snapshot || !snapshot.hasChanges) {
+        return false;
+      }
+      if (!isAuthenticated) {
+        if (!silent) {
+          toast.error("Sign in to save your settings");
+          navigate("/login", { state: { from: "/settings" } });
+        }
+        return false;
+      }
+      if (!silent) {
+        setSaving(true);
+        setError("");
+        setSuccess("");
+      }
+      const payload = {
+        notifications: snapshot.notifications,
+        privacy: snapshot.privacy,
+        security: snapshot.security,
+        profile: snapshot.profile,
+      };
+      try {
+        await updateSettings(payload);
+        setSettings((prev) => (prev ? { ...prev, hasChanges: false } : prev));
+        if (!silent) {
+          setSuccess("Settings updated successfully");
+        }
+        return true;
+      } catch (err) {
+        if (!silent) {
+          setError(err?.message || "Unable to update settings");
+        } else {
+          console.warn("settings_autosave_failed", err);
+        }
+        return false;
+      } finally {
+        if (!silent) {
+          setSaving(false);
+        }
+      }
+    },
+    [isAuthenticated, navigate],
+  );
+
+  const queueAutoSave = useCallback(() => {
+    if (!isAuthenticated) return;
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+    }
+    setAutoSaveStatus("queued");
+    autoSaveTimer.current = window.setTimeout(async () => {
+      setAutoSaveStatus("saving");
+      const ok = await handleSave({ silent: true });
+      setAutoSaveStatus(ok ? "saved" : "error");
+      if (ok) {
+        window.setTimeout(() => setAutoSaveStatus("idle"), 2000);
+      }
+    }, 900);
+  }, [handleSave, isAuthenticated]);
+
+  const applySettingsUpdate = useCallback(
+    (updater, { autoSave = false } = {}) => {
+      setSettings((prev) => {
+        if (!prev) return prev;
+        const next = updater(prev);
+        if (!next || next === prev) return prev;
+        return { ...next, hasChanges: true };
+      });
+      if (autoSave) {
+        queueAutoSave();
+      }
+    },
+    [queueAutoSave],
+  );
+
   const toggleNotification = (id) => {
     clearSuccess();
     setError("");
-    setSettings((prev) => {
-      if (!prev) return prev;
-      const current = Boolean(prev.notifications?.[id]);
-      return {
-        ...prev,
-        notifications: { ...(prev.notifications || {}), [id]: !current },
-        hasChanges: true,
-      };
-    });
+    applySettingsUpdate(
+      (prev) => {
+        if (!prev) return prev;
+        const current = Boolean(prev.notifications?.[id]);
+        return {
+          ...prev,
+          notifications: { ...(prev.notifications || {}), [id]: !current },
+        };
+      },
+      { autoSave: true },
+    );
   };
 
   const updateNotificationPreference = (key, value) => {
     clearSuccess();
     setError("");
-    setSettings((prev) => {
-      if (!prev) return prev;
-      return {
+    applySettingsUpdate(
+      (prev) => ({
         ...prev,
         notifications: { ...(prev.notifications || {}), [key]: value },
-        hasChanges: true,
-      };
-    });
+      }),
+      { autoSave: true },
+    );
   };
 
   const togglePrivacy = (id) => {
     clearSuccess();
     setError("");
-    setSettings((prev) => {
-      if (!prev) return prev;
-      const current = Boolean(prev.privacy?.[id]);
-      return {
-        ...prev,
-        privacy: { ...(prev.privacy || {}), [id]: !current },
-        hasChanges: true,
-      };
-    });
+    applySettingsUpdate(
+      (prev) => {
+        if (!prev) return prev;
+        const current = Boolean(prev.privacy?.[id]);
+        return {
+          ...prev,
+          privacy: { ...(prev.privacy || {}), [id]: !current },
+        };
+      },
+      { autoSave: true },
+    );
   };
 
   const toggleSecurity = (id, nextValue) => {
     clearSuccess();
     setError("");
-    setSettings((prev) => {
-      if (!prev) return prev;
-      const current = Boolean(prev.security?.[id]);
-      const resolved = typeof nextValue === "boolean" ? nextValue : !current;
-      if (current === resolved) return prev;
-      return {
-        ...prev,
-        security: { ...(prev.security || {}), [id]: resolved },
-        hasChanges: true,
-      };
-    });
+    applySettingsUpdate(
+      (prev) => {
+        if (!prev) return prev;
+        const current = Boolean(prev.security?.[id]);
+        const resolved = typeof nextValue === "boolean" ? nextValue : !current;
+        if (current === resolved) return prev;
+        return {
+          ...prev,
+          security: { ...(prev.security || {}), [id]: resolved },
+        };
+      },
+      { autoSave: true },
+    );
   };
 
   const updateProfileField = (field, value) => {
     clearSuccess();
     setError("");
-    setSettings((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        profile: { ...(prev.profile || {}), [field]: value },
-        hasChanges: true,
-      };
-    });
+    applySettingsUpdate((prev) => ({
+      ...prev,
+      profile: { ...(prev.profile || {}), [field]: value },
+    }));
   };
 
   const handleSecurityAction = async (control) => {
@@ -725,31 +794,6 @@ const Settings = () => {
     toast.success('Profile details synced from your account');
   };
 
-  const handleSave = async () => {
-    if (!settings || !settings.hasChanges) {
-      return;
-    }
-    if (!isAuthenticated) {
-      toast.error('Sign in to save your settings');
-      navigate('/login', { state: { from: '/settings' } });
-      return;
-    }
-    setSaving(true);
-    setError('');
-    setSuccess('');
-    const { notifications, privacy, security, profile } = settings;
-    const payload = { notifications, privacy, security, profile };
-    try {
-      await updateSettings(payload);
-      setSettings((prev) => (prev ? { ...prev, hasChanges: false } : prev));
-      setSuccess('Settings updated successfully');
-    } catch (err) {
-      setError(err?.message || 'Unable to update settings');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   useEffect(() => {
     if (!success) return;
     const timeout = setTimeout(() => setSuccess(''), 4000);
@@ -886,12 +930,87 @@ const Settings = () => {
   const sessionBadgeClass = isAuthenticated
     ? 'inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700'
     : 'inline-flex items-center gap-2 rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-600';
+  const autoSaveMessageMap = {
+    queued: 'Auto-save queued',
+    saving: 'Saving changes…',
+    saved: 'All changes synced',
+    error: 'Auto-save unavailable',
+  };
+  const autoSaveMessage = autoSaveMessageMap[autoSaveStatus] || 'Auto-save idle';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 lg:flex-row lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900">
+      <div className="mx-auto max-w-6xl px-4 py-10 md:px-8 space-y-8">
+        <section className="rounded-3xl bg-white/90 p-6 shadow-xl ring-1 ring-slate-100 space-y-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">Account control</p>
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Design your workspace</h1>
+              <p className="text-sm text-slate-600 max-w-2xl">
+                Tailor Builtattic notifications, privacy, and security to match how your studio operates.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {isAuthenticated ? (
+                <>
+                  <Link
+                    to={dashboardPath}
+                    className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                  >
+                    Go to {normalizedRole} dashboard
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleProfileSync}
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    Sync profile
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSignIn}
+                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                >
+                  Sign in to sync
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Profile completeness</p>
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-slate-500">Public signals</span>
+                <span className="font-semibold">{profileCompletion}%</span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-white">
+                <div className="h-full rounded-full bg-slate-900 transition-all" style={{ width: `${profileCompletion}%` }} />
+              </div>
+              <p className="mt-2 text-xs text-slate-500">{displayEmail}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Session health</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{sessions.length} devices</p>
+              <p className="text-xs text-slate-500">
+                {otherSessions.length
+                  ? `${otherSessions.length} other device${otherSessions.length === 1 ? "" : "s"} signed in`
+                  : "Only this browser is active"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Sync status</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{autoSaveMessage}</p>
+              <p className="text-xs text-slate-500">
+                {settings.hasChanges ? "Unsaved edits detected" : "All sections synced"}
+              </p>
+            </div>
+          </div>
+        </section>
+        <div className="flex flex-col gap-8 lg:flex-row">
         <aside className="lg:w-72 lg:flex-none">
-          <div className="sticky top-6 space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="sticky top-4 space-y-6 rounded-3xl border border-slate-200 bg-white/85 p-5 shadow-md backdrop-blur">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Control center</p>
               <p className="mt-1 text-sm text-slate-500">
@@ -956,13 +1075,16 @@ const Settings = () => {
             <div className="space-y-2">
               <button
                 type="button"
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={saving || !settings?.hasChanges || !isAuthenticated}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Settings2 size={16} />
                 {saving ? 'Saving…' : 'Save changes'}
               </button>
+              {autoSaveStatus !== 'idle' && (
+                <p className="text-center text-[11px] font-medium text-slate-500">{autoSaveMessage}</p>
+              )}
               {!isAuthenticated && (
                 <p className="text-center text-[11px] font-medium text-amber-600">Sign in to sync updates</p>
               )}
@@ -970,18 +1092,6 @@ const Settings = () => {
           </div>
         </aside>
         <main className="flex-1 space-y-8">
-          <header className="flex flex-col gap-3">
-            <p className="uppercase tracking-[0.35em] text-xs text-slate-400">Settings</p>
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight">Account & privacy controls</h1>
-                <p className="text-sm text-slate-600 max-w-2xl">
-                  Tailor your Builtattic experience with security, notification, and personalization controls.
-                </p>
-              </div>
-            </div>
-          </header>
-
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:hidden">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Navigate</p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1506,6 +1616,7 @@ const Settings = () => {
       </main>
     </div>
   </div>
+</div>
   );
 };
 
