@@ -7,7 +7,6 @@ This project is now configured to run as a single container on Google Cloud Run,
 - **Google Cloud CLI** authenticated against your project.
 - **Artifact Registry** repository ready for container images (default names used below: `$_REPOSITORY`).
 - **MongoDB** instance accessible from Cloud Run (Atlas on GCP or self-managed).
-- **Redis** (optional, but recommended for queues / rate limits) accessible from Cloud Run.
 - **Email provider** (Gmail SMTP, SendGrid, etc.) tested with your sender.
 - **Gemini API** access enabled on your chosen Google Cloud project.
 
@@ -67,7 +66,7 @@ Or create a trigger tied to your main branch.
 
 - `_ENV_VARS`: comma-separated standard vars (`NODE_OPTIONS=--max-old-space-size=512,LOG_LEVEL=info`)
 - `_SECRET_ENV`: secret bindings (`JWT_SECRET=projects/<project>/secrets/jwt-secret:latest`)
-- `_VPC_CONNECTOR` / `_VPC_EGRESS`: connect Cloud Run to a VPC for private Mongo/Redis access.
+- `_VPC_CONNECTOR` / `_VPC_EGRESS`: connect Cloud Run to a VPC for private Mongo access.
 
 ## 5. Runtime Observability
 
@@ -114,9 +113,17 @@ Whichever option you choose, update `VITE_API_BASE_URL` and related variables in
 ## 11. Post-Deployment Checklist
 
 - [ ] Secrets populated and accessible to the Cloud Run service account.
-- [ ] MongoDB/Redis networking verified (VPC connector if private).
+- [ ] MongoDB networking verified (VPC connector if private).
 - [ ] Email delivery tested from Cloud Run.
 - [ ] Gemini API quota configured for production usage.
 - [ ] SSE/chat flows verified under Cloud Run session limits.
 - [ ] Cloud Build trigger wired to your repository.
 - [ ] Custom domain mapped and SSL certificate issued.
+
+## 12. Promotion Workflow & Previews
+
+1. **Promote secrets, not files** - production/staging values must come from Secret Manager or Vercel `env`, never checked into `.env`. Cloud Build substitutions should only reference secret names (for example `GEMINI_API_KEY=projects/.../secrets/...`).
+2. **Preview every change set** - wire your GitHub/GitLab repo to Cloud Build (Cloud Run) or Vercel to create a preview service per PR. Point previews at staging Mongo and include synthetic Vitruvi data so designers can validate layouts without local setup.
+3. **Gate merges with smoke tests** – run `npm --prefix server test` plus `npm --prefix client run build` inside CI before deploying. The server suite hits Vitruvi analyze, plan upload CRUD, studio publish, and workspace download packaging so regressions surface immediately.
+4. **Add synthetic monitors** – configure Cloud Monitoring or your preferred uptime provider to ping `/health`, `/health/db`, `/metrics`, and `/api/vitruvi/analyze` on both staging and production. Tie alerts to Slack/Email so on-call sees degradations quickly.
+5. **Inline processors** - workspace downloads and plan upload validation now run inline inside the API process, so there is no separate worker tier to scale or probe. Keep an eye on latency metrics if you expect very large exports.

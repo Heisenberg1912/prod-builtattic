@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { API_BASE } from "./config";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { FILTER_ORDER, FILTER_SETS } from "../constants/designFilters.js";
+import { useVitruviComposer } from "./hooks/useVitruviComposer.js";
+import { useVitruviUsage } from "./hooks/useVitruviUsage.js";
+import Card from "./components/Card.jsx";
 
 
 /**
@@ -27,92 +29,6 @@ import { FILTER_ORDER, FILTER_SETS } from "../constants/designFilters.js";
  */
 
 
-
-
-// ------------------------------ API HELPERS ---------------------------------
-async function callAnalyze(prompt, selected) {
-  const body = { prompt, options: selectedToOptions(selected) };
-  const r = await fetch(`${API_BASE}/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!r.ok) throw await enrichError("analyze_failed", r);
-  return r.json();
-}
-
-
-async function callAnalyzeAndGenerate(prompt, selected) {
-  const body = { prompt, options: selectedToOptions(selected) };
-  const r = await fetch(`${API_BASE}/analyze-and-generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!r.ok) throw await enrichError("compose_failed", r);
-  return r.json();
-}
-
-
-async function enrichError(prefix, response) {
-  let detail = "";
-  let data;
-  try {
-    data = await response.clone().json();
-    detail = data?.detail || data?.error || JSON.stringify(data);
-  } catch (_) {
-    try {
-      detail = await response.clone().text();
-    } catch (__) {
-      detail = "";
-    }
-  }
-  const suffix = detail ? `: ${response.status} (${detail})` : `: ${response.status}`;
-  const error = new Error(`${prefix}${suffix}`);
-  error.status = response.status;
-  if (data?.usage) {
-    error.usage = data.usage;
-  }
-  if (data) {
-    error.payload = data;
-  }
-  return error;
-}
-
-
-async function fetchUsageSummary() {
-  const r = await fetch(`${API_BASE}/usage`, { method: "GET" });
-  if (!r.ok) throw await enrichError("usage_fetch_failed", r);
-  const payload = await r.json();
-  return payload?.usage || null;
-}
-
-
-async function creditUsage({ tokens = 4000, prompts = 8 } = {}) {
-  const r = await fetch(`${API_BASE}/usage/credit`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tokens, prompts })
-  });
-  if (!r.ok) throw await enrichError("usage_credit_failed", r);
-  const payload = await r.json();
-  return payload?.usage || null;
-}
-
-
-function selectedToOptions(selected) {
-  // Map selected chips to a compact options object
-  const opt = {};
-  if (selected["Typology"]?.size) opt.typology = [...selected["Typology"]][0];
-  if (selected["Style"]?.size) opt.style = [...selected["Style"]][0];
-  if (selected["Climate Adaptability"]?.size) opt.climate = [...selected["Climate Adaptability"]][0];
-  const feats = [];
-  for (const k of ["Additional Features","Sustainability","Exterior","Roof Type"]) {
-    if (selected[k]?.size) feats.push(...selected[k]);
-  }
-  if (feats.length) opt.features = feats;
-  return opt;
-}
 
 
 // ---------------------------- SMALL UI PRIMITIVES ---------------------------
@@ -187,13 +103,6 @@ const Section = ({ title, children, right }) => (
     {right}
   </div>
 );
-
-
-const Card = ({ children, className = "" }) => (
-  <div className={`bg-white/90 backdrop-blur border border-neutral-200 rounded-2xl shadow-sm ${className}`}>{children}</div>
-);
-
-
 const Chip = ({ label, onRemove }) => (
   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-neutral-100 text-neutral-700 text-xs mr-1 mb-1">
     {label}
@@ -238,23 +147,9 @@ const Modal = ({ title, onClose, children }) => (
     </div>
   </div>
 );
-
-
-const UsageBar = ({ label, used = 0, total = 0, remainingLabel }) => {
-  const percent = computePercent(used, total);
-  return (
-    <div>
-      <div className="flex items-center justify-between text-xs text-neutral-600 mb-1">
-        <span>{label}</span>
-        <span>{remainingLabel}</span>
-      </div>
-      <div className="h-2 rounded-full bg-neutral-200 overflow-hidden">
-        <div className="h-full bg-neutral-900 transition-all" style={{ width: `${percent}%` }} />
-      </div>
-    </div>
-  );
-};
-
+const UsagePanel = lazy(() => import("./components/UsagePanel.jsx"));
+const FiltersSidebar = lazy(() => import("./components/FiltersSidebar.jsx"));
+const HistoryPanel = lazy(() => import("./components/HistoryPanel.jsx"));
 
 const PinterestLoader = () => (
   <div className="w-full h-full flex flex-col items-center justify-center gap-6 px-8">
@@ -448,9 +343,11 @@ export default function App() {
   const [riskRegister, setRiskRegister] = useState([]);
   const [materialPalette, setMaterialPalette] = useState([]);
   const [unitEconomy, setUnitEconomy] = useState(null);
-  const [usage, setUsage] = useState(null);
-  const [usageLoading, setUsageLoading] = useState(true);
-  const [usageError, setUsageError] = useState(null);
+  const { composeMutation } = useVitruviComposer();
+  const { usageQuery, creditMutation, updateUsageCache } = useVitruviUsage();
+  const usage = usageQuery.data || null;
+  const usageLoading = usageQuery.isPending || usageQuery.isFetching;
+  const usageError = usageQuery.error ? usageQuery.error.message || "Unable to load usage." : null;
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [quotaDetail, setQuotaDetail] = useState(null);
   const [billingMessage, setBillingMessage] = useState("");
@@ -563,25 +460,7 @@ export default function App() {
   }, []);
 
 
-  const loadUsage = useCallback(async () => {
-    setUsageLoading(true);
-    setUsageError(null);
-    try {
-      const summary = await fetchUsageSummary();
-      setUsage(summary);
-    } catch (err) {
-      setUsageError(err.message || "Unable to load usage.");
-    } finally {
-      setUsageLoading(false);
-    }
-  }, []);
-
-
-  useEffect(() => {
-    loadUsage();
-  }, [loadUsage]);
-
-
+  const handleRefreshUsage = () => usageQuery.refetch();
   const handleToggle = (section, opt) => {
     setSelected((prev) => {
       const next = { ...prev, [section]: toggleSet(prev[section], opt) };
@@ -632,7 +511,7 @@ export default function App() {
     setMaterialPalette(resolveMaterialPalette(result?.materialPalette, normalizedPrompt, promptText));
     setUnitEconomy(resolveUnitEconomy(result?.unitEconomy, promptText, Boolean(result?.base64 || result?.imageUrl)));
     if (result?.usage) {
-      setUsage(result.usage);
+      updateUsageCache(result.usage);
     }
     setImageModalOpen(false);
 
@@ -687,7 +566,10 @@ export default function App() {
     let shouldResetComposer = false;
 
     try {
-      const result = await callAnalyzeAndGenerate(annotatedPrompt, snapshot);
+      const result = await composeMutation.mutateAsync({
+        prompt: annotatedPrompt,
+        selected: snapshot,
+      });
       applyAnalyzeResult(result, annotatedPrompt, snapshot);
       shouldResetComposer = true;
     } catch (err) {
@@ -855,9 +737,9 @@ ${snippet}` : snippet));
     setBillingBusy(true);
     setBillingMessage("");
     try {
-      const summary = await creditUsage();
+      const summary = await creditMutation.mutateAsync();
       if (summary) {
-        setUsage(summary);
+        updateUsageCache(summary);
         setQuotaDetail(null);
         setBillingMessage("Credits added. Keep exploring new schemes.");
         setShowUpgradeModal(false);
@@ -869,6 +751,11 @@ ${snippet}` : snippet));
     }
   };
 
+
+  const handleHistorySelect = (entry) => {
+    if (!entry?.text) return;
+    setPromptDraft((prev) => (prev ? `${prev}\n\n${entry.text}` : entry.text));
+  };
 
   const handleHistoryReuse = (text) => {
     setPromptDraft(text);
@@ -1060,60 +947,30 @@ ${snippet}` : snippet));
 
       <div className="flex flex-col xl:flex-row xl:items-start gap-6 xl:gap-0 px-4 sm:px-6 pb-10">
         {/* LEFT FILTERS */}
-        <aside className="order-2 xl:order-1 w-full xl:w-[300px] bg-white/70 backdrop-blur border border-neutral-200 xl:border-r xl:border-l-0 rounded-2xl xl:rounded-none shadow-sm xl:shadow-none xl:min-h-[calc(100vh-56px)] xl:sticky xl:top-14 flex flex-col">
-          <div className="p-4 flex-1 overflow-visible xl:overflow-y-auto">
-{loading && <div className="hidden xl:block p-2 mb-2 text-sm bg-yellow-50 border border-yellow-200 rounded">Processing…</div>}
-{error && <div className="hidden xl:block p-2 mb-2 text-sm bg-red-50 border border-red-200 rounded">{String(error)}</div>}
-
-
-            <div className="mb-3">
-              <div className="flex items-center gap-2 rounded-xl border bg-neutral-50 px-3 py-2 focus-within:ring-2 focus-within:ring-neutral-300">
-                <Icon.Search />
-                <input className="bg-transparent outline-none w-full text-sm" placeholder="Search filters" />
+        <Suspense
+          fallback={
+            <aside className="order-2 xl:order-1 w-full xl:w-[300px] bg-white/70 border border-neutral-200 rounded-2xl p-4">
+              <div className="animate-pulse space-y-3">
+                <div className="h-8 bg-neutral-100 rounded-xl" />
+                <div className="h-20 bg-neutral-100 rounded-xl" />
               </div>
-            </div>
+            </aside>
+          }
+        >
+          <FiltersSidebar
+            Icon={Icon}
+            Section={Section}
+            Collapsible={Collapsible}
+            selected={selected}
+            loading={loading}
+            error={error}
+            onToggle={handleToggle}
+            onClear={handleClearFilters}
+            onApply={handleApplyFilters}
+            onOpenModal={setModal}
+          />
+        </Suspense>
 
-
-            <Section title="Filters" right={<span className="text-[10px] text-neutral-500">(Collapsible)</span>} />
-
-
-            <div className="space-y-2">
-              {FILTER_ORDER.map((section) => (
-                <Collapsible key={section} title={section} defaultOpen={section === "Category" || section === "Typology"}>
-                  <div className="flex flex-wrap gap-2">
-                    {FILTER_SETS[section].map((opt) => {
-                      const active = selected[section].has(opt);
-                      return (
-                        <button
-                          key={opt}
-                          onClick={() => handleToggle(section, opt)}
-                          className={`text-xs border rounded-full px-3 py-1 transition ${active ? "bg-neutral-900 text-white border-neutral-900" : "bg-white hover:bg-neutral-100 border-neutral-300"}`}
-                        >
-                          {opt}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Collapsible>
-              ))}
-            </div>
-
-
-            {/* Action Buttons */}
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-2">
-              <button onClick={handleClearFilters} className="flex-1 text-sm border border-neutral-300 rounded-xl px-3 py-2 hover:bg-neutral-100">Clear</button>
-              <button onClick={handleApplyFilters} className="flex-1 text-sm rounded-xl px-3 py-2 bg-neutral-900 text-white hover:bg-neutral-800">Apply Filters</button>
-            </div>
-          </div>
-
-
-          {/* Bottom utilities */}
-          <div className="mt-6 xl:mt-auto border-t border-neutral-200 p-4 space-y-2">
-            <button onClick={() => setModal("profile")} className="w-full text-sm flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-neutral-100"><Icon.User /> Profile</button>
-            <button onClick={() => setModal("settings")} className="w-full text-sm flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-neutral-100"><Icon.Cog /> Settings</button>
-            <button onClick={() => setModal("help")} className="w-full text-sm flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-neutral-100"><Icon.Help /> Help</button>
-          </div>
-        </aside>
 
 
         {/* CENTER */}
@@ -1282,58 +1139,56 @@ ${snippet}` : snippet));
             </div>
 
             {(usageLoading || usage || usageError) && (
-              <Card className="mb-4 p-4 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-neutral-500">Usage & Billing</div>
-                    <div className="text-lg font-semibold text-neutral-900">{usagePlanLabel}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleUpgradeClick}
-                      className="text-xs px-4 py-2 rounded-full border border-neutral-900 text-neutral-900 hover:bg-neutral-900 hover:text-white"
-                    >
-                      Upgrade
-                    </button>
-                    <button
-                      onClick={loadUsage}
-                      className="text-xs px-4 py-2 rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-100"
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-                {usageError ? (
-                  <div className="text-sm text-red-600">{usageError}</div>
-                ) : usageLoading ? (
-                  <div className="text-sm text-neutral-500">Loading usage…</div>
-                ) : usage ? (
-                  <>
-                    <UsageBar
-                      label="Prompts"
-                      used={usage.promptsUsed || 0}
-                      total={usage.promptAllowance || 0}
-                      remainingLabel={`${usageStats?.promptsRemaining || 0} left`}
-                    />
-                    <UsageBar
-                      label="Tokens"
-                      used={usage.tokensUsed || 0}
-                      total={usage.tokenAllowance || 0}
-                      remainingLabel={`${formatNumber(usageStats?.tokensRemaining || 0) || 0} tokens left`}
-                    />
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500">
-                      <span>{usageResetLabel}</span>
-                      {usage.blocked && <span className="text-red-600 font-semibold">Limit reached</span>}
-                      <span>
-                        Lifetime prompts: {formatNumber(usage.lifetimePrompts || 0)} | Tokens:{" "}
-                        {formatNumber(usage.lifetimeTokens || 0)}
-                      </span>
-                    </div>
-                  </>
-                ) : null}
-              </Card>
-            )}
 
+              <Suspense
+
+                fallback={
+
+                  <Card className="mb-4 p-4 space-y-4">
+
+                    <div className="flex justify-between">
+
+                      <span className="text-sm font-semibold text-neutral-700">Usage & Billing</span>
+
+                      <span className="text-xs text-neutral-500">Loading…</span>
+
+                    </div>
+
+                    <div className="h-2 w-full bg-neutral-100 rounded-full overflow-hidden">
+
+                      <div className="h-full w-1/2 bg-neutral-200 animate-pulse" />
+
+                    </div>
+
+                  </Card>
+
+                }
+
+              >
+
+                <UsagePanel
+
+                  usage={usage}
+
+                  usageLoading={usageLoading}
+
+                  usageError={usageError}
+
+                  usagePlanLabel={usagePlanLabel}
+
+                  usageResetLabel={usageResetLabel}
+
+                  usageStats={usageStats}
+
+                  onUpgrade={handleUpgradeClick}
+
+                  onRefresh={handleRefreshUsage}
+
+                />
+
+              </Suspense>
+
+            )}
 
             {/* Top grid: Image + Suggested Design */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
@@ -2136,22 +1991,22 @@ ${snippet}` : snippet));
 
 
         {/* RIGHT: PROMPT HISTORY */}
-        <aside className="order-3 w-full xl:w-[320px] bg-white/70 backdrop-blur border border-neutral-200 xl:border-l xl:border-t-0 rounded-2xl xl:rounded-none shadow-sm xl:shadow-none mt-6 xl:mt-0 xl:min-h-[calc(100vh-56px)] xl:sticky xl:top-14 p-4 flex flex-col">
-          <Section title="Prompt History" right={<Icon.History />} />
-          <div className="space-y-2 mt-3 flex-1 overflow-auto xl:overflow-visible pr-1">
-            {history.length === 0 && <div className="text-xs text-neutral-500">No prompts yet.</div>}
-            {history.map((h) => (
-              <button
-                key={h.id}
-                className="w-full text-left text-xs p-3 rounded-xl border border-neutral-200 hover:bg-neutral-100"
-                onClick={() => setPromptDraft((p) => (p ? `${p}\n\n${h.text}` : h.text))}
-                title={new Date(h.ts).toLocaleString()}
-              >
-                {truncate(h.text, 160)}
-              </button>
-            ))}
-          </div>
-        </aside>
+        <Suspense
+          fallback={
+            <aside className="order-3 w-full xl:w-[320px] bg-white/70 border border-neutral-200 rounded-2xl p-4 mt-6">
+              <div className="h-24 bg-neutral-100 rounded-xl animate-pulse" />
+            </aside>
+          }
+        >
+          <HistoryPanel
+            Icon={Icon}
+            Section={Section}
+            history={history}
+            onSelect={handleHistorySelect}
+            onClear={handleClearHistory}
+            truncate={truncate}
+          />
+        </Suspense>
       </div>
     </div>
   );

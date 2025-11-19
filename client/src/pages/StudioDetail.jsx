@@ -5,11 +5,10 @@
 // - Bottom: Similar Designs horizontal cards with price per sq ft
 // Uses only existing fields returned by fetchStudioBySlug; falls back gracefully.
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "react-hot-toast";
-import Footer from "../components/Footer";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, PenSquare } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
@@ -20,6 +19,9 @@ import { applyFallback, getStudioFallback } from "../utils/imageFallbacks.js";
 import { readStoredUser } from "../services/auth.js";
 import { inferRoleFromUser } from "../constants/roles.js";
 import { getWorkspaceCollections, subscribeToWorkspaceRole } from "../utils/workspaceSync.js";
+import SimilarDesignsGrid from "../components/studio/SimilarDesignsGrid.jsx";
+
+const Footer = lazy(() => import("../components/Footer"));
 
 const number = (v, dp = 0) =>
   typeof v === "number" && isFinite(v)
@@ -1497,56 +1499,17 @@ const StudioDetail = () => {
           </div>
         </section>
 
-        {/* Similar Designs */}
-        {recommendedStudios.length > 0 && (
-          <section className="mt-10">
-            <h2 className="text-base font-semibold text-slate-900 mb-4">Similar Designs:</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {recommendedStudios.map((item) => {
-                const perSqft =
-                  item.priceSqft ?? item.pricing?.basePrice ?? item.price ?? null;
-                const curr = item.currency || item.pricing?.currency || "USD";
-                return (
-                  <Link
-                    key={item._id || item.slug}
-                    to={item.slug ? `/studio/${item.slug}` : "#"}
-                    className="rounded-lg border border-slate-200 hover:border-slate-300 transition bg-white overflow-hidden"
-                  >
-                    {item.heroImage && (
-                      <img
-                        src={item.heroImage}
-                        alt={item.title}
-                        className="w-full h-28 object-cover"
-                        loading="lazy"
-                        onError={(event) => applyFallback(event, getStudioFallback(item))}
-                      />
-                    )}
-                    <div className="p-3">
-                      <div className="text-sm font-medium text-slate-900 line-clamp-1">
-                        {item.title}
-                      </div>
-                      <div className="text-xs text-slate-500 line-clamp-1">
-                        {item.firm?.name || item.studio || ""}
-                      </div>
-                      <div className="mt-2 text-xs text-slate-600">
-                        {perSqft != null ? (
-                          <>
-                            {curr} {number(perSqft)} per sq. ft.
-                          </>
-                        ) : (
-                          "On request"
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
+        <SimilarDesignsGrid
+          items={recommendedStudios}
+          numberFormatter={number}
+          onFallback={applyFallback}
+          fallbackResolver={getStudioFallback}
+        />
       </main>
 
-      <Footer />
+      <Suspense fallback={<div className="py-10 text-center text-sm text-slate-500">Loading footer…</div>}>
+        <Footer />
+      </Suspense>
     </div>
   );
 };

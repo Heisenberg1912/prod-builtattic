@@ -19,6 +19,51 @@ import {
 
 const router = Router();
 
+const cacheStore = new Map();
+const DEFAULT_CACHE_TTL_MS = Number.parseInt(process.env.MARKETPLACE_CACHE_TTL_MS || '15000', 10);
+
+const buildCacheKey = (req) => {
+  const params = new URLSearchParams();
+  Object.entries(req.query || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => params.append(key, entry));
+    } else if (value != null) {
+      params.append(key, value);
+    }
+  });
+  return `${req.path}?${params.toString()}`;
+};
+
+const shouldBypassCache = (req) =>
+  String(req.query?.noCache || '').toLowerCase() === 'true' ||
+  String(req.headers['x-cache-bust'] || '').length > 0;
+
+const marketplaceCache = (ttlMs = DEFAULT_CACHE_TTL_MS) => (req, res, next) => {
+  if (!ttlMs || ttlMs <= 0 || shouldBypassCache(req)) {
+    return next();
+  }
+
+  const key = buildCacheKey(req);
+  const cached = cacheStore.get(key);
+  if (cached && cached.expiry > Date.now()) {
+    return res.json(cached.payload);
+  }
+
+  const originalJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      cacheStore.set(key, { payload, expiry: Date.now() + ttlMs });
+      if (cacheStore.size > 200) {
+        const firstKey = cacheStore.keys().next().value;
+        cacheStore.delete(firstKey);
+      }
+    }
+    return originalJson(payload);
+  };
+
+  next();
+};
+
 const promotionSummaries = [
   {
     key: 'architectureCapital',
@@ -174,7 +219,7 @@ async function fetchCatalog(kind, query, { includeFirm = true, defaultLimit = 12
   };
 }
 
-router.get('/studios', async (req, res) => {
+router.get('/studios', marketplaceCache(), async (req, res) => {
   try {
     const response = await fetchCatalog('studio', req.query, { includeFirm: true, defaultLimit: 16 });
     res.json({ ok: true, ...response });
@@ -243,7 +288,7 @@ router.get('/design-studio/hosting', async (req, res) => {
     res.json({ ok: true, ...fallback });
   }
 });
-router.get('/materials', async (req, res) => {
+router.get('/materials', marketplaceCache(), async (req, res) => {
   try {
     const response = await fetchCatalog('material', req.query, { includeFirm: true, defaultLimit: 24 });
     res.json({ ok: true, ...response });
@@ -280,7 +325,7 @@ router.get('/materials/:slug', async (req, res) => {
   }
 });
 
-router.get('/firms', async (req, res) => {
+router.get('/firms', marketplaceCache(), async (req, res) => {
   try {
     const { search, style, category } = req.query;
     const match = { approved: true };
@@ -310,7 +355,7 @@ router.get('/promotions', (req, res) => {
   res.json({ ok: true, items: promotionSummaries });
 });
 
-router.get('/associates', async (req, res) => {
+router.get('/associates', marketplaceCache(), async (req, res) => {
   try {
     const { search, skill, software, timezone } = req.query;
     const match = {};

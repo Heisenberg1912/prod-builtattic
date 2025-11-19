@@ -14,7 +14,6 @@ Use this sheet when creating the Production/Preview/Development environment grou
 | Server | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM` | SMTP credentials for invite/reset flows. |
 | Server | `ADMIN_ALERT_EMAIL` | Notifications for invite/reset actions. |
 | Server | `FILE_ENCRYPTION_KEY` / `ASSET_TOKEN_SECRET` | 64‑character hex values. |
-| Server | `REDIS_URL` | Optional unless queues/workers are enabled. |
 | Server | `GEMINI_*`, `OPENWEATHER_API_KEY` | Only needed if AI/weather features are active. |
 | Server | `BLOCKCHAIN_*` | Optional proof anchoring configuration. |
 | Server | `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` | Used by `ensureSuperAdmin`. Set to a locked-down admin mailbox. |

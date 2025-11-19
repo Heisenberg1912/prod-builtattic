@@ -7,6 +7,8 @@ import {
   createWorkspaceDownload,
   updateWorkspaceDownload,
   deleteWorkspaceDownload,
+  triggerWorkspaceDownload,
+  getWorkspaceDownloadStatus,
 } from '../controllers/workspaceDownloadController.js';
 
 const safeMiddleware = (fn) => (typeof fn === 'function' ? fn : (_req, _res, next) => next());
@@ -30,5 +32,7 @@ router.get('/', listWorkspaceDownloads);
 router.post('/', createWorkspaceDownload);
 router.patch('/:id', updateWorkspaceDownload);
 router.delete('/:id', deleteWorkspaceDownload);
+router.post('/:id/process', triggerWorkspaceDownload);
+router.get('/:id/status', getWorkspaceDownloadStatus);
 
 export default router;

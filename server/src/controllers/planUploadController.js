@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import PlanUpload from '../models/PlanUpload.js';
 import { determineOwnerScope, OWNER_TYPES } from '../utils/ownerScope.js';
+import logger from '../utils/logger.js';
 
 const httpError = (status, message, details) =>
   Object.assign(new Error(message), { statusCode: status, details });
@@ -58,6 +59,22 @@ const mapPlanUpload = (plan) => ({
   updatedAt: plan.updatedAt,
 });
 
+const normalisePlanUpload = async (planId) => {
+  const plan = await PlanUpload.findById(planId);
+  if (!plan) {
+    throw httpError(404, 'Plan upload not found');
+  }
+  const now = new Date();
+  plan.metadata = {
+    ...(plan.metadata || {}),
+    lastValidatedAt: now,
+    lintWarnings: plan.description?.length ? [] : ['Description missing'],
+  };
+  await plan.save();
+  logger.info('Plan upload normalised inline', { planId });
+  return plan.metadata;
+};
+
 export const listPlanUploads = async (req, res, next) => {
   try {
     const scope = await resolveScopeOrThrow(req.user, req.query.ownerType);
@@ -108,6 +125,7 @@ export const createPlanUpload = async (req, res, next) => {
       createdBy: req.user?._id ? new mongoose.Types.ObjectId(req.user._id) : undefined,
     };
     const plan = await PlanUpload.create(payload);
+    await normalisePlanUpload(plan._id.toString());
     res.status(201).json({ ok: true, planUpload: mapPlanUpload(plan) });
   } catch (error) {
     next(error);
@@ -149,6 +167,7 @@ export const updatePlanUpload = async (req, res, next) => {
     if (req.body?.tags !== undefined) plan.tags = normaliseList(req.body.tags);
 
     await plan.save();
+    await normalisePlanUpload(plan._id.toString());
     res.json({ ok: true, planUpload: mapPlanUpload(plan) });
   } catch (error) {
     next(error);
@@ -178,4 +197,3 @@ export default {
   updatePlanUpload,
   deletePlanUpload,
 };
-

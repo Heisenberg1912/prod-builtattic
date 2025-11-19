@@ -65,7 +65,6 @@ const requiredEnvVars = [
   { key: 'EMAIL_FROM', description: 'Default email from header' },
   { key: 'FILE_ENCRYPTION_KEY', description: 'Hex or passphrase used for encrypting stored files' },
   { key: 'ASSET_TOKEN_SECRET', description: 'Secret used to sign secure asset download tokens' },
-  { key: 'REDIS_URL', description: 'Redis connection string' },
   {
     key: 'GEMINI_API_KEY',
     description: 'Gemini API key',

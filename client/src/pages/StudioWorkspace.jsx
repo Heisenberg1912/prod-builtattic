@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Plus, Pencil, Trash2, CloudUpload } from "lucide-react";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
-import FirmProfileEditor from "../components/studio/FirmProfileEditor.jsx";
-import StudioForm from "../components/studio/StudioForm.jsx";
+import { WorkspaceHero, WorkspaceActions } from "../components/studio/WorkspaceHero.jsx";
 import {
   fetchFirmStudios,
   createFirmStudio,
@@ -16,349 +15,10 @@ import {
 import { EMPTY_STUDIO_FORM, mapStudioToForm, studioFormToPayload } from "../utils/studioForm.js";
 import { uploadStudioAsset } from "../services/uploads.js";
 import { loginAsDemo } from "../services/auth.js";
-import {
-  getWorkspaceCollections,
-  subscribeToWorkspaceRole,
-  WORKSPACE_SYNC_STORAGE_KEY,
-} from "../utils/workspaceSync.js";
+import useWorkspaceCollectionsSync from "../hooks/useWorkspaceCollections.js";
 
-
-const HeroStat = ({ label, value, helper }) => (
-  <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-slate-900 shadow-sm">
-    <p className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-400">{label}</p>
-    <p className="mt-2 text-2xl font-semibold">{value ?? "-"}</p>
-    {helper ? <p className="text-sm text-slate-500">{helper}</p> : null}
-  </div>
-);
-
-const WorkspaceHero = ({ metaCards, onCreateStudio }) => (
-  <section className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-white via-slate-50 to-indigo-100 px-8 py-10 text-slate-900 shadow-xl ring-1 ring-slate-100">
-    <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end">
-      <div className="flex-1 space-y-4">
-        <span className="inline-flex items-center text-[11px] font-semibold uppercase tracking-[0.5em] text-slate-500">
-          Studio OS
-        </span>
-        <h1 className="text-3xl font-semibold sm:text-4xl">Design Studio workspace</h1>
-        <p className="max-w-2xl text-base text-slate-600">
-          Publish bundles, update your firm voice, and drop new concept packs without leaving the portal. Everything here
-          syncs to the public Studio experience instantly after approval.
-        </p>
-      </div>
-      <div className="flex flex-col gap-3 lg:w-[260px]">
-        <button
-          type="button"
-          onClick={onCreateStudio}
-          className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-slate-800"
-        >
-          Launch a new studio
-        </button>
-        <Link
-          to="/studio"
-          className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-white"
-        >
-          View public page
-        </Link>
-        <a
-          href="mailto:studios@builtattic.com"
-          className="text-center text-sm font-semibold text-slate-600 underline-offset-4 hover:underline"
-        >
-          Message studios@builtattic.com
-        </a>
-      </div>
-    </div>
-    <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {metaCards.map((card) => (
-        <HeroStat key={card.label} {...card} />
-      ))}
-    </div>
-    <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-indigo-200/40 blur-[100px]" />
-    <div className="pointer-events-none absolute -bottom-24 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-200/30 blur-[150px]" />
-  </section>
-);
-
-const QuickActionList = ({ onCreateStudio }) => {
-  const actions = [
-    {
-      type: "button",
-      label: "Draft a studio bundle",
-      helper: "Spin up a new tile with hero, pricing, and gallery.",
-      onClick: onCreateStudio,
-    },
-    {
-      type: "anchor",
-      label: "Update firm profile",
-      helper: "Sync hero copy + services buyers see first.",
-      href: "#firm-profile",
-    },
-    {
-      type: "link",
-      label: "Manage plan uploads",
-      helper: "Push renders and plan packs from the dashboard.",
-      to: "/dashboard/firm",
-    },
-    {
-      type: "link",
-      label: "Preview public Studio",
-      helper: "Open the live experience buyers browse.",
-      to: "/studio",
-    },
-  ];
-
-  const renderAction = (action) => {
-    const content = (
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">{action.label}</p>
-          <p className="text-xs text-slate-500">{action.helper}</p>
-        </div>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-400">Go</span>
-      </div>
-    );
-
-    if (action.type === "button") {
-      return (
-        <button
-          key={action.label}
-          type="button"
-          onClick={action.onClick}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-slate-300"
-        >
-          {content}
-        </button>
-      );
-    }
-
-    if (action.type === "anchor") {
-      return (
-        <a
-          key={action.label}
-          href={action.href}
-          className="block rounded-2xl border border-slate-200 bg-white px-4 py-3 hover:border-slate-300"
-        >
-          {content}
-        </a>
-      );
-    }
-
-    return (
-      <Link
-        key={action.label}
-        to={action.to}
-        className="block rounded-2xl border border-slate-200 bg-white px-4 py-3 hover:border-slate-300"
-      >
-        {content}
-      </Link>
-    );
-  };
-
-  return (
-    <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Quick actions</p>
-      <div className="mt-4 space-y-2">{actions.map(renderAction)}</div>
-    </section>
-  );
-};
-
-const SyncSummaryCard = ({ planUploads = [], serviceBundles = [], draftCount = 0 }) => (
-  <section className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-5 text-slate-900 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-500">Workspace sync</p>
-    <p className="mt-2 text-sm text-slate-600">Keep assets aligned so your marketplace placement stays fresh for buyers.</p>
-    <dl className="mt-4 space-y-3">
-      <div>
-        <dt className="text-xs uppercase tracking-[0.35em] text-indigo-500">Plan uploads</dt>
-        <dd className="text-xl font-semibold text-slate-900">{planUploads.length || 0}</dd>
-        <p className="text-xs text-slate-500">Concept packs ready for promotion</p>
-      </div>
-      <div>
-        <dt className="text-xs uppercase tracking-[0.35em] text-indigo-500">Service bundles</dt>
-        <dd className="text-xl font-semibold text-slate-900">{serviceBundles.length || 0}</dd>
-        <p className="text-xs text-slate-500">Scopes synced to Design Studio</p>
-      </div>
-      <div>
-        <dt className="text-xs uppercase tracking-[0.35em] text-indigo-500">Draft studios</dt>
-        <dd className="text-xl font-semibold text-slate-900">{draftCount ?? 0}</dd>
-        <p className="text-xs text-slate-500">Publish-ready bundles</p>
-      </div>
-    </dl>
-  </section>
-);
-
-const formatCurrency = (value, currency = "USD") => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 0,
-    }).format(numeric);
-  } catch {
-    return `${currency} ${numeric.toLocaleString()}`;
-  }
-};
-
-const formatSqft = (value) => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return `${numeric.toLocaleString()} sq ft`;
-};
-
-const formatRate = (value, currency = "USD", unit = "sq ft") => {
-  const formatted = formatCurrency(value, currency);
-  if (!formatted) return null;
-  return unit ? `${formatted} / ${unit}` : formatted;
-};
-
-const ChipRow = ({ items, placeholder = "Add details from dashboard" }) => {
-  if (!Array.isArray(items) || items.length === 0) {
-    return <span className="text-xs text-slate-400">{placeholder}</span>;
-  }
-  return (
-    <div className="flex flex-wrap gap-1">
-      {items.map((item, index) => (
-        <span
-          key={`${item || "item"}-${index}`}
-          className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
-        >
-          {item || "â€”"}
-        </span>
-      ))}
-    </div>
-  );
-};
-
-
-const resolveHeroImage = (studio) => {
-  if (studio?.heroImage) return studio.heroImage;
-  if (Array.isArray(studio?.gallery) && studio.gallery.length) return studio.gallery[0];
-  if (typeof studio?.gallery === "string" && studio.gallery.trim()) {
-    const first = studio.gallery
-      .split(/\r?\n/)
-      .map((entry) => entry.trim())
-      .find(Boolean);
-    if (first) return first;
-  }
-  if (Array.isArray(studio?.images) && studio.images.length) return studio.images[0];
-  return null;
-};
-
-const formatUpdatedAt = (value) => {
-  if (!value) return "ï¿½";
-  try {
-    return new Date(value).toLocaleDateString(undefined, {
-      month: "short",
-      day: "2-digit",
-      year: "numeric",
-    });
-  } catch {
-    return value;
-  }
-};
-
-const StudioWorkbenchCard = ({ studio, onEditTile, onEditListing, onPublish, onDelete }) => {
-  const heroImage = resolveHeroImage(studio);
-  const previewHref = studio?.slug ? `/studio/${studio.slug}` : null;
-  const priceLabel =
-    studio?.price != null
-      ? formatCurrency(studio.price, studio.currency || studio.pricing?.currency || "USD")
-      : null;
-  const statusLabel = (studio?.status || "draft").toUpperCase();
-  const updatedLabel = formatUpdatedAt(studio?.updatedAt);
-
-  return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">{statusLabel}</p>
-          <h3 className="mt-1 text-xl font-semibold text-slate-900">{studio?.title || "Untitled studio"}</h3>
-          <p className="text-sm text-slate-600">{studio?.summary || studio?.description || "Add a short summary to help buyers"}</p>
-        </div>
-        <div className="text-right text-sm text-slate-500">
-          {priceLabel ? <p className="text-base font-semibold text-slate-900">{priceLabel}</p> : <p className="text-base text-slate-400">Set pricing</p>}
-          <p className="text-xs">Updated {updatedLabel}</p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 space-y-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Listing tile</p>
-            <p className="text-sm text-slate-600">Controls the card buyers see in search, recommendations, and dashboards.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onEditTile(studio)}
-              className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white shadow hover:bg-slate-800"
-            >
-              <Pencil size={14} /> Edit listing tile
-            </button>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 space-y-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Listing page</p>
-            <p className="text-sm text-slate-600">Update gallery, story, service programs, and CTA copy on the public detail page.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onEditListing(studio)}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-900 hover:border-slate-300"
-            >
-              <Pencil size={14} /> Edit listing page
-            </button>
-            {previewHref ? (
-              <Link
-                to={previewHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300"
-              >
-                View live page
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-        <button
-          type="button"
-          onClick={() => onPublish(studio)}
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-slate-700 hover:border-slate-400"
-        >
-          <CloudUpload size={14} /> Publish updates
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(studio)}
-          className="inline-flex items-center gap-2 rounded-full border border-rose-200 px-3 py-1.5 text-rose-600 hover:border-rose-300"
-        >
-          <Trash2 size={14} /> Delete draft
-        </button>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] items-start">
-        <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-600">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Notes</p>
-          <p className="mt-1 text-sm text-slate-600">
-            {studio?.notes || 'Keep programs, delivery notes, and catalogue pricing aligned with your buyer messaging.'}
-          </p>
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 overflow-hidden">
-          {heroImage ? (
-            <img src={heroImage} alt={studio?.title || 'Studio hero'} className="h-36 w-full object-cover" />
-          ) : (
-            <div className="flex h-36 items-center justify-center text-xs text-slate-500">
-              Upload a hero image to preview your tile
-            </div>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-};
+const FirmProfileEditor = lazy(() => import("../components/studio/FirmProfileEditor.jsx"));
+const StudioForm = lazy(() => import("../components/studio/StudioForm.jsx"));
 
 
 export default function StudioWorkspace() {
@@ -373,7 +33,7 @@ export default function StudioWorkspace() {
   const galleryFileInputRef = useRef(null);
   const [uploading, setUploading] = useState({ hero: false, gallery: false });
   const [authState, setAuthState] = useState({ required: false, loading: false, error: null });
-  const [collections, setCollections] = useState(() => getWorkspaceCollections('firm'));
+  const [collections] = useWorkspaceCollectionsSync("firm");
   const [formIntent, setFormIntent] = useState(null);
   const initialEditSlug = useMemo(() => new URLSearchParams(location.search).get('edit'), [location.search]);
   const [pendingEditSlug, setPendingEditSlug] = useState(initialEditSlug);
@@ -605,24 +265,6 @@ export default function StudioWorkspace() {
   const planUploads = collections.planUploads || [];
   const serviceBundles = collections.serviceBundles || [];
 
-  useEffect(() => {
-    const unsubscribe = subscribeToWorkspaceRole('firm', setCollections);
-    const handleStorage = (event) => {
-      if (event.key === WORKSPACE_SYNC_STORAGE_KEY) {
-        setCollections(getWorkspaceCollections('firm'));
-      }
-    };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('storage', handleStorage);
-    }
-    return () => {
-      unsubscribe?.();
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('storage', handleStorage);
-      }
-    };
-  }, []);
-
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
       <RegistrStrip />
@@ -667,16 +309,24 @@ export default function StudioWorkspace() {
                     <p className="text-sm text-slate-500">Changes sync to Design Studio once approved.</p>
                   </div>
                   <div className="mt-6 rounded-2xl border border-slate-100/80 bg-slate-50/60 p-4">
-                    <FirmProfileEditor
-                      onProfileUpdate={(next) => setProfile(next)}
-                      header={(
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Workspace identity</p>
-                          <h3 className="text-xl font-semibold text-slate-900">Share your story</h3>
-                          <p className="text-sm text-slate-500">Hero copy, services, and buyer proof update live pages.</p>
+                    <Suspense
+                      fallback={
+                        <div className="rounded-3xl border border-slate-200 bg-white/80 p-6 text-sm text-slate-500">
+                          Loading firm profile editor…
                         </div>
-                      )}
-                    />
+                      }
+                    >
+                      <FirmProfileEditor
+                        onProfileUpdate={(next) => setProfile(next)}
+                        header={(
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Workspace identity</p>
+                            <h3 className="text-xl font-semibold text-slate-900">Share your story</h3>
+                            <p className="text-sm text-slate-500">Hero copy, services, and buyer proof update live pages.</p>
+                          </div>
+                        )}
+                      />
+                    </Suspense>
                   </div>
                 </div>
 
@@ -822,28 +472,36 @@ export default function StudioWorkspace() {
                 </section>
 
                 {formVisible ? (
-                  <StudioForm
-                    form={form}
-                    onChange={setForm}
-                    onCancel={() => {
-                      setFormVisible(false);
-                      setFormIntent(null);
-                      setForm(EMPTY_STUDIO_FORM);
-                    }}
-                    onSubmit={handleSubmit}
-                    saving={saving}
-                    onHeroUpload={handleHeroUpload}
-                    onGalleryUpload={handleGalleryUpload}
-                    uploading={uploading}
-                    heroFileInputRef={heroFileInputRef}
-                    galleryFileInputRef={galleryFileInputRef}
-                    intent={formIntent}
-                  />
+                  <Suspense
+                    fallback={
+                      <div className="rounded-2xl border border-slate-200 bg-white/80 p-6 text-sm text-slate-500">
+                        Loading studio form…
+                      </div>
+                    }
+                  >
+                    <StudioForm
+                      form={form}
+                      onChange={setForm}
+                      onCancel={() => {
+                        setFormVisible(false);
+                        setFormIntent(null);
+                        setForm(EMPTY_STUDIO_FORM);
+                      }}
+                      onSubmit={handleSubmit}
+                      saving={saving}
+                      onHeroUpload={handleHeroUpload}
+                      onGalleryUpload={handleGalleryUpload}
+                      uploading={uploading}
+                      heroFileInputRef={heroFileInputRef}
+                      galleryFileInputRef={galleryFileInputRef}
+                      intent={formIntent}
+                    />
+                  </Suspense>
                 ) : null}
               </div>
 
               <aside className="space-y-5">
-                <QuickActionList onCreateStudio={() => openCreateForm("create")} />
+                <WorkspaceActions onCreateStudio={() => openCreateForm("create")} />
                 <SyncSummaryCard
                   planUploads={planUploads}
                   serviceBundles={serviceBundles}

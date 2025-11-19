@@ -35,7 +35,7 @@ const WorkspaceDownloadSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['draft', 'released'],
+      enum: ['draft', 'processing', 'released', 'failed'],
       default: 'draft',
     },
     fileUrl: {

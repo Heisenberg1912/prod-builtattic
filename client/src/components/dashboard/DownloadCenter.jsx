@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import {
   createWorkspaceDownload,
   updateWorkspaceDownload,
   deleteWorkspaceDownload,
+  processWorkspaceDownload,
+  fetchWorkspaceDownloadStatus,
 } from "../../services/workspaceDownloads.js";
 
 const defaultForm = {
@@ -27,7 +29,9 @@ const accessLabels = {
 
 const statusTone = {
   draft: "text-slate-700 bg-slate-100",
+  processing: "text-amber-700 bg-amber-50",
   released: "text-emerald-700 bg-emerald-50",
+  failed: "text-rose-700 bg-rose-50",
 };
 
 const formatDate = (value) => {
@@ -58,6 +62,8 @@ export default function DownloadCenter({
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [processingIds, setProcessingIds] = useState(() => new Set());
+  const pollersRef = useRef(new Map());
 
   useEffect(() => {
     setDownloads(Array.isArray(initialDownloads) ? [...initialDownloads] : []);
@@ -74,6 +80,69 @@ export default function DownloadCenter({
   };
 
   const resetForm = () => setForm(defaultForm);
+
+  const updateDownloadEntries = (download) => {
+    if (!download?.id) return;
+    setDownloads((prev) => {
+      const filtered = prev.filter((item) => item.id !== download.id);
+      return [download, ...filtered];
+    });
+  };
+
+  const setProcessingFlag = (id, value) => {
+    setProcessingIds((prev) => {
+      const next = new Set(prev);
+      if (value) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const clearPoller = (id) => {
+    const timer = pollersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      pollersRef.current.delete(id);
+    }
+  };
+
+  const refreshDownloadStatus = async (id) => {
+    const response = await fetchWorkspaceDownloadStatus(id, { ownerType });
+    if (response?.download) {
+      updateDownloadEntries(response.download);
+    }
+    return response?.download;
+  };
+
+  const scheduleStatusPoll = (id, delay = 2500) => {
+    clearPoller(id);
+    const timer = setTimeout(async () => {
+      try {
+        const latest = await refreshDownloadStatus(id);
+        if (latest?.status === "processing") {
+          scheduleStatusPoll(id, Math.min(delay + 500, 5000));
+        } else {
+          setProcessingFlag(id, false);
+          clearPoller(id);
+          if (latest?.status === "released") {
+            toast.success("Workspace download ready");
+          }
+        }
+      } catch (error) {
+        setProcessingFlag(id, false);
+        clearPoller(id);
+        toast.error(error?.message || "Unable to refresh status");
+      }
+    }, delay);
+    pollersRef.current.set(id, timer);
+  };
+
+  useEffect(() => {
+    return () => {
+      pollersRef.current.forEach((timer) => clearTimeout(timer));
+      pollersRef.current.clear();
+    };
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -107,10 +176,7 @@ export default function DownloadCenter({
       }
       const saved = response?.download;
       if (!saved) throw new Error("Download response missing");
-      setDownloads((prev) => {
-        const filtered = prev.filter((item) => item.id !== saved.id);
-        return [saved, ...filtered];
-      });
+      updateDownloadEntries(saved);
       toast.success(form.id ? "Download updated" : "Download published");
       resetForm();
     } catch (error) {
@@ -147,6 +213,32 @@ export default function DownloadCenter({
       toast.error(error?.message || "Unable to delete download");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleProcess = async (download) => {
+    if (!download?.id) return;
+    if (!download.fileUrl) {
+      toast.error("Add a shareable file URL before packaging");
+      return;
+    }
+    setProcessingFlag(download.id, true);
+    try {
+      const response = await processWorkspaceDownload(download.id, { ownerType });
+      const doc = response?.download;
+      if (doc) {
+        updateDownloadEntries(doc);
+      }
+      if (doc?.status === "processing") {
+        toast.success("Packaging started");
+        scheduleStatusPoll(download.id);
+      } else {
+        setProcessingFlag(download.id, false);
+        toast.success(doc?.status === "released" ? "Download ready" : "Packaging updated");
+      }
+    } catch (error) {
+      setProcessingFlag(download.id, false);
+      toast.error(error?.message || "Unable to process download");
     }
   };
 
@@ -318,6 +410,24 @@ export default function DownloadCenter({
                     <span>{download.downloadCode || "No code"}</span>
                     <span>Expires {formatDate(download.expiresAt)}</span>
                   </div>
+                  {download.metadata?.artifactUrl && (
+                    <div className="flex justify-between text-emerald-600">
+                      <span>Artifact ready</span>
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => window.open(download.metadata.artifactUrl, "_blank")}
+                      >
+                        Download
+                      </button>
+                    </div>
+                  )}
+                  {download.metadata?.lastProcessedAt && (
+                    <div className="flex justify-between">
+                      <span>Processed</span>
+                      <span>{formatDate(download.metadata.lastProcessedAt)}</span>
+                    </div>
+                  )}
                 </dl>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
                   <a
@@ -328,6 +438,18 @@ export default function DownloadCenter({
                   >
                     Open file
                   </a>
+                  <button
+                    type="button"
+                    onClick={() => handleProcess(download)}
+                    disabled={processingIds.has(download.id) || download.status === "processing"}
+                    className="rounded-full border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {processingIds.has(download.id) || download.status === "processing"
+                      ? "Processing..."
+                      : download.status === "released"
+                      ? "Rebuild package"
+                      : "Prepare package"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleEdit(download)}

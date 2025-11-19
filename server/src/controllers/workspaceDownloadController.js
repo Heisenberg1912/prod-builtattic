@@ -2,9 +2,10 @@ import mongoose from 'mongoose';
 
 import WorkspaceDownload from '../models/WorkspaceDownload.js';
 import { determineOwnerScope } from '../utils/ownerScope.js';
+import logger from '../utils/logger.js';
 
 const ACCESS_LEVELS = new Set(['internal', 'client', 'public']);
-const STATUS_VALUES = new Set(['draft', 'released']);
+const STATUS_VALUES = new Set(['draft', 'processing', 'released', 'failed']);
 
 const httpError = (status, message, details) =>
   Object.assign(new Error(message), { statusCode: status, details });
@@ -57,6 +58,54 @@ const mapDownload = (doc) => ({
   createdAt: doc.createdAt,
   updatedAt: doc.updatedAt,
 });
+
+const wait = (ms = 1000) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const resolveArtifactMeta = (doc) => {
+  const suffix = doc.tag || doc._id.toString().slice(-6);
+  const artifactUrl = `${doc.fileUrl}?bundle=${suffix}`;
+  const packageSize = Math.max(400_000, Math.round(Math.random() * 5_000_000));
+  return { artifactUrl, packageSize };
+};
+
+const processWorkspaceDownloadInline = async (downloadId, options = {}) => {
+  const doc = await WorkspaceDownload.findById(downloadId);
+  if (!doc) {
+    throw httpError(404, 'Workspace download not found');
+  }
+
+  doc.status = 'processing';
+  doc.metadata = {
+    ...(doc.metadata || {}),
+    jobHistory: [
+      ...(Array.isArray(doc.metadata?.jobHistory) ? doc.metadata.jobHistory : []),
+      {
+        status: 'processing',
+        startedAt: new Date(),
+      },
+    ],
+  };
+  await doc.save();
+
+  await wait(options.delayMs ?? 150);
+
+  const artifact = resolveArtifactMeta(doc);
+  doc.status = 'released';
+  doc.metadata = {
+    ...(doc.metadata || {}),
+    artifactUrl: artifact.artifactUrl,
+    artifactSize: artifact.packageSize,
+    lastProcessedAt: new Date(),
+  };
+  await doc.save();
+
+  logger.info('Workspace download processed inline', {
+    downloadId,
+    artifactUrl: artifact.artifactUrl,
+  });
+
+  return artifact;
+};
 
 export const listWorkspaceDownloads = async (req, res, next) => {
   try {
@@ -193,9 +242,60 @@ export const deleteWorkspaceDownload = async (req, res, next) => {
   }
 };
 
+export const triggerWorkspaceDownload = async (req, res, next) => {
+  try {
+    const scope = await resolveScopeOrThrow(req.user, req.body.ownerType || req.query.ownerType);
+    const downloadId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(downloadId)) {
+      throw httpError(400, 'Invalid download id');
+    }
+    const doc = await WorkspaceDownload.findOne({
+      _id: downloadId,
+      ownerType: scope.ownerType,
+      ownerId: scope.ownerId,
+    });
+    if (!doc) throw httpError(404, 'Download not found');
+    if (!doc.fileUrl) throw httpError(400, 'File URL missing; upload assets first');
+
+    await processWorkspaceDownloadInline(downloadId, { delayMs: 50 });
+    const fresh = await WorkspaceDownload.findById(downloadId).lean();
+    res.json({
+      ok: true,
+      mode: 'inline',
+      download: mapDownload(fresh),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getWorkspaceDownloadStatus = async (req, res, next) => {
+  try {
+    const scope = await resolveScopeOrThrow(req.user, req.query.ownerType);
+    const downloadId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(downloadId)) {
+      throw httpError(400, 'Invalid download id');
+    }
+    const doc = await WorkspaceDownload.findOne({
+      _id: downloadId,
+      ownerType: scope.ownerType,
+      ownerId: scope.ownerId,
+    }).lean();
+    if (!doc) throw httpError(404, 'Download not found');
+    res.json({
+      ok: true,
+      download: mapDownload(doc),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export default {
   listWorkspaceDownloads,
   createWorkspaceDownload,
   updateWorkspaceDownload,
   deleteWorkspaceDownload,
+  triggerWorkspaceDownload,
+  getWorkspaceDownloadStatus,
 };

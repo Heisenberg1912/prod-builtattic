@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
 import Navbar from "./components/Navbar";
 import { Toaster, toast } from "react-hot-toast";
 import { CartProvider } from "./context/CartContext";
 import { WishlistProvider } from "./context/WishlistContext";
+import PageTransition from "./components/PageTransition";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -63,6 +65,7 @@ const ScrollToTop = () => {
 const App = () => {
   const [auth, setAuth] = useState(() => ({ ...readStoredAuth(), loaded: false }));
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLoginSuccess = ({ token, role, user }) => {
     try {
@@ -170,6 +173,8 @@ const App = () => {
     return () => window.removeEventListener("currency:change", onChange);
   }, []);
 
+  const wrapWithTransition = (node) => <PageTransition>{node}</PageTransition>;
+
   return (
     <CartProvider>
       <WishlistProvider>
@@ -178,58 +183,60 @@ const App = () => {
           <Navbar />
           <Toaster position="top-right" gutter={8} toastOptions={{ duration: 3000 }} />
 
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login onLogin={handleLoginSuccess} />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/products" element={<ProductList />} />
-            <Route path="/products/:id" element={<ProductDetail />} />
-            <Route path="/buy" element={<Buy />} />
-            <Route path="/buy/:id" element={<Buy />} />
-            <Route path="/cart" element={<Cart />} />
-            <Route path="/cartpage" element={<CartPage />} />
-            <Route path="/ai" element={<Ai />} />
-            <Route path="/aisetting" element={<Ai />} />
-            <Route path="/matters" element={<Matters />} />
-            <Route path="/studio" element={<Studio />} />
-            <Route path="/studio/portal" element={<StudioPortal />} />
-            <Route path="/studio/portal/intro" element={<StudioPortal />} />
-            <Route path="/portal/studio" element={<StudioWorkspace />} />
-            <Route path="/portal/vendor" element={<VendorPortal />} />
-            <Route path="/warehouse" element={<Warehouse />} />
-            <Route path="/warehouse/:id" element={<WarehouseDetail />} />
-            <Route path="/firms" element={<Firms />} />
-            <Route path="/associates" element={<Associates />} />
-            <Route path="/associates/portal" element={<AssociatePortal />} />
-            <Route path="/associates/portal/intro" element={<AssociatePortal />} />
-            <Route path="/portal/associate" element={<AssociateWorkspace />} />
-            <Route path="/firmportfolio" element={<FirmPortfolio />} />
-            <Route path="/associateportfolio" element={<AssociatePortfolio />} />
-            <Route path="/associateportfolio/:id" element={<AssociatePortfolio />} />
-            <Route path="/currencyconver" element={<CurrencyConverter />} />
-            <Route path="/amazon" element={<Navigate to="/studio" replace />} />
-            <Route path="/blinkit" element={<Navigate to="/warehouse" replace />} />
-            <Route path="/urban" element={<Navigate to="/firms" replace />} />
-            <Route path="/wishlist" element={<Wishlist />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/account" element={<Account />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/orders" element={<OrderHistory />} />
-            <Route path="/dashboard/super-admin" element={<SuperAdminDashboard />} />
-            <Route path="/dashboard/admin" element={<AdminDashboard />} />
-            <Route path="/dashboard/user" element={<UserDashboard />} />
-            <Route path="/dashboard/associate" element={<AssociateDashboard />} />
-            <Route path="/dashboard/firm" element={<FirmDashboard />} />
-            <Route path="/dashboard/client" element={<ClientDashboard />} />
-            <Route path="/dashboard/vendor" element={<VendorDashboard />} />
-            <Route path="/studioDetail" element={<StudioDetail />} />
-            <Route path="/studio/:id" element={<StudioDetail />} />
-            <Route path="/faqs" element={<Faqs />} />
-            <Route path="/registrstrip" element={<RegistrStrip />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              <Route path="/" element={wrapWithTransition(<Home />)} />
+              <Route path="/login" element={wrapWithTransition(<Login onLogin={handleLoginSuccess} />)} />
+              <Route path="/forgot-password" element={wrapWithTransition(<ForgotPassword />)} />
+              <Route path="/reset-password" element={wrapWithTransition(<ResetPassword />)} />
+              <Route path="/register" element={wrapWithTransition(<Register />)} />
+              <Route path="/products" element={wrapWithTransition(<ProductList />)} />
+              <Route path="/products/:id" element={wrapWithTransition(<ProductDetail />)} />
+              <Route path="/buy" element={wrapWithTransition(<Buy />)} />
+              <Route path="/buy/:id" element={wrapWithTransition(<Buy />)} />
+              <Route path="/cart" element={wrapWithTransition(<Cart />)} />
+              <Route path="/cartpage" element={wrapWithTransition(<CartPage />)} />
+              <Route path="/ai" element={wrapWithTransition(<Ai />)} />
+              <Route path="/aisetting" element={wrapWithTransition(<Ai />)} />
+              <Route path="/matters" element={wrapWithTransition(<Matters />)} />
+              <Route path="/studio" element={wrapWithTransition(<Studio />)} />
+              <Route path="/studio/portal" element={wrapWithTransition(<StudioPortal />)} />
+              <Route path="/studio/portal/intro" element={wrapWithTransition(<StudioPortal />)} />
+              <Route path="/portal/studio" element={wrapWithTransition(<StudioWorkspace />)} />
+              <Route path="/portal/vendor" element={wrapWithTransition(<VendorPortal />)} />
+              <Route path="/warehouse" element={wrapWithTransition(<Warehouse />)} />
+              <Route path="/warehouse/:id" element={wrapWithTransition(<WarehouseDetail />)} />
+              <Route path="/firms" element={wrapWithTransition(<Firms />)} />
+              <Route path="/associates" element={wrapWithTransition(<Associates />)} />
+              <Route path="/associates/portal" element={wrapWithTransition(<AssociatePortal />)} />
+              <Route path="/associates/portal/intro" element={wrapWithTransition(<AssociatePortal />)} />
+              <Route path="/portal/associate" element={wrapWithTransition(<AssociateWorkspace />)} />
+              <Route path="/firmportfolio" element={wrapWithTransition(<FirmPortfolio />)} />
+              <Route path="/associateportfolio" element={wrapWithTransition(<AssociatePortfolio />)} />
+              <Route path="/associateportfolio/:id" element={wrapWithTransition(<AssociatePortfolio />)} />
+              <Route path="/currencyconver" element={wrapWithTransition(<CurrencyConverter />)} />
+              <Route path="/amazon" element={<Navigate to="/studio" replace />} />
+              <Route path="/blinkit" element={<Navigate to="/warehouse" replace />} />
+              <Route path="/urban" element={<Navigate to="/firms" replace />} />
+              <Route path="/wishlist" element={wrapWithTransition(<Wishlist />)} />
+              <Route path="/profile" element={wrapWithTransition(<Profile />)} />
+              <Route path="/account" element={wrapWithTransition(<Account />)} />
+              <Route path="/settings" element={wrapWithTransition(<Settings />)} />
+              <Route path="/orders" element={wrapWithTransition(<OrderHistory />)} />
+              <Route path="/dashboard/super-admin" element={wrapWithTransition(<SuperAdminDashboard />)} />
+              <Route path="/dashboard/admin" element={wrapWithTransition(<AdminDashboard />)} />
+              <Route path="/dashboard/user" element={wrapWithTransition(<UserDashboard />)} />
+              <Route path="/dashboard/associate" element={wrapWithTransition(<AssociateDashboard />)} />
+              <Route path="/dashboard/firm" element={wrapWithTransition(<FirmDashboard />)} />
+              <Route path="/dashboard/client" element={wrapWithTransition(<ClientDashboard />)} />
+              <Route path="/dashboard/vendor" element={wrapWithTransition(<VendorDashboard />)} />
+              <Route path="/studioDetail" element={wrapWithTransition(<StudioDetail />)} />
+              <Route path="/studio/:id" element={wrapWithTransition(<StudioDetail />)} />
+              <Route path="/faqs" element={wrapWithTransition(<Faqs />)} />
+              <Route path="/registrstrip" element={wrapWithTransition(<RegistrStrip />)} />
+              <Route path="*" element={wrapWithTransition(<NotFound />)} />
+            </Routes>
+          </AnimatePresence>
           <SupportChatWidget />
         </>
       </WishlistProvider>

@@ -46,9 +46,29 @@ export const deleteWorkspaceDownload = async (id, params = {}) => {
   }
 };
 
+export const processWorkspaceDownload = async (id, payload = {}) => {
+  try {
+    const { data } = await client.post(`/workspace-downloads/${id}/process`, payload);
+    return data;
+  } catch (error) {
+    throw new Error(extractError(error));
+  }
+};
+
+export const fetchWorkspaceDownloadStatus = async (id, params = {}) => {
+  try {
+    const { data } = await client.get(`/workspace-downloads/${id}/status`, { params });
+    return data;
+  } catch (error) {
+    throw new Error(extractError(error));
+  }
+};
+
 export default {
   fetchWorkspaceDownloads,
   createWorkspaceDownload,
   updateWorkspaceDownload,
   deleteWorkspaceDownload,
+  processWorkspaceDownload,
+  fetchWorkspaceDownloadStatus,
 };

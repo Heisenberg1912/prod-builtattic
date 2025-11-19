@@ -11,7 +11,7 @@
     "seed:users": "node src/seed/seedUsers.js",
     "seed:marketplace": "node src/seed/seedMarketplace.js",
     "seed:json": "node src/seed/seedFromJson.js",
-    "test": "echo \"(tests pending)\" && exit 0",
+    "test": "node --test ./tests",
     "reset:data": "node src/scripts/resetData.js",
     "cleanup:demo": "node src/scripts/cleanupDemoData.js"
   },
@@ -20,7 +20,6 @@
     "@google/generative-ai": "^0.11.0",
     "argon2": "^0.41.1",
     "bcryptjs": "^2.4.3",
-    "bullmq": "^5.7.8",
     "cloudinary": "^2.7.0",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.7",
@@ -32,7 +31,6 @@
     "google-auth-library": "^9.0.0",
     "googleapis": "^133.0.0",
     "helmet": "^7.1.0",
-    "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.20.0",
     "mongodb-memory-server": "^10.3.0",
@@ -51,7 +49,8 @@
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "supertest": "^7.1.1"
   },
   "engines": {
     "node": ">=20"

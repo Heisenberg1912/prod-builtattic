@@ -21,6 +21,15 @@ The project now includes:
 - **Hardened webhook** – shared-secret gate for the support email ingress endpoint.
 
 For a complete walkthrough, including Google Cloud prerequisites, secret provisioning, and custom domain setup, see `docs/DEPLOYMENT.md`.
+
+## Environment Promotion & Previews
+
+- **Secrets live in Cloud** - keep `.env` for local work only. Production/staging deployments should source every key (Mongo, JWT, Gemini, SMTP, etc.) from Google Secret Manager or Vercel `env` so CI/CD pipelines never bake credentials into images.
+- **Preview everything** - every non-main branch should publish a preview container (Cloud Run) or Vercel deployment so designers can QA `/studio/:slug` and Vitruvi flows without cloning the repo. Point previews at staging Mongo using scoped service accounts.
+- **Smoke tests block promotion** - run `npm --prefix server test` (Vitruvi analyze, plan upload CRUD, studio publish, workspace downloads) plus `npm --prefix client run build` before merging to ensure both apps compile.
+- **Synthetic monitors** - wire uptime checks to `/health`, `/health/db`, `/metrics`, and `/api/vitruvi/analyze` so regressions are caught before buyers hit errors.
+- **Inline processors** - plan upload validation and workspace download packaging now run inline on the API tier, so there is no Redis/BullMQ dependency to provision or monitor.
+
 ## Vercel Deployment
 
 1. Connect the repository to Vercel and keep the project root (`.`).
