@@ -67,6 +67,46 @@ const handlePortalNetworkFailure = (error) => {
   return false;
 };
 
+const VENDOR_ONBOARDING_DEFAULT_STEPS = [
+  { id: "profile", label: "Vendor profile", detail: "Share company & contact details", complete: false },
+  { id: "catalog", label: "Material catalogue", detail: "Publish your first SKU", complete: false },
+  { id: "logistics", label: "Logistics data", detail: "Set lead time + MOQ", complete: false },
+  { id: "compliance", label: "Compliance", detail: "Submit approvals", complete: false },
+];
+
+const buildVendorOnboardingFallback = () => {
+  const fallback = VENDOR_DASHBOARD_FALLBACK || {};
+  const fallbackMaterials = Array.isArray(fallback.materials) ? fallback.materials : [];
+  const fallbackLeads = Array.isArray(fallback.leads) ? fallback.leads : [];
+  const fallbackOrders = Array.isArray(fallback.orders) ? fallback.orders : [];
+  const steps = VENDOR_ONBOARDING_DEFAULT_STEPS.map((step, index) => ({
+    ...step,
+    complete: index < 2,
+  }));
+  return {
+    ok: true,
+    fallback: true,
+    firm: fallback.firm || { name: "Material Ops Collective" },
+    onboarding: {
+      progress: Math.round((steps.filter((step) => step.complete).length / steps.length) * 100),
+      steps,
+      profileCompleteness: 50,
+    },
+    metrics: fallback.metrics || {
+      totalSkus: fallbackMaterials.length,
+      publishedSkus: fallbackMaterials.length,
+      draftSkus: 0,
+      inventoryCount: fallback.metrics?.inventoryCount || 0,
+      leads: fallbackLeads.length,
+      openOrders: fallbackOrders.filter((order) => order.status !== "fulfilled").length,
+    },
+    preview: {
+      materials: fallbackMaterials,
+      leads: fallbackLeads,
+    },
+  };
+};
+
 const createDraftChannel = () => {
   if (!draftsEnabled() || typeof BroadcastChannel === "undefined") return null;
   try {
@@ -752,6 +792,31 @@ export async function deleteFirmStudio(id) {
   } catch (error) {
     if (handlePortalNetworkFailure(error)) {
       return runMock();
+    }
+    throw error;
+  }
+}
+
+export async function fetchVendorOnboarding() {
+  if (shouldMockPortalApi()) {
+    return buildVendorOnboardingFallback();
+  }
+  try {
+    const { data } = await client.get('/portal/vendor/onboarding');
+    return okOrThrow(data, 'Unable to load vendor onboarding');
+  } catch (error) {
+    if (handlePortalNetworkFailure(error)) {
+      const fallback = buildVendorOnboardingFallback();
+      fallback.authRequired = isPortalAuthError(error);
+      fallback.error = error?.message;
+      return fallback;
+    }
+    if (isPortalAuthError(error)) {
+      return {
+        ok: false,
+        authRequired: true,
+        error: error?.response?.data?.error || error.message || 'Sign in to continue',
+      };
     }
     throw error;
   }

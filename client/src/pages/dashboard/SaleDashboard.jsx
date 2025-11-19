@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchVendorDashboard } from "../../services/dashboard.js";
+import VendorOnboardingChecklist from "../../components/vendor/VendorOnboardingChecklist.jsx";
+import { fetchVendorOnboarding } from "../../services/portal.js";
 
 const StatCard = ({ label, value, helper }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -43,6 +45,33 @@ const List = ({ title, items, empty }) => (
 
 export default function SaleDashboard() {
   const [state, setState] = useState({ loading: true, data: null, error: null, authRequired: false, fallback: false });
+  const [onboardingState, setOnboardingState] = useState({ loading: true, data: null, error: null });
+
+  const refreshOnboarding = useCallback(async () => {
+    setOnboardingState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const payload = await fetchVendorOnboarding();
+      if (payload?.authRequired && !payload?.fallback) {
+        setOnboardingState({
+          loading: false,
+          data: null,
+          error: "Sign in to view onboarding status",
+        });
+        return;
+      }
+      setOnboardingState({
+        loading: false,
+        data: payload,
+        error: payload?.error || null,
+      });
+    } catch (error) {
+      setOnboardingState({
+        loading: false,
+        data: null,
+        error: error?.message || "Unable to load onboarding",
+      });
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +109,10 @@ export default function SaleDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    refreshOnboarding();
+  }, [refreshOnboarding]);
+
   const { loading, data, error, authRequired, fallback } = state;
   const metrics = data?.metrics || {};
 
@@ -115,6 +148,16 @@ export default function SaleDashboard() {
         <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
           Demo Material Studio metrics are displayed. Link your vendor firm to sync live SKUs, orders, and pipeline data.
         </div>
+      ) : null}
+
+      {!authRequired ? (
+        <VendorOnboardingChecklist
+          data={onboardingState.data}
+          loading={onboardingState.loading}
+          error={onboardingState.error}
+          onRefresh={refreshOnboarding}
+          variant="compact"
+        />
       ) : null}
 
       {loading ? (

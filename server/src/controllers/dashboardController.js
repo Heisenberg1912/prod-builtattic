@@ -11,6 +11,8 @@ import Rating from '../models/Rating.js';
 import ServicePack from '../models/ServicePack.js';
 import MeetingSchedule from '../models/MeetingSchedule.js';
 import PlanUpload from '../models/PlanUpload.js';
+import WorkspaceDownload from '../models/WorkspaceDownload.js';
+import WorkspaceChatThread from '../models/WorkspaceChatThread.js';
 import {
   ensureAssociateProfile as provisionAssociateProfile,
   ensureFirmMembership as provisionFirmMembership,
@@ -182,6 +184,41 @@ const mapPlanUploadEntry = (plan) => ({
   tags: Array.isArray(plan.tags) ? plan.tags : [],
 });
 
+const mapWorkspaceDownloadEntry = (download) => ({
+  id: download._id.toString(),
+  label: download.label,
+  description: download.description || '',
+  tag: download.tag || 'WD-W3',
+  accessLevel: download.accessLevel || 'client',
+  status: download.status || 'draft',
+  fileUrl: download.fileUrl || '',
+  expiresAt: download.expiresAt,
+  downloadCode: download.downloadCode || '',
+  notes: download.notes || '',
+  updatedAt: download.updatedAt,
+});
+
+const mapWorkspaceChatEntry = (thread) => ({
+  id: thread._id.toString(),
+  subject: thread.subject,
+  status: thread.status || 'open',
+  clientName: thread.clientName || '',
+  clientEmail: thread.clientEmail || '',
+  participants: thread.participants || [],
+  lastMessageAt: thread.lastMessageAt,
+  messages: Array.isArray(thread.messages)
+    ? thread.messages.slice(-5).map((message) => ({
+        id: message._id?.toString(),
+        senderType: message.senderType || 'workspace',
+        senderName: message.senderName || '',
+        senderRole: message.senderRole || '',
+        body: message.body,
+        attachments: Array.isArray(message.attachments) ? message.attachments : [],
+        createdAt: message.createdAt,
+      }))
+    : [],
+});
+
 const obfuscateAuthor = (email) => {
   if (!email) return 'Marketplace buyer';
   const [name, domain] = email.split('@');
@@ -264,8 +301,10 @@ export const getAssociateDashboard = async (req, res, next) => {
     let servicePacks = [];
     let meetings = [];
     let planUploads = [];
+    let downloads = [];
+    let chats = [];
     if (profile?._id) {
-      [servicePacks, meetings, planUploads] = await Promise.all([
+      [servicePacks, meetings, planUploads, downloads, chats] = await Promise.all([
         ServicePack.find({ ownerType: 'associate', ownerId: profile._id })
           .sort({ updatedAt: -1 })
           .limit(6)
@@ -277,6 +316,14 @@ export const getAssociateDashboard = async (req, res, next) => {
         PlanUpload.find({ ownerType: 'associate', ownerId: profile._id })
           .sort({ updatedAt: -1 })
           .limit(12)
+          .lean(),
+        WorkspaceDownload.find({ ownerType: 'associate', ownerId: profile._id })
+          .sort({ updatedAt: -1 })
+          .limit(15)
+          .lean(),
+        WorkspaceChatThread.find({ ownerType: 'associate', ownerId: profile._id })
+          .sort({ updatedAt: -1 })
+          .limit(10)
           .lean(),
       ]);
     }
@@ -306,6 +353,8 @@ export const getAssociateDashboard = async (req, res, next) => {
       servicePacks: servicePacks.map(mapServicePackEntry),
       meetings: meetings.map(mapMeetingScheduleEntry),
       planUploads: planUploads.map(mapPlanUploadEntry),
+      downloads: downloads.map(mapWorkspaceDownloadEntry),
+      chats: chats.map(mapWorkspaceChatEntry),
     };
 
     res.json(response);
@@ -349,10 +398,12 @@ export const getFirmDashboard = async (req, res, next) => {
     });
 
     const feedback = await buildFeedbackSummary('firm', firmId, firm);
-    const [servicePacks, meetings, planUploads] = await Promise.all([
+    const [servicePacks, meetings, planUploads, downloads, chats] = await Promise.all([
       ServicePack.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(6).lean(),
       MeetingSchedule.find({ ownerType: 'firm', ownerId: firmId }).sort({ scheduledFor: 1 }).limit(6).lean(),
       PlanUpload.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(12).lean(),
+      WorkspaceDownload.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(15).lean(),
+      WorkspaceChatThread.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(10).lean(),
     ]);
 
     res.json({
@@ -373,6 +424,8 @@ export const getFirmDashboard = async (req, res, next) => {
       servicePacks: servicePacks.map(mapServicePackEntry),
       meetings: meetings.map(mapMeetingScheduleEntry),
       planUploads: planUploads.map(mapPlanUploadEntry),
+      downloads: downloads.map(mapWorkspaceDownloadEntry),
+      chats: chats.map(mapWorkspaceChatEntry),
       nextActions: [
         {
           title: 'Publish a new design bundle',
@@ -412,6 +465,13 @@ export const getVendorDashboard = async (req, res, next) => {
 
     const inventoryCount = materials.reduce((sum, material) => sum + (material.inventory || 0), 0);
     const mappedOrders = orders.map((order) => mapOrderForUser(order, order.user));
+    const [servicePacks, meetings, planUploads, downloads, chats] = await Promise.all([
+      ServicePack.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(6).lean(),
+      MeetingSchedule.find({ ownerType: 'firm', ownerId: firmId }).sort({ scheduledFor: 1 }).limit(6).lean(),
+      PlanUpload.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(12).lean(),
+      WorkspaceDownload.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(15).lean(),
+      WorkspaceChatThread.find({ ownerType: 'firm', ownerId: firmId }).sort({ updatedAt: -1 }).limit(10).lean(),
+    ]);
 
     res.json({
       ok: true,
@@ -426,6 +486,11 @@ export const getVendorDashboard = async (req, res, next) => {
       materials: materials.map(mapProduct),
       orders: mappedOrders,
       leads: leads.map(mapLead),
+      servicePacks: servicePacks.map(mapServicePackEntry),
+      meetings: meetings.map(mapMeetingScheduleEntry),
+      planUploads: planUploads.map(mapPlanUploadEntry),
+      downloads: downloads.map(mapWorkspaceDownloadEntry),
+      chats: chats.map(mapWorkspaceChatEntry),
       nextActions: [
         {
           title: 'Sync logistics data',

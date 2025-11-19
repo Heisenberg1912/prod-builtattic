@@ -46,6 +46,8 @@ import ratingsRouter from './routes/ratings.js';
 import servicePacksRouter from './routes/servicePacks.js';
 import meetingsRouter from './routes/meetings.js';
 import planUploadsRouter from './routes/planUploads.js';
+import workspaceDownloadsRouter from './routes/workspaceDownloads.js';
+import workspaceChatsRouter from './routes/workspaceChats.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -123,6 +125,8 @@ app.use(['/ratings', '/api/ratings'], ratingsRouter);
 app.use(['/service-packs', '/api/service-packs'], servicePacksRouter);
 app.use(['/schedule/meetings', '/api/schedule/meetings'], meetingsRouter);
 app.use(['/plan-uploads', '/api/plan-uploads'], planUploadsRouter);
+app.use(['/workspace-downloads', '/api/workspace-downloads'], workspaceDownloadsRouter);
+app.use(['/workspace-chats', '/api/workspace-chats'], workspaceChatsRouter);
 
 app.get(['/health', '/api/health'], (_req, res) => {
   res.json({ ok: true });

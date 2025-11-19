@@ -18,6 +18,7 @@ const authorizeWorkspace = safeFactory(
   auth.authorizeRoles,
   ROLES.ASSOCIATE,
   ROLES.FIRM,
+  ROLES.VENDOR,
   ROLES.ADMIN,
   ROLES.SUPER_ADMIN,
 );
@@ -31,4 +32,3 @@ router.patch('/:id', updateServicePack);
 router.delete('/:id', deleteServicePack);
 
 export default router;
-

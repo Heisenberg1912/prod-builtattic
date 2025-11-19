@@ -16,6 +16,8 @@ import {
   X,
   RefreshCw,
   Database,
+  Inbox,
+  Sparkles,
 } from "lucide-react";
 import {
   fetchAdminUsers,
@@ -128,6 +130,109 @@ const dummyTypeLabels = {
   [DUMMY_TYPES.MATERIAL]: 'Material Studio',
 };
 
+const DUMMY_SEED_PRESETS = {
+  [DUMMY_TYPES.DESIGN]: [
+    {
+      title: 'Savanna Courtyard Lab',
+      summary: 'Indoor-outdoor residential lab that bridges vernacular courtyards with modular timber labs.',
+      price: '420000',
+      priceSqft: '18',
+      firmName: 'Field Atlas',
+      country: 'Kenya',
+      style: 'Tropical modern',
+      tags: 'Passive,Prefabricated,Hospitality',
+      heroImage: 'https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=900&q=80',
+    },
+    {
+      title: 'Cascading Cliff Studio',
+      summary: 'Split-level live/work terraces perched on basalt outcrops with wraparound winter gardens.',
+      price: '690000',
+      priceSqft: '26',
+      firmName: 'Northwind Works',
+      country: 'Norway',
+      style: 'Scandinavian minimal',
+      tags: 'Modular,Low carbon,Wellness',
+      heroImage: 'https://images.unsplash.com/photo-1505692794400-1c77e24b84f9?auto=format&fit=crop&w=1000&q=80',
+    },
+    {
+      title: 'Desert Lantern Habitat',
+      summary: 'Earthen vault cluster glowing at dusk; kit-of-parts for boutique hospitality pods.',
+      price: '310000',
+      priceSqft: '15',
+      firmName: 'Atelier Meridian',
+      country: 'UAE',
+      style: 'Neo desert',
+      tags: 'Earthen,Hospitality,Modular',
+      heroImage: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=900&q=80',
+    },
+  ],
+  [DUMMY_TYPES.SKILL]: [
+    {
+      name: 'Maya Srinivasan',
+      title: 'Computational Designer',
+      hourly: '85',
+      skills: 'Grasshopper,Rhino.Inside,ESRI,Python',
+      languages: 'English,Hindi',
+      avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80',
+      location: 'Bengaluru / Remote',
+      availability: '2 BIM sprints open',
+    },
+    {
+      name: 'Leo Martinez',
+      title: 'Fabrication Lead',
+      hourly: '95',
+      skills: 'Revit,Inventor,CNC programming,Shopbot',
+      languages: 'English,Spanish',
+      avatar: 'https://images.unsplash.com/photo-1529665253569-6d01c0eaf7b6?auto=format&fit=crop&w=400&q=80',
+      location: 'Austin, TX',
+      availability: 'Night-shift workshop',
+    },
+    {
+      name: 'Hana Kobayashi',
+      title: 'Material Researcher',
+      hourly: '70',
+      skills: 'LCA,Sourcing,Material passports,Storytelling',
+      languages: 'English,Japanese',
+      avatar: 'https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=400&q=80',
+      location: 'Tokyo / Hybrid',
+      availability: 'Research retainer slots',
+    },
+  ],
+  [DUMMY_TYPES.MATERIAL]: [
+    {
+      title: 'Charred cedar siding kit',
+      category: 'Cladding',
+      price: '32',
+      unit: 'sq ft',
+      vendor: 'Studio Tanso',
+      heroImage: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      title: 'Recycled terrazzo slab',
+      category: 'Surfaces',
+      price: '54',
+      unit: 'sq ft',
+      vendor: 'Loop Materials',
+      heroImage: 'https://images.unsplash.com/photo-1493663284031-b7e3aefcae8e?auto=format&fit=crop&w=900&q=80',
+    },
+    {
+      title: 'Acoustic felt fins',
+      category: 'Ceiling systems',
+      price: '120',
+      unit: 'linear ft',
+      vendor: 'Quiet Layers',
+      heroImage: 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=900&q=80',
+    },
+  ],
+};
+
+const pickRandomSeed = (type) => {
+  const pool = DUMMY_SEED_PRESETS[type] || [];
+  if (!pool.length) return null;
+  const index = Math.floor(Math.random() * pool.length);
+  return pool[index];
+};
+
 export default function SuperAdminDashboard({ onLogout }) {
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState("Dashboard");
@@ -143,7 +248,7 @@ export default function SuperAdminDashboard({ onLogout }) {
   const [usersRefreshing, setUsersRefreshing] = useState(false);
   const [userOps, setUserOps] = useState({ updatingId: null, resettingId: null, suspendingId: null, deletingId: null, inviting: false });
   const [userMeta, setUserMeta] = useState({ lastFetchedAt: null });
-  const [studioRequestsState, setStudioRequestsState] = useState({ loading: true, data: [], metrics: null, error: null });
+  const [studioRequestsState, setStudioRequestsState] = useState({ loading: true, data: [], metrics: null, error: null, fetchedAt: null });
   const [currentUser] = useState(() => readStoredUser());
   const [dummyCatalog, setDummyCatalog] = useState({
     [DUMMY_TYPES.DESIGN]: [],
@@ -190,9 +295,53 @@ export default function SuperAdminDashboard({ onLogout }) {
     }
   }, []);
 
+  const refreshStudioRequests = useCallback(async ({ silent = false, token } = {}) => {
+    if (!authToken) {
+      setStudioRequestsState({ loading: false, data: [], metrics: null, error: null, fetchedAt: null });
+      return;
+    }
+    if (!silent) {
+      setStudioRequestsState((prev) => ({ ...prev, loading: true, error: null }));
+    }
+    try {
+      const { requests, metrics } = await fetchAdminStudioRequests({ limit: 80 });
+      if (token?.cancelled) return;
+      setStudioRequestsState({
+        loading: false,
+        data: requests,
+        metrics,
+        error: null,
+        fetchedAt: Date.now(),
+      });
+    } catch (error) {
+      if (token?.cancelled) return;
+      setStudioRequestsState((prev) => ({
+        ...prev,
+        loading: false,
+        error: error?.response?.data?.error || error?.message || 'Unable to load studio requests',
+      }));
+    }
+  }, [authToken]);
+
   useEffect(() => {
     refreshDummyCatalog();
   }, [refreshDummyCatalog]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setStudioRequestsState({ loading: false, data: [], metrics: null, error: null, fetchedAt: null });
+      return undefined;
+    }
+    const token = { cancelled: false };
+    refreshStudioRequests({ token });
+    const interval = setInterval(() => {
+      refreshStudioRequests({ silent: true, token });
+    }, 120_000);
+    return () => {
+      token.cancelled = true;
+      clearInterval(interval);
+    };
+  }, [authToken, refreshStudioRequests]);
 
   const normalizedSearch = search.trim().toLowerCase();
   const handleCreateDummy = useCallback(async (type, payload) => {
@@ -442,8 +591,11 @@ export default function SuperAdminDashboard({ onLogout }) {
     authToken,
     dummyCatalog,
     dummyLoading,
+    studioRequests: studioRequestsState,
     onCreateDummy: handleCreateDummy,
     onRemoveDummy: handleRemoveDummy,
+    onRefreshStudioRequests: refreshStudioRequests,
+    onSyncDummyCatalog: refreshDummyCatalog,
   };
 
   const handleLogout = async () => {
@@ -565,14 +717,40 @@ export default function SuperAdminDashboard({ onLogout }) {
 //
 // --- Views ---
 //
-function DashboardView({ stats, products, loading, error, dbOverview, dummyCatalog, dummyLoading, onCreateDummy, onRemoveDummy }) {
+function DashboardView({
+  stats,
+  products,
+  loading,
+  error,
+  dbOverview,
+  dummyCatalog,
+  dummyLoading,
+  studioRequests,
+  onCreateDummy,
+  onRemoveDummy,
+  onSyncDummyCatalog,
+  onRefreshStudioRequests,
+}) {
+
     const clusterDescription = useMemo(() => {
-      if (!dbOverview) return 'Connecting…';
+      if (!dbOverview) return 'Connecting.';
       if (dbOverview.limited) {
         return dbOverview?.db?.name || 'Status available';
       }
-      return `${dbOverview?.db?.name || 'Cluster'} • ${formatBytes(dbOverview?.db?.dataSize)}`;
+      return `${dbOverview?.db?.name || 'Cluster'}  ${formatBytes(dbOverview?.db?.dataSize)}`;
     }, [dbOverview]);
+
+    const dummyTotals = useMemo(() => {
+      const design = dummyCatalog?.[DUMMY_TYPES.DESIGN]?.length || 0;
+      const skill = dummyCatalog?.[DUMMY_TYPES.SKILL]?.length || 0;
+      const material = dummyCatalog?.[DUMMY_TYPES.MATERIAL]?.length || 0;
+      return {
+        design,
+        skill,
+        material,
+        total: design + skill + material,
+      };
+    }, [dummyCatalog]);
 
     const cards = [
       {
@@ -608,6 +786,22 @@ function DashboardView({ stats, products, loading, error, dbOverview, dummyCatal
         description: loading
           ? "Loading..."
           : `${stats?.categories?.length ?? 0} active categories`,
+      },
+      {
+        key: "studioRequests",
+        icon: <Inbox />,
+        title: "Studio Requests",
+        description: studioRequests?.loading
+          ? "Syncing..."
+          : `${stats?.openRequests ?? 0} open / ${stats?.totalRequests ?? 0} total`,
+      },
+      {
+        key: "dummyTiles",
+        icon: <Sparkles />,
+        title: "Studio Tiles",
+        description: dummyLoading
+          ? "Syncing catalog..."
+          : `${dummyTotals.total} tiles (D${dummyTotals.design} / S${dummyTotals.skill} / M${dummyTotals.material})`,
       },
       {
         key: "database",
@@ -667,12 +861,15 @@ function DashboardView({ stats, products, loading, error, dbOverview, dummyCatal
 
         {dbOverview && <DatabaseOverview overview={dbOverview} />}
 
+        <StudioRequestPipeline state={studioRequests} onRefresh={onRefreshStudioRequests} />
+
         {onCreateDummy && onRemoveDummy && dummyCatalog ? (
           <DummyDataManager
             catalog={dummyCatalog}
             loading={dummyLoading}
             onCreate={onCreateDummy}
             onDelete={onRemoveDummy}
+            onSync={onSyncDummyCatalog}
           />
         ) : null}
       </>
@@ -713,10 +910,146 @@ const makeMaterialForm = () => ({
   gallery: '',
 });
 
-function DummyDataManager({ catalog, onCreate, onDelete }) {
+function StudioRequestPipeline({ state, onRefresh }) {
+  if (!state) return null;
+  const { loading, error, data = [], metrics = {}, fetchedAt } = state;
+  const statusOrder = ['new', 'in-progress', 'responded', 'archived'];
+  const byStatus = metrics?.byStatus || [];
+  const bySource = metrics?.bySource || [];
+
+  const humanize = (value, fallback = 'Unknown') => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text) return fallback;
+    return text
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const statusCards = statusOrder.map((status) => ({
+    status,
+    label: humanize(status),
+    count: byStatus.find((entry) => entry.status === status)?.count || 0,
+  }));
+
+  const sourceSummary = bySource.map((entry) => ({
+    source: entry.source || 'guest',
+    label: humanize(entry.source || 'guest'),
+    count: entry.count || 0,
+  }));
+
+  const recent = data.slice(0, 5);
+  const headerHint = loading
+    ? 'Syncing...'
+    : fetchedAt
+      ? `Synced ${formatRelativeTime(fetchedAt)}`
+      : 'Awaiting sync';
+
+  const trimMessage = (value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text) return 'No brief shared yet.';
+    return text.length > 160 ? `${text.slice(0, 157)}...` : text;
+  };
+
+  return (
+    <section className="mt-8">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-xl font-semibold">Studio Request Pipeline</h2>
+          <p className="text-xs text-gray-500">{headerHint}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onRefresh?.({})}
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 rounded border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-60"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh pipeline
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-4">
+        {statusCards.map((entry) => (
+          <div key={entry.status} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-gray-500">{entry.label}</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">{entry.count}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+          <p className="text-sm font-semibold text-gray-900">Source mix</p>
+          <p className="text-xs text-gray-500 mb-3">Where these requests are coming from</p>
+          {sourceSummary.length === 0 ? (
+            <p className="text-xs text-gray-500">No inbound activity logged yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {sourceSummary.map((entry) => (
+                <li key={entry.source} className="flex items-center justify-between">
+                  <span className="text-gray-700">{entry.label}</span>
+                  <span className="font-semibold text-gray-900">{entry.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 lg:col-span-2">
+          <p className="text-sm font-semibold text-gray-900">Latest submissions</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Snapshot of the most recent five inbound briefs across studios
+          </p>
+          {recent.length === 0 ? (
+            <p className="text-xs text-gray-500">No studio requests recorded.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {recent.map((request) => (
+                <li key={request._id || request.id} className="py-3 space-y-2">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {request.contactName || 'Unnamed contact'}
+                      </p>
+                      <p className="text-xs text-gray-500">{request.contactEmail}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={humanize(request.status || 'New')} />
+                      <span className="text-[11px] text-gray-400">
+                        {formatDate(request.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                  {request.studioTitle && (
+                    <p className="text-xs text-gray-500">Studio: {request.studioTitle}</p>
+                  )}
+                  <p className="text-xs text-gray-600">{trimMessage(request.message)}</p>
+                  <div className="flex flex-wrap gap-3 text-[11px] text-gray-500">
+                    {request.firm?.name && <span>Firm | {request.firm.name}</span>}
+                    <span>Source | {humanize(request.source)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync }) {
   const [designForm, setDesignForm] = useState(makeDesignForm);
   const [skillForm, setSkillForm] = useState(makeSkillForm);
   const [materialForm, setMaterialForm] = useState(makeMaterialForm);
+  const [tileFilter, setTileFilter] = useState('all');
+  const [seedingType, setSeedingType] = useState(null);
 
   const handleSubmit = (event, type) => {
     event.preventDefault();
@@ -727,7 +1060,7 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
     };
     const entry = formMap[type];
     if (!entry) return;
-    onCreate(type, entry.data);
+    onCreate?.(type, entry.data);
     entry.reset();
   };
 
@@ -736,17 +1069,101 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
     setter((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleAutofill = (type) => {
+    const sample = pickRandomSeed(type);
+    if (!sample) return;
+    const setterMap = {
+      [DUMMY_TYPES.DESIGN]: setDesignForm,
+      [DUMMY_TYPES.SKILL]: setSkillForm,
+      [DUMMY_TYPES.MATERIAL]: setMaterialForm,
+    };
+    setterMap[type]?.((prev) => ({ ...prev, ...sample }));
+  };
+
+  const handleSeedCurated = async () => {
+    if (!onCreate) return;
+    const targets = tileFilter === 'all' ? Object.values(DUMMY_TYPES) : [tileFilter];
+    setSeedingType(targets.length > 1 ? 'all' : targets[0]);
+    try {
+      for (const target of targets) {
+        const presets = DUMMY_SEED_PRESETS[target] || [];
+        for (const payload of presets) {
+          // eslint-disable-next-line no-await-in-loop
+          await onCreate(target, payload);
+        }
+      }
+    } finally {
+      setSeedingType(null);
+    }
+  };
+
   const catalogs = {
     [DUMMY_TYPES.DESIGN]: catalog?.[DUMMY_TYPES.DESIGN] || [],
     [DUMMY_TYPES.SKILL]: catalog?.[DUMMY_TYPES.SKILL] || [],
     [DUMMY_TYPES.MATERIAL]: catalog?.[DUMMY_TYPES.MATERIAL] || [],
   };
 
+  const totalEntries = catalogs[DUMMY_TYPES.DESIGN].length + catalogs[DUMMY_TYPES.SKILL].length + catalogs[DUMMY_TYPES.MATERIAL].length;
+  const filterOptions = [
+    { key: 'all', label: 'All tiles', count: totalEntries },
+    { key: DUMMY_TYPES.DESIGN, label: dummyTypeLabels[DUMMY_TYPES.DESIGN], count: catalogs[DUMMY_TYPES.DESIGN].length },
+    { key: DUMMY_TYPES.SKILL, label: dummyTypeLabels[DUMMY_TYPES.SKILL], count: catalogs[DUMMY_TYPES.SKILL].length },
+    { key: DUMMY_TYPES.MATERIAL, label: dummyTypeLabels[DUMMY_TYPES.MATERIAL], count: catalogs[DUMMY_TYPES.MATERIAL].length },
+  ];
+  const visibleTypes = tileFilter === 'all' ? Object.values(DUMMY_TYPES) : [tileFilter];
+  const seedLabel = tileFilter === 'all'
+    ? 'Generate trio per studio'
+    : `Generate ${dummyTypeLabels[tileFilter] || 'tiles'}`;
+
   return (
     <Section title="Dummy Data Generator">
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {filterOptions.map((option) => (
+            <button
+              type="button"
+              key={option.key}
+              onClick={() => setTileFilter(option.key)}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${tileFilter === option.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600'}`}
+            >
+              {option.label}
+              <span className="ml-2 text-[11px] text-gray-400">{option.count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onSync?.()}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Syncing...' : 'Sync catalog'}
+          </button>
+          <button
+            type="button"
+            onClick={handleSeedCurated}
+            disabled={seedingType !== null}
+            className="inline-flex items-center gap-2 rounded bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
+          >
+            {seedingType ? 'Generating...' : seedLabel}
+          </button>
+        </div>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <form className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4" onSubmit={(e) => handleSubmit(e, DUMMY_TYPES.DESIGN)}>
-          <h3 className="text-base font-semibold text-gray-900">Design Studio listing</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">Design Studio listing</h3>
+            <button
+              type="button"
+              onClick={() => handleAutofill(DUMMY_TYPES.DESIGN)}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-900"
+            >
+              Autofill sample
+            </button>
+          </div>
           <label className="text-xs font-semibold text-gray-600">
             Title
             <input
@@ -768,6 +1185,16 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
               placeholder="Atelier Q"
             />
           </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Country
+            <input
+              name="country"
+              value={designForm.country}
+              onChange={handleChange(setDesignForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Global"
+            />
+          </label>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="text-xs font-semibold text-gray-600">
               Price $/sqft
@@ -781,16 +1208,27 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
               />
             </label>
             <label className="text-xs font-semibold text-gray-600">
-              Style
+              Total price (USD)
               <input
-                name="style"
-                value={designForm.style}
+                name="price"
+                value={designForm.price}
                 onChange={handleChange(setDesignForm)}
                 className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                placeholder="Tropical modern"
+                placeholder="450000"
+                inputMode="decimal"
               />
             </label>
           </div>
+          <label className="text-xs font-semibold text-gray-600">
+            Style
+            <input
+              name="style"
+              value={designForm.style}
+              onChange={handleChange(setDesignForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Tropical modern"
+            />
+          </label>
           <label className="text-xs font-semibold text-gray-600">
             Summary
             <textarea
@@ -828,7 +1266,16 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
         </form>
 
         <form className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4" onSubmit={(e) => handleSubmit(e, DUMMY_TYPES.SKILL)}>
-          <h3 className="text-base font-semibold text-gray-900">Skill Studio profile</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">Skill Studio profile</h3>
+            <button
+              type="button"
+              onClick={() => handleAutofill(DUMMY_TYPES.SKILL)}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-900"
+            >
+              Autofill sample
+            </button>
+          </div>
           <label className="text-xs font-semibold text-gray-600">
             Name
             <input
@@ -881,7 +1328,27 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
               onChange={handleChange(setSkillForm)}
               rows={2}
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              placeholder="Rhino\nParametric"
+              placeholder="Rhino, Parametric"
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Languages
+            <input
+              name="languages"
+              value={skillForm.languages}
+              onChange={handleChange(setSkillForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="English, Spanish"
+            />
+          </label>
+          <label className="text-xs font-semibold text-gray-600">
+            Availability window
+            <input
+              name="availability"
+              value={skillForm.availability}
+              onChange={handleChange(setSkillForm)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="2 sprints open"
             />
           </label>
           <label className="text-xs font-semibold text-gray-600">
@@ -900,7 +1367,16 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
         </form>
 
         <form className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4" onSubmit={(e) => handleSubmit(e, DUMMY_TYPES.MATERIAL)}>
-          <h3 className="text-base font-semibold text-gray-900">Material Studio SKU</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">Material Studio SKU</h3>
+            <button
+              type="button"
+              onClick={() => handleAutofill(DUMMY_TYPES.MATERIAL)}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-900"
+            >
+              Autofill sample
+            </button>
+          </div>
           <label className="text-xs font-semibold text-gray-600">
             Title
             <input
@@ -924,6 +1400,18 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
               />
             </label>
             <label className="text-xs font-semibold text-gray-600">
+              Unit
+              <input
+                name="unit"
+                value={materialForm.unit}
+                onChange={handleChange(setMaterialForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="sq ft"
+              />
+            </label>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-gray-600">
               Price
               <input
                 name="price"
@@ -934,17 +1422,17 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
                 inputMode="decimal"
               />
             </label>
+            <label className="text-xs font-semibold text-gray-600">
+              Vendor
+              <input
+                name="vendor"
+                value={materialForm.vendor}
+                onChange={handleChange(setMaterialForm)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Material Ops"
+              />
+            </label>
           </div>
-          <label className="text-xs font-semibold text-gray-600">
-            Vendor
-            <input
-              name="vendor"
-              value={materialForm.vendor}
-              onChange={handleChange(setMaterialForm)}
-              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              placeholder="Material Ops"
-            />
-          </label>
           <label className="text-xs font-semibold text-gray-600">
             Hero image URL
             <input
@@ -962,39 +1450,92 @@ function DummyDataManager({ catalog, onCreate, onDelete }) {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {Object.values(DUMMY_TYPES).map((type) => (
-          <div key={type} className="rounded-2xl border border-gray-200 bg-white p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-gray-500">{dummyTypeLabels[type]}</p>
-                <p className="text-sm text-gray-500">{catalogs[type].length} entries</p>
-              </div>
-            </div>
-            {catalogs[type].length === 0 ? (
-              <p className="text-sm text-gray-500">No entries added yet.</p>
-            ) : (
-              <ul className="space-y-2 max-h-48 overflow-auto text-sm">
-                {catalogs[type].map((entry) => (
-                  <li key={entry.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
-                    <div>
-                      <p className="font-semibold text-gray-900">{entry.title || entry.name}</p>
-                      <p className="text-xs text-gray-500">{entry.slug}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(type, entry.id)}
-                      className="text-xs text-red-600 hover:text-red-800"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        {visibleTypes.map((type) => (
+          <DummyTileColumn key={type} type={type} entries={catalogs[type]} onDelete={onDelete} />
         ))}
       </div>
     </Section>
+  );
+}
+
+function DummyTileColumn({ type, entries, onDelete }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4">
+      <div className="mb-3">
+        <p className="text-xs uppercase tracking-[0.3em] text-gray-500">{dummyTypeLabels[type]}</p>
+        <p className="text-sm text-gray-500">{entries.length} tiles</p>
+      </div>
+      {entries.length === 0 ? (
+        <p className="text-sm text-gray-500">No entries added yet.</p>
+      ) : (
+        <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+          {entries.map((entry) => (
+            <DummyTileCard key={entry.id || entry._id || entry.slug} type={type} entry={entry} onDelete={onDelete} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DummyTileCard({ type, entry, onDelete }) {
+  const entryId = entry.id || entry._id || entry.slug;
+  const hero = entry.heroImage || entry.avatar || 'https://placehold.co/600x400?text=Studio';
+  const title = entry.title || entry.name || 'Untitled tile';
+  const description =
+    (entry.summary || entry.description || (Array.isArray(entry.tags) ? entry.tags.join(', ') : '')) || '';
+  const currency = entry.currency || entry.rates?.currency || 'USD';
+
+  let detail = '';
+  let meta = '';
+
+  if (type === DUMMY_TYPES.DESIGN) {
+    if (entry.priceSqft) {
+      detail = `$${entry.priceSqft}/sqft`;
+    } else if (entry.price) {
+      detail = formatCurrency(entry.price, currency);
+    }
+    const locality = entry.location?.country || entry.country || '';
+    meta = [entry.firm?.name, locality].filter(Boolean).join(' | ');
+  } else if (type === DUMMY_TYPES.SKILL) {
+    const hourly = entry.hourlyRate || entry.hourly || entry.rates?.hourly;
+    if (hourly) {
+      detail = `${formatCurrency(hourly, currency)}/hr`;
+    }
+    meta = entry.location || entry.availability || entry.languages?.join?.(', ') || '';
+  } else if (type === DUMMY_TYPES.MATERIAL) {
+    if (entry.price) {
+      const unit = entry.unit || entry.metafields?.unit;
+      detail = `${formatCurrency(entry.price, currency)}${unit ? ` / ${unit}` : ''}`;
+    }
+    meta = entry.vendor || entry.metafields?.vendor || '';
+  }
+
+  const summary =
+    description && description.length > 140 ? `${description.slice(0, 137)}...` : description;
+
+  return (
+    <article className="rounded-xl border border-gray-100 p-3 text-sm text-gray-700 shadow-sm">
+      <div className="h-32 w-full overflow-hidden rounded-lg bg-gray-100">
+        <img src={hero} alt={title} className="h-full w-full object-cover" loading="lazy" />
+      </div>
+      <div className="mt-2 space-y-1">
+        <p className="font-semibold text-gray-900 truncate">{title}</p>
+        {detail && <p className="text-xs text-gray-600">{detail}</p>}
+        {summary && <p className="text-xs text-gray-500">{summary}</p>}
+        {meta && <p className="text-[11px] uppercase tracking-wide text-gray-400">{meta}</p>}
+      </div>
+      <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+        <span className="truncate pr-2">{entry.slug || entryId}</span>
+        <button
+          type="button"
+          onClick={() => onDelete?.(type, entryId)}
+          className="text-red-600 hover:text-red-800"
+        >
+          Remove
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -1804,3 +2345,8 @@ function EmptySearchNotice({ term }) {
     </div>
   );
 }
+
+
+
+
+

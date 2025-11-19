@@ -8,6 +8,7 @@ import {
   listStudioRequests,
   updateStudioRequestStatus,
 } from '../controllers/firmHostingController.js';
+import { getVendorOnboarding } from '../controllers/vendorOnboardingController.js';
 
 const safeMiddleware = (fn) => (typeof fn === 'function' ? fn : (_req, _res, next) => next());
 const safeFactory = (factory, ...args) => (typeof factory === 'function' ? factory(...args) : (_req, _res, next) => next());
@@ -27,6 +28,7 @@ router.use(authenticateJWT, authorizeFirmRoles);
 router.get('/profile', getFirmProfile);
 router.put('/profile', upsertFirmProfile);
 router.patch('/profile', upsertFirmProfile);
+router.get('/onboarding', getVendorOnboarding);
 router.get('/design-studio/hosting', getHostingConfig);
 router.put('/design-studio/hosting', upsertHostingConfig);
 router.patch('/design-studio/hosting', upsertHostingConfig);

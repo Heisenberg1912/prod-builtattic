@@ -3,7 +3,7 @@ import AssociateProfile from '../models/AssociateProfile.js';
 import User from '../models/User.js';
 import { ensureUniqueSlug } from '../utils/slugify.js';
 
-const resolveFirmMembership = (user, allowedRoles = ['owner', 'admin', 'associate']) => {
+export const resolveFirmMembership = (user, allowedRoles = ['owner', 'admin', 'associate']) => {
   const memberships = (user?.memberships || []).map((membership) => ({
     firm: membership.firm?.toString?.() || membership.firm,
     role: String(membership.role || '').toLowerCase(),
@@ -118,4 +118,5 @@ export default {
   ensureAssociateProfile,
   ensureFirmMembership,
   autoProvisionUserResources,
+  resolveFirmMembership,
 };

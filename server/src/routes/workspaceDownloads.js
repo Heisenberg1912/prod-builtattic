@@ -3,11 +3,11 @@ import { Router } from 'express';
 import * as auth from '../middleware/auth.js';
 import { ROLES } from '../config/constants.js';
 import {
-  listPlanUploads,
-  createPlanUpload,
-  updatePlanUpload,
-  deletePlanUpload,
-} from '../controllers/planUploadController.js';
+  listWorkspaceDownloads,
+  createWorkspaceDownload,
+  updateWorkspaceDownload,
+  deleteWorkspaceDownload,
+} from '../controllers/workspaceDownloadController.js';
 
 const safeMiddleware = (fn) => (typeof fn === 'function' ? fn : (_req, _res, next) => next());
 const safeFactory = (factory, ...args) =>
@@ -26,9 +26,9 @@ const authorizeWorkspace = safeFactory(
 const router = Router();
 router.use(authenticateJWT, authorizeWorkspace);
 
-router.get('/', listPlanUploads);
-router.post('/', createPlanUpload);
-router.patch('/:id', updatePlanUpload);
-router.delete('/:id', deletePlanUpload);
+router.get('/', listWorkspaceDownloads);
+router.post('/', createWorkspaceDownload);
+router.patch('/:id', updateWorkspaceDownload);
+router.delete('/:id', deleteWorkspaceDownload);
 
 export default router;

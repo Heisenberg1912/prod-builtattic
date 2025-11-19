@@ -3,6 +3,7 @@ import { toast } from "react-hot-toast";
 import { Link, useNavigate } from "react-router-dom";
 import { register as registerAccount } from "../services/auth.js";
 import { uploadAsset } from "../services/portal.js";
+import VendorOnboardingGuide from "../components/vendor/VendorOnboardingGuide.jsx";
 import {
   inferRoleFromUser,
   normalizeRole,
@@ -504,6 +505,7 @@ const RegisterPage = () => {
               );
             })}
           </div>
+          {role === "vendor" ? <VendorOnboardingGuide /> : null}
         </div>
         <form
             onSubmit={handleSubmit}

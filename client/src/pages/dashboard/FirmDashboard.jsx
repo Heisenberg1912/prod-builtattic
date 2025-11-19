@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import PlanUploadPanel from "../../components/dashboard/PlanUploadPanel.jsx";
 import ServicePackManager from "../../components/dashboard/ServicePackManager.jsx";
 import MeetingScheduler from "../../components/dashboard/MeetingScheduler.jsx";
+import DownloadCenter from "../../components/dashboard/DownloadCenter.jsx";
+import ClientChatPanel from "../../components/dashboard/ClientChatPanel.jsx";
 import FeedbackPanel from "../../components/dashboard/FeedbackPanel.jsx";
 import StudioDashboardCard from "../../components/studio/StudioDashboardCard.jsx";
 import { fetchFirmDashboard } from "../../services/dashboard.js";
@@ -438,6 +440,8 @@ export default function FirmDashboard() {
   }, [draftStudios.length, feedback.count, nextActions.length, publishedStudios.length]);
 
   const planUploads = data?.planUploads || [];
+  const downloads = data?.downloads || [];
+  const chats = data?.chats || [];
   const featuredPlan = planUploads[0];
   const planRenderImages = Array.isArray(featuredPlan?.renderImages)
     ? featuredPlan.renderImages.filter((url) => typeof url === "string" && /^https?:\/\//i.test(url))
@@ -981,6 +985,24 @@ export default function FirmDashboard() {
             emptyMessage="Log upcoming syncs to keep internal ops aligned with the marketplace queue."
           />
 
+          <DownloadCenter
+            ownerType="firm"
+            initialDownloads={downloads}
+            heading="Deliverable downloads"
+            eyebrow="WD W3"
+            description="Publish WD-W3 packets, walkthroughs, and encrypted drops with explicit access control."
+            emptyMessage="No WD-W3 drops yet. Upload at least one deliverable set to unlock routing."
+          />
+
+          <ClientChatPanel
+            ownerType="firm"
+            initialChats={chats}
+            heading="Client chat"
+            eyebrow="Workspace thread"
+            description="Track every buyer request and keep operations looped in with a visible log."
+            emptyMessage="Start a conversational log the next time a buyer asks for files or scheduling help."
+          />
+
           <div id="feedback">
             <FeedbackPanel
               sectionLabel="Design Studio"
@@ -1004,5 +1026,3 @@ export default function FirmDashboard() {
   </div>
   );
 }
-
-

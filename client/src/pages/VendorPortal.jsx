@@ -1,17 +1,25 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Plus, Pencil, Trash2, CloudUpload } from "lucide-react";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
 import VendorProfileEditor from "../components/vendor/VendorProfileEditor.jsx";
+import VendorOnboardingChecklist from "../components/vendor/VendorOnboardingChecklist.jsx";
+import ServicePackManager from "../components/dashboard/ServicePackManager.jsx";
+import MeetingScheduler from "../components/dashboard/MeetingScheduler.jsx";
+import PlanUploadPanel from "../components/dashboard/PlanUploadPanel.jsx";
+import DownloadCenter from "../components/dashboard/DownloadCenter.jsx";
+import ClientChatPanel from "../components/dashboard/ClientChatPanel.jsx";
 import {
   fetchVendorMaterials,
   createVendorMaterial,
   updateVendorMaterial,
   publishVendorMaterial,
   deleteVendorMaterial,
+  fetchVendorOnboarding,
 } from "../services/portal.js";
+import { fetchVendorDashboard } from "../services/dashboard.js";
 
 const EMPTY_MATERIAL_FORM = {
   id: null,
@@ -324,6 +332,42 @@ export default function VendorPortal() {
   const [form, setForm] = useState(EMPTY_MATERIAL_FORM);
   const [formVisible, setFormVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [onboardingState, setOnboardingState] = useState({ loading: true, data: null, error: null });
+  const [workspaceState, setWorkspaceState] = useState({
+    loading: true,
+    error: null,
+    servicePacks: [],
+    meetings: [],
+    planUploads: [],
+    downloads: [],
+    chats: [],
+  });
+
+  const refreshOnboarding = useCallback(async () => {
+    setOnboardingState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const payload = await fetchVendorOnboarding();
+      if (payload?.authRequired && !payload?.fallback) {
+        setOnboardingState({
+          loading: false,
+          data: null,
+          error: "Sign in to load onboarding progress",
+        });
+        return;
+      }
+      setOnboardingState({
+        loading: false,
+        data: payload,
+        error: payload?.error || null,
+      });
+    } catch (error) {
+      setOnboardingState({
+        loading: false,
+        data: null,
+        error: error?.message || "Unable to load onboarding",
+      });
+    }
+  }, []);
 
   const loadMaterials = async () => {
     setMaterialsState((prev) => ({ ...prev, loading: true, error: null }));
@@ -340,6 +384,40 @@ export default function VendorPortal() {
     loadMaterials();
   }, []);
 
+  useEffect(() => {
+    refreshOnboarding();
+  }, [refreshOnboarding]);
+
+  const refreshWorkspace = useCallback(async () => {
+    setWorkspaceState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const payload = await fetchVendorDashboard();
+      setWorkspaceState({
+        loading: false,
+        error: payload?.error || null,
+        servicePacks: payload?.servicePacks || [],
+        meetings: payload?.meetings || [],
+        planUploads: payload?.planUploads || [],
+        downloads: payload?.downloads || [],
+        chats: payload?.chats || [],
+      });
+    } catch (error) {
+      setWorkspaceState({
+        loading: false,
+        error: error?.message || "Unable to load workspace data",
+        servicePacks: [],
+        meetings: [],
+        planUploads: [],
+        downloads: [],
+        chats: [],
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshWorkspace();
+  }, [refreshWorkspace]);
+
   const metaCards = useMemo(() => {
     const meta = materialsState.meta || {};
     return [
@@ -349,6 +427,12 @@ export default function VendorPortal() {
       { label: 'Inventory units', value: meta.inventoryCount ?? '—' },
     ];
   }, [materialsState.meta, materialsState.items.length]);
+
+  const workspaceServicePacks = workspaceState.servicePacks || [];
+  const workspaceMeetings = workspaceState.meetings || [];
+  const workspacePlanUploads = workspaceState.planUploads || [];
+  const workspaceDownloads = workspaceState.downloads || [];
+  const workspaceChats = workspaceState.chats || [];
 
   const openCreateForm = () => {
     setForm(EMPTY_MATERIAL_FORM);
@@ -366,6 +450,7 @@ export default function VendorPortal() {
       await publishVendorMaterial(item._id || item.id);
       toast.success('SKU published');
       loadMaterials();
+      refreshOnboarding();
     } catch (error) {
       console.error('sku_publish_error', error);
       toast.error(error?.message || 'Unable to publish SKU');
@@ -378,6 +463,7 @@ export default function VendorPortal() {
       await deleteVendorMaterial(item._id || item.id);
       toast.success('SKU deleted');
       loadMaterials();
+      refreshOnboarding();
     } catch (error) {
       console.error('sku_delete_error', error);
       toast.error(error?.message || 'Unable to delete SKU');
@@ -398,6 +484,7 @@ export default function VendorPortal() {
       setFormVisible(false);
       setForm(EMPTY_MATERIAL_FORM);
       loadMaterials();
+      refreshOnboarding();
     } catch (error) {
       console.error('sku_save_error', error);
       toast.error(error?.message || 'Unable to save SKU');
@@ -426,6 +513,13 @@ export default function VendorPortal() {
           </div>
         </header>
 
+        <VendorOnboardingChecklist
+          data={onboardingState.data}
+          loading={onboardingState.loading}
+          error={onboardingState.error}
+          onRefresh={refreshOnboarding}
+        />
+
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {metaCards.map((card) => (
             <StatCard key={card.label} {...card} />
@@ -433,7 +527,10 @@ export default function VendorPortal() {
         </div>
 
         <VendorProfileEditor
-          onProfileUpdate={(nextProfile) => setProfile(nextProfile)}
+          onProfileUpdate={(nextProfile) => {
+            setProfile(nextProfile);
+            refreshOnboarding();
+          }}
           header={(
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Vendor profile</p>
@@ -444,6 +541,71 @@ export default function VendorPortal() {
             </div>
           )}
         />
+
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Workspace</p>
+              <h2 className="text-lg font-semibold text-slate-900">Service packs, schedules & WD-W3</h2>
+              <p className="text-sm text-slate-500">
+                Publish fulfilment packs, coordinate syncs, and share WD-W3 downloads for Builtattic buyers.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={refreshWorkspace}
+              disabled={workspaceState.loading}
+              className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
+            >
+              {workspaceState.loading ? "Refreshing..." : "Refresh snapshot"}
+            </button>
+          </div>
+          {workspaceState.error ? (
+            <p className="text-xs text-rose-600">{workspaceState.error}</p>
+          ) : null}
+
+          <ServicePackManager
+            ownerType="firm"
+            initialPacks={workspaceServicePacks}
+            heading="Service packs"
+            eyebrow="Client-ready bundles"
+            description="Describe packaged scopes or onboarding bundles the marketplace team can route instantly."
+            emptyMessage="No packs yet. Add at least one pack so ops understands how to engage your team."
+          />
+
+          <MeetingScheduler
+            ownerType="firm"
+            initialMeetings={workspaceMeetings}
+            heading="Meeting schedule"
+            eyebrow="Buyer syncs"
+            description="Track procurement walk-throughs, onboarding calls, and delivery checkpoints."
+            emptyMessage="No syncs logged yet �?? add one so ops can see your availability."
+          />
+
+          <PlanUploadPanel
+            role="firm"
+            workspaceName={profile?.companyName || "Vendor workspace"}
+            initialPlans={workspacePlanUploads}
+          />
+
+          <DownloadCenter
+            ownerType="firm"
+            initialDownloads={workspaceDownloads}
+            heading="Deliverable downloads"
+            eyebrow="WD W3"
+            description="Drop WD-W3 packets, encrypted zips, and walkthrough links for the marketplace ops team."
+            emptyMessage="Publish a WD-W3 handoff so buyers know fulfilment is ready."
+          />
+
+          <ClientChatPanel
+            ownerType="firm"
+            initialChats={workspaceChats}
+            heading="Client chat"
+            eyebrow="Workspace thread"
+            description="Log buyer questions and share updates without leaving the portal."
+            emptyMessage="Start a thread the next time a buyer requests assets or scheduling help."
+          />
+        </div>
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">

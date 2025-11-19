@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "react-hot-toast";
-import { Pencil, Trash2, FileText, ExternalLink, Copy } from "lucide-react";
+import { Pencil, Trash2, FileText, ExternalLink, Copy, Search } from "lucide-react";
 import { uploadStudioAsset } from "../../services/uploads.js";
 import {
   fetchPlanUploads,
@@ -90,6 +90,22 @@ const truncateLabel = (value, limit = 42) => {
   return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
 };
 
+const SummaryTile = ({ label, value, detail }) => (
+
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+
+    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">{label}</p>
+
+    <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
+
+    {detail ? <p className="text-xs text-slate-500">{detail}</p> : null}
+
+  </div>
+
+);
+
+
+
 export default function PlanUploadPanel({
   role = "associate",
   workspaceName = "Skill Studio",
@@ -110,6 +126,7 @@ export default function PlanUploadPanel({
     conceptPlan: false,
     walkthrough: false,
   });
+  const [searchQuery, setSearchQuery] = useState("");
 
   const conceptPlanInputRef = useRef(null);
   const renderImagesInputRef = useRef(null);
@@ -139,6 +156,42 @@ export default function PlanUploadPanel({
   useEffect(() => {
     loadPlanUploads();
   }, [loadPlanUploads]);
+
+  const planHighlights = useMemo(() => {
+    const totals = {
+      totalPlans: planUploads.length,
+      totalArea: 0,
+      renderAssets: 0,
+      walkthroughs: 0,
+    };
+    planUploads.forEach((plan) => {
+      totals.totalArea += Number(plan.areaSqft) || 0;
+      totals.renderAssets += Array.isArray(plan.renderImages) ? plan.renderImages.length : 0;
+      if (plan.walkthrough) totals.walkthroughs += 1;
+    });
+    return totals;
+  }, [planUploads]);
+
+  const filteredPlans = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return planUploads;
+    return planUploads.filter((plan) => {
+      const haystack = [
+        plan.projectTitle,
+        plan.category,
+        plan.subtype,
+        plan.primaryStyle,
+        plan.description,
+        ...(plan.tags || []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [planUploads, searchQuery]);
+
+  const hasActiveSearch = searchQuery.trim().length > 0;
 
   const renderAssetPreview = (field, url, { label }) => {
     if (!url) return null;
@@ -188,6 +241,10 @@ export default function PlanUploadPanel({
   const handleInputChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSearchChange = (event) => {
+    setSearchQuery(event.target.value);
   };
 
   const handleCopyLink = async (value) => {
@@ -702,77 +759,139 @@ export default function PlanUploadPanel({
         </div>
       </form>
 
-      <div className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Hosted plans</p>
-        {listLoading ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {Array.from({ length: 2 }).map((_, index) => (
-              <div key={`plan-skeleton-${index}`} className="h-32 rounded-2xl bg-slate-100 animate-pulse" />
-            ))}
-          </div>
-        ) : planUploads.length === 0 ? (
-          <p className="text-sm text-slate-500">No plans synced yet. Add your first concept to expose it inside {workspaceName}.</p>
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {planUploads.map((plan) => (
-              <article key={plan.id} className="rounded-2xl border border-slate-200 p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                      {plan.category || "Category"}
-                      {plan.subtype ? ` • ${plan.subtype}` : ""}
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold text-slate-900">{plan.projectTitle || "Untitled plan"}</h3>
-                    <p className="text-sm text-slate-500">{plan.primaryStyle || "Add a primary style"}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(plan)}
-                      className="rounded-full border border-slate-200 p-1 text-slate-600 hover:text-slate-900"
-                      aria-label="Edit plan"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(plan)}
-                      className="rounded-full border border-slate-200 p-1 text-rose-500 hover:text-rose-600"
-                      aria-label="Delete plan"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-                <dl className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Area</dt>
-                    <dd>{formatMeasure(plan.areaSqft, 'sqft')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Floors</dt>
-                    <dd>{formatMeasure(plan.floors)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Design rate</dt>
-                    <dd>{formatRate(plan.designRate)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Construction</dt>
-                    <dd>{formatRate(plan.constructionCost)}</dd>
-                  </div>
-                </dl>
-                <div className="mt-3 text-xs text-slate-500 space-y-1">
-                  <p>
-                    Lic. {plan.licenseType || 'n/a'} · Delivery {plan.delivery || 'n/a'}
-                  </p>
-                  <p>Assets: {plan.renderImages?.length || 0} renders {plan.walkthrough ? '• Walkthrough' : ''}</p>
-                  {plan.description ? <p className="text-slate-500/80">{plan.description}</p> : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
+
+
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Hosted plans</p>
+            <p className="text-sm text-slate-500">
+              {planUploads.length
+                ? `Share updates directly with the ${workspaceName} workspace.`
+                : `Sync media to expose your first plan inside ${workspaceName}.`}
+            </p>
+          </div>
+          <div className="relative w-full md:w-72">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+              placeholder="Search title, tags, or style"
+            />
+          </div>
+        </div>
+
+        {planUploads.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <SummaryTile
+              label="Plans live"
+              value={planHighlights.totalPlans}
+              detail={
+                planHighlights.totalPlans === 1
+                  ? "Concept ready inside workspace"
+                  : `${planHighlights.totalPlans} ready concepts`
+              }
+            />
+            <SummaryTile
+              label="Total area"
+              value={planHighlights.totalArea ? `${planHighlights.totalArea.toLocaleString()} sqft` : "--"}
+              detail={planHighlights.totalArea ? "Based on filled plan data" : "Add area to next submission"}
+            />
+            <SummaryTile
+              label="Media assets"
+              value={planHighlights.renderAssets || 0}
+              detail={
+                planHighlights.walkthroughs
+                  ? `${planHighlights.walkthroughs} walkthrough${planHighlights.walkthroughs === 1 ? "" : "s"}`
+                  : "Add walkthrough or concept links"
+              }
+            />
+          </div>
+        ) : null}
+
+        {listLoading ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={`plan-skeleton-${index}`} className="h-32 rounded-2xl bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        ) : filteredPlans.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            {hasActiveSearch
+              ? `No plans match "${searchQuery.trim()}".`
+              : `No plans synced yet. Add your first concept to expose it inside ${workspaceName}.`}
+          </p>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {filteredPlans.map((plan) => (
+              <article key={plan.id} className="rounded-2xl border border-slate-200 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                      {plan.category || "Category"}
+                      {plan.subtype ? ` � ${plan.subtype}` : ""}
+                    </p>
+                    <h3 className="mt-1 text-base font-semibold text-slate-900">{plan.projectTitle || "Untitled plan"}</h3>
+                    <p className="text-sm text-slate-500">{plan.primaryStyle || "Add a primary style"}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(plan)}
+                      className="rounded-full border border-slate-200 p-1 text-slate-600 hover:text-slate-900"
+                      aria-label="Edit plan"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(plan)}
+                      className="rounded-full border border-slate-200 p-1 text-rose-500 hover:text-rose-600"
+                      aria-label="Delete plan"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+                <dl className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Area</dt>
+                    <dd>{formatMeasure(plan.areaSqft, "sqft")}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Floors</dt>
+                    <dd>{formatMeasure(plan.floors)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Design rate</dt>
+                    <dd>{formatRate(plan.designRate)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Construction</dt>
+                    <dd>{formatRate(plan.constructionCost)}</dd>
+                  </div>
+                </dl>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                  {plan.renderImages?.length ? (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                      {plan.renderImages.length} render{plan.renderImages.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                  {plan.conceptPlan ? <span className="rounded-full bg-slate-100 px-2 py-0.5">Concept file</span> : null}
+                  {plan.walkthrough ? <span className="rounded-full bg-slate-100 px-2 py-0.5">Walkthrough</span> : null}
+                </div>
+                <div className="mt-3 space-y-1 text-xs text-slate-500">
+                  <p>
+                    Lic. {plan.licenseType || "n/a"} � Delivery {plan.delivery || "n/a"}
+                  </p>
+                  {plan.description ? <p className="text-slate-500/80">{plan.description}</p> : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

@@ -26,6 +26,8 @@ import {
 import PlanUploadPanel from "../../components/dashboard/PlanUploadPanel.jsx";
 import ServicePackManager from "../../components/dashboard/ServicePackManager.jsx";
 import MeetingScheduler from "../../components/dashboard/MeetingScheduler.jsx";
+import DownloadCenter from "../../components/dashboard/DownloadCenter.jsx";
+import ClientChatPanel from "../../components/dashboard/ClientChatPanel.jsx";
 import AssociateProfileEditor from "../../components/associate/AssociateProfileEditor.jsx";
 import AssociatePortfolioShowcase from "../../components/associate/AssociatePortfolioShowcase.jsx";
 import PortfolioMediaPlayer from "../../components/associate/PortfolioMediaPlayer.jsx";
@@ -502,6 +504,8 @@ function AssociateDashboard() {
   const dashboardServicePacks = dashboardData.servicePacks || [];
   const dashboardMeetings = dashboardData.meetings || [];
   const planUploads = dashboardData.planUploads || [];
+  const downloads = dashboardData.downloads || [];
+  const chats = dashboardData.chats || [];
   const featuredPlan = planUploads[0] || null;
 
   const pipelineMatches = useMemo(() => {
@@ -1151,6 +1155,24 @@ function OverviewView({
           eyebrow="Syncs"
           description="Track onboarding, review, and offboarding calls tied to each client."
           emptyMessage="No syncs scheduled. Log your next touchpoints so everyone stays aligned."
+        />
+
+        <DownloadCenter
+          ownerType="associate"
+          initialDownloads={downloads}
+          heading="Deliverable downloads"
+          eyebrow="WD W3"
+          description="Publish WD-W3 packs, walkthrough links, and plan zips buyers can pull from instantly."
+          emptyMessage="No WD-W3 drops yet. Upload a deliverable handoff to unlock routing."
+        />
+
+        <ClientChatPanel
+          ownerType="associate"
+          initialChats={chats}
+          heading="Client chat"
+          eyebrow="Workspace thread"
+          description="Keep notes and buyer conversations visible to the ops team."
+          emptyMessage="Start logging context when a buyer pings you for changes."
         />
 
         <PlanUploadPanel

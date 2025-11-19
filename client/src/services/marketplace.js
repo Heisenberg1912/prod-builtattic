@@ -16,6 +16,7 @@ import { fetchVendorPortalProfile, loadVendorProfileDraft } from "./portal.js";
 
 import { decorateFirmWithProfile, decorateFirmsWithProfiles, loadFirmProfile } from "../utils/firmProfile.js";
 import { DEFAULT_STUDIO_TILES } from "../utils/studioTiles.js";
+import { getDummyCatalogSnapshot } from "./dummyCatalog.js";
 
 const slugify = (value = '') => value.toString().toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
 const ensureArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
@@ -455,78 +456,178 @@ const buildStudioFacets = (list = []) => {
   };
 };
 
-export async function fetchStudios(params = {}) {
+const mapDummyDesignEntry = (entry = {}) =>
+  normalizeStudio({
+    ...entry,
+    _id: entry._id || entry.id || entry.slug || entry.title,
+    id: entry.id || entry._id || entry.slug || entry.title,
+    slug: entry.slug || slugify(entry.title || entry.id || entry._id || "studio"),
+    status: entry.status || "published",
+    price: entry.price != null ? Number(entry.price) : entry.price,
+    priceSqft: entry.priceSqft != null ? Number(entry.priceSqft) : entry.priceSqft,
+    currency: entry.currency || entry.pricing?.currency || "USD",
+    firm:
+      entry.firm && typeof entry.firm === "object"
+        ? entry.firm
+        : {
+            name: entry.firm?.name || entry.firm || "Demo Studio",
+          },
+  });
 
+const mapDummyMaterialEntry = (entry = {}) => {
+  const slug = entry.slug || slugify(entry.title || entry.id || entry._id || "material");
+  const categoryList = ensureArray(
+    entry.categories && entry.categories.length
+      ? entry.categories
+      : entry.category
+      ? [entry.category]
+      : []
+  );
+  return normalizeMaterial({
+    ...entry,
+    _id: entry._id || entry.id || slug,
+    id: entry.id || entry._id || slug,
+    slug,
+    categories: categoryList,
+    category: entry.category || categoryList[0] || null,
+    tags: ensureArray(entry.tags),
+    description: entry.description || entry.summary || "",
+    status: entry.status || "published",
+    price: entry.price != null ? Number(entry.price) : entry.price,
+    currency: entry.currency || "USD",
+    metafields: {
+      ...(entry.metafields || {}),
+      vendor: entry.metafields?.vendor || entry.vendor || entry.firm?.name || "Demo Vendor",
+    },
+  });
+};
+
+const mapDummyAssociateEntry = (entry = {}) => {
+  const slug = entry.slug || slugify(entry.name || entry.id || entry._id || "associate");
+  const hourly = entry.hourlyRate ?? entry.hourly ?? entry.rates?.hourly;
+  const numericHourly = hourly != null ? Number(hourly) : null;
+  const currency = entry.rates?.currency || entry.currency || "USD";
+  const rates = {
+    currency,
+    ...entry.rates,
+  };
+  if (numericHourly != null && Number.isFinite(numericHourly)) {
+    rates.hourly = numericHourly;
+  }
+  return normalizeAssociate({
+    ...entry,
+    _id: entry._id || entry.id || slug,
+    id: entry.id || entry._id || slug,
+    slug,
+    title: entry.title || entry.role || "Associate",
+    summary: entry.summary || entry.description || "",
+    rates,
+    hourlyRate: numericHourly != null && Number.isFinite(numericHourly) ? numericHourly : rates.hourly ?? null,
+    skills: ensureArray(entry.skills),
+    languages: ensureArray(entry.languages),
+    tools: ensureArray(entry.tools),
+    tags: ensureArray(entry.tags),
+    status: entry.status || "active",
+  });
+};
+
+async function pickDummyEntries(type) {
   try {
+    const catalog = await getDummyCatalogSnapshot();
+    const list = catalog?.[type];
+    return Array.isArray(list) ? list : [];
+  } catch (error) {
+    console.warn("dummy_catalog_snapshot_failed", error);
+    return [];
+  }
+}
 
+async function buildDummyStudiosResponse(params = {}) {
+  const entries = await pickDummyEntries("design");
+  if (!entries.length) return null;
+  const normalized = entries.map(mapDummyDesignEntry);
+  const filtered = decorateStudiosWithProfiles(filterStudios(normalized, params));
+  if (!filtered.length) return null;
+  return {
+    items: filtered,
+    meta: {
+      total: filtered.length,
+      facets: buildStudioFacets(filtered),
+      web3: null,
+      fallback: true,
+    },
+  };
+}
+
+async function buildDummyMaterialsResponse(params = {}, vendorProfile) {
+  const entries = await pickDummyEntries("material");
+  if (!entries.length) return null;
+  const normalized = entries.map(mapDummyMaterialEntry);
+  const filtered = filterMaterials(normalized, params);
+  if (!filtered.length) return null;
+  const decorated = decorateMaterialsWithVendorProfile(filtered, vendorProfile);
+  return {
+    items: decorated,
+    meta: { total: decorated.length, web3: null, fallback: true },
+  };
+}
+
+async function buildDummyAssociatesResponse(params = {}) {
+  const entries = await pickDummyEntries("skill");
+  if (!entries.length) return null;
+  const normalized = entries.map(mapDummyAssociateEntry);
+  const filtered = filterAssociates(normalized, params);
+  if (!filtered.length) return null;
+  return {
+    items: filtered,
+    meta: { total: filtered.length, web3: null, fallback: true },
+  };
+}
+
+export async function fetchStudios(params = {}) {
+  try {
     const { data } = await client.get("/marketplace/studios", { params });
-
     const items = decorateStudiosWithProfiles((data?.items || []).map(normalizeStudio));
-
     const meta = data?.meta || {};
 
     if (items.length === 0) {
+      const dummyResponse = await buildDummyStudiosResponse(params);
+      if (dummyResponse) return dummyResponse;
 
       const fallbackItems = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
-
       return {
-
         items: fallbackItems,
-
         meta: {
-
           total: fallbackItems.length,
-
           facets: meta.facets || buildStudioFacets(fallbackItems),
-
           web3: meta.web3 || null,
-
           fallback: true,
-
         },
-
       };
-
     }
 
     return {
-
       items,
-
       meta: {
-
         total: meta.total ?? items.length,
-
         facets: meta.facets || buildStudioFacets(items),
-
         web3: meta.web3 || null,
-
       },
-
     };
-
-  } catch {
+  } catch (error) {
+    const dummyResponse = await buildDummyStudiosResponse(params);
+    if (dummyResponse) return dummyResponse;
 
     const filtered = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
-
     return {
-
       items: filtered,
-
       meta: {
-
         total: filtered.length,
-
         facets: buildStudioFacets(filtered),
-
         web3: null,
-
       },
-
     };
-
   }
-
 }
 
 
@@ -538,6 +639,10 @@ export async function fetchMaterials(params = {}) {
     const { data } = await client.get("/marketplace/materials", { params });
     const items = decorateMaterialsWithVendorProfile((data?.items || []).map(normalizeMaterial), vendorProfile);
     const meta = data?.meta || { total: items.length };
+    if (items.length === 0) {
+      const dummyResponse = await buildDummyMaterialsResponse(params, vendorProfile);
+      if (dummyResponse) return dummyResponse;
+    }
     return {
       items,
       meta: {
@@ -546,7 +651,10 @@ export async function fetchMaterials(params = {}) {
         web3: meta.web3 || null,
       },
     };
-  } catch {
+  } catch (error) {
+    const dummyResponse = await buildDummyMaterialsResponse(params, vendorProfile);
+    if (dummyResponse) return dummyResponse;
+
     const fallback = decorateMaterialsWithVendorProfile(filterMaterials(LOCAL_MATERIALS, params), vendorProfile);
     return {
       items: fallback,
@@ -556,57 +664,39 @@ export async function fetchMaterials(params = {}) {
 }
 
 export async function fetchMarketplaceAssociates(params = {}) {
-
   try {
-
     const { data } = await client.get("/marketplace/associates", { params });
-
     const items = (data?.items || []).map(normalizeAssociate);
 
     if (items.length === 0) {
+      const dummyResponse = await buildDummyAssociatesResponse(params);
+      if (dummyResponse) return dummyResponse;
 
       const fallbackItems = filterAssociates(LOCAL_ASSOCIATES, params);
-
       return {
-
         items: fallbackItems,
-
         meta: {
-
           total: fallbackItems.length,
-
           web3: data?.meta?.web3 || null,
-
           fallback: true,
-
         },
-
       };
-
     }
 
     return {
-
       items: filterAssociates(items, params),
-
       meta: {
-
         total: data?.meta?.total ?? items.length,
-
         web3: data?.meta?.web3 || null,
-
       },
-
     };
-
-  } catch {
+  } catch (error) {
+    const dummyResponse = await buildDummyAssociatesResponse(params);
+    if (dummyResponse) return dummyResponse;
 
     const filtered = filterAssociates(LOCAL_ASSOCIATES, params);
-
     return { items: filtered, meta: { total: filtered.length, web3: null } };
-
   }
-
 }
 
 
