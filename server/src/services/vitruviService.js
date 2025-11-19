@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { estimateTokenUsage } from "./vitruviUsage.js";
 
 const GEMINI_ENABLED = String(process.env.GEMINI_ENABLED ?? "true").toLowerCase() !== "false";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -36,6 +37,13 @@ const DEFAULT_ROOM_SPLITS = Object.fromEntries(
 
 const MAX_VARIATION_ITEMS = 4;
 const MAX_CHECKLIST_ITEMS = 6;
+const MAX_RISK_ITEMS = 5;
+const MAX_PHASING_ITEMS = 4;
+const MAX_MATERIAL_ITEMS = 5;
+const MAX_ECON_NOTES = 4;
+
+const TOKEN_RATE_USD = Number.parseFloat(process.env.VITRUVI_TOKEN_RATE_USD || "0.0025");
+const UNIT_ECONOMY_MULTIPLIER = Number.parseFloat(process.env.VITRUVI_UNIT_ECONOMY_MULTIPLIER || "1.1");
 
 const genAI = GEMINI_ENABLED && GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
@@ -46,6 +54,7 @@ export async function runAnalyzeAndGenerate(prompt, options = {}) {
     designAnalysis,
     source,
     warning,
+    unitEconomy: baseUnitEconomy,
     ...insightExtras
   } = await getAnalysis(prompt, options);
 
@@ -73,12 +82,20 @@ export async function runAnalyzeAndGenerate(prompt, options = {}) {
 
   const warnings = [warning, imageWarning].filter(Boolean);
 
+  const unitEconomy =
+    adjustUnitEconomy(baseUnitEconomy, {
+      prompt,
+      analysis,
+      includeImage: Boolean(imagePayload),
+    }) || buildUnitEconomy(prompt, { multiplier: 1, image: Boolean(imagePayload), analysis });
+
   return {
     analysis,
     promptAnalysis,
     designAnalysis,
     source,
     ...insightExtras,
+    unitEconomy,
     ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     ...(imagePayload ?? {}),
     imageAvailable: Boolean(imagePayload),
@@ -151,6 +168,13 @@ export async function getAnalysis(prompt, options = {}) {
   if (insights?.insightSource) {
     payload.insightSource = insights.insightSource;
   }
+  payload.costEstimates = insights?.costEstimates || deriveFeasibility(analysis, prompt);
+  payload.phasingPlan = insights?.phasingPlan || buildPhasingPlan(analysis, prompt);
+  payload.riskRegister = insights?.riskRegister || buildRiskRegister(analysis, prompt);
+  payload.materialPalette = insights?.materialPalette || buildMaterialPalette(analysis, prompt);
+  payload.unitEconomy =
+    insights?.unitEconomy ||
+    buildUnitEconomy(prompt, { multiplier: 0.5, image: false, analysis });
 
   if (warnings.length) {
     payload.warning = warnings.join(" | ");
@@ -272,6 +296,31 @@ async function generateInsightBundleWithGemini(prompt, options, analysis) {
     ],
     actionChecklist: ["Validate structural grid before issue."],
     designAnalysis: deriveDesignAnalysis(analysis),
+    costEstimates: {
+      capexRange: "USD 0.5M – 0.9M",
+      costPerSqft: "$140 – $200 per sq.ft",
+      roi: "14-18% IRR",
+      paybackMonths: 42,
+      notes: ["Lean structure lowers capex."],
+    },
+    phasingPlan: [
+      { phase: "Discovery", durationWeeks: 2, focus: "Surveys + constraints." },
+      { phase: "Schematic", durationWeeks: 3, focus: "Gemini loops + sign-offs." },
+    ],
+    riskRegister: [
+      { risk: "Thermal load", impact: "High", mitigation: "Add shading + stack vents." },
+    ],
+    materialPalette: [
+      { name: "Exposed concrete", finish: "Low-sheen sealant", sustainability: "Durable + low VOC" },
+    ],
+    unitEconomy: {
+      tokenEstimate: 2600,
+      promptTokens: 520,
+      responseTokens: 820,
+      imageTokens: 1260,
+      estimatedCostUsd: 3.1,
+      notes: ["Includes Gemini image generation uplift."],
+    },
   };
 
   const promptBlocks = [
@@ -279,6 +328,7 @@ async function generateInsightBundleWithGemini(prompt, options, analysis) {
     "Respond with VALID JSON only and no markdown code fences.",
     "Limit lists to concise, high-signal entries (max 6 items).",
     "Percentages in roomSplits must be numbers (no strings) and stay within practical bounds.",
+    "Always include feasibility/cost notes, phasing plan, risk register, material palette, and a unitEconomy block describing prompt/response/image token split + estimated USD cost.",
     "Fill fields even if you must rely on professional defaults informed by the analysis cues.",
     `JSON shape example:\n${JSON.stringify(schemaExample, null, 2)}`,
     `Current analysis JSON:\n${JSON.stringify(analysis ?? {}, null, 2)}`,
@@ -529,6 +579,165 @@ function sanitizeDesignAnalysis(raw) {
   return entries.length ? Object.fromEntries(entries) : null;
 }
 
+function sanitizeCostEstimates(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const capexRange = toTrimmedString(raw.capexRange ?? raw.capex ?? raw.costRange);
+  const opexRange = toTrimmedString(raw.opexRange ?? raw.opex ?? raw.opEx);
+  const roi = toTrimmedString(raw.roi ?? raw.return ?? raw.yield);
+  const paybackMonths = toFiniteNumber(raw.paybackMonths ?? raw.payback ?? raw.breakEvenMonths);
+  const costPerSqft = toTrimmedString(
+    raw.costPerSqft ?? raw.costPerSquareFoot ?? raw.perSqFt ?? raw.perSqft,
+  );
+  const notes = sanitizeStringArray(raw.notes ?? raw.highlights ?? raw.summary, MAX_ECON_NOTES);
+
+  if (!capexRange && !opexRange && !roi && !costPerSqft && !paybackMonths && !notes.length) {
+    return null;
+  }
+
+  return {
+    ...(capexRange ? { capexRange } : {}),
+    ...(opexRange ? { opexRange } : {}),
+    ...(roi ? { roi } : {}),
+    ...(costPerSqft ? { costPerSqft } : {}),
+    ...(Number.isFinite(paybackMonths) ? { paybackMonths } : {}),
+    notes,
+  };
+}
+
+function sanitizePhasingPlan(raw) {
+  const source = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+    ? Object.values(raw)
+    : [];
+  return source
+    .map((item, index) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        const clean = toTrimmedString(item);
+        if (!clean) return null;
+        return { id: `phase-${index}`, phase: clean.split(":")[0], focus: clean };
+      }
+      if (typeof item === "object") {
+        const phase = toTrimmedString(item.phase ?? item.title ?? item.name);
+        const focus = toTrimmedString(item.focus ?? item.summary ?? item.detail ?? item.scope);
+        const durationWeeks = toFiniteNumber(item.durationWeeks ?? item.duration ?? item.weeks);
+        if (!phase && !focus) return null;
+        return {
+          id: item.id || `phase-${index}`,
+          phase: phase || "Phase",
+          focus: focus || phase,
+          ...(Number.isFinite(durationWeeks) ? { durationWeeks } : {}),
+        };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_PHASING_ITEMS);
+}
+
+function sanitizeRiskRegister(raw) {
+  const source = Array.isArray(raw) ? raw : [];
+  return source
+    .map((item, index) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        const clean = toTrimmedString(item);
+        if (!clean) return null;
+        return { id: `risk-${index}`, risk: clean };
+      }
+      if (typeof item === "object") {
+        const risk = toTrimmedString(item.risk ?? item.title ?? item.issue);
+        const impact = toTrimmedString(item.impact ?? item.severity ?? item.level);
+        const mitigation = toTrimmedString(item.mitigation ?? item.action ?? item.response);
+        if (!risk && !mitigation) return null;
+        return {
+          id: item.id || `risk-${index}`,
+          risk: risk || "Risk",
+          ...(impact ? { impact } : {}),
+          ...(mitigation ? { mitigation } : {}),
+        };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RISK_ITEMS);
+}
+
+function sanitizeMaterialPalette(raw) {
+  const source = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+    ? Object.values(raw)
+    : [];
+  return source
+    .map((item, index) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        const clean = toTrimmedString(item);
+        if (!clean) return null;
+        return { id: `material-${index}`, name: clean };
+      }
+      if (typeof item === "object") {
+        const name = toTrimmedString(item.name ?? item.material ?? item.label);
+        const finish = toTrimmedString(item.finish ?? item.treatment ?? item.spec);
+        const sustainability = toTrimmedString(item.sustainability ?? item.impact ?? item.note);
+        if (!name && !finish) return null;
+        return {
+          id: item.id || `material-${index}`,
+          name: name || finish || "Material",
+          ...(finish ? { finish } : {}),
+          ...(sustainability ? { sustainability } : {}),
+        };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_MATERIAL_ITEMS);
+}
+
+function sanitizeUnitEconomy(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const tokenEstimate = toFiniteNumber(raw.tokenEstimate ?? raw.tokens ?? raw.totalTokens);
+  const promptTokens = toFiniteNumber(raw.promptTokens);
+  const responseTokens = toFiniteNumber(raw.responseTokens);
+  const imageTokens = toFiniteNumber(raw.imageTokens);
+  const estimatedCostUsd = Number.isFinite(raw.estimatedCostUsd)
+    ? Number(raw.estimatedCostUsd)
+    : toFiniteNumber(raw.costUsd);
+  const avgTokenCostUsd = Number.isFinite(raw.avgTokenCostUsd)
+    ? Number(raw.avgTokenCostUsd)
+    : Number.isFinite(raw.tokenRateUsd)
+    ? Number(raw.tokenRateUsd)
+    : null;
+  const notes = sanitizeStringArray(raw.notes ?? raw.summary ?? raw.commentary, MAX_ECON_NOTES);
+
+  if (
+    !Number.isFinite(tokenEstimate) &&
+    !Number.isFinite(estimatedCostUsd) &&
+    !Number.isFinite(promptTokens) &&
+    !Number.isFinite(responseTokens) &&
+    !Number.isFinite(imageTokens) &&
+    !notes.length
+  ) {
+    return null;
+  }
+
+  return {
+    ...(Number.isFinite(tokenEstimate) ? { tokenEstimate } : {}),
+    ...(Number.isFinite(promptTokens) ? { promptTokens } : {}),
+    ...(Number.isFinite(responseTokens) ? { responseTokens } : {}),
+    ...(Number.isFinite(imageTokens) ? { imageTokens } : {}),
+    ...(Number.isFinite(estimatedCostUsd) ? { estimatedCostUsd } : {}),
+    ...(Number.isFinite(avgTokenCostUsd) ? { avgTokenCostUsd } : {}),
+    notes,
+  };
+}
+
 function sanitizeStringArray(value, limit) {
   if (!Array.isArray(value)) {
     return [];
@@ -616,4 +825,198 @@ function deriveDesignAnalysis(base = {}) {
     "Roof & Exterior": `${value("Roof Type", "Standard roof")} with ${value("Exterior", "neutral facade treatment")}.`,
     "Sustainability Notes": `${value("Sustainability", "Baseline efficiency")} | Features: ${featuresValue()}.`,
   };
+}
+
+function deriveFeasibility(analysis = {}, promptText = "") {
+  const category = (analysis?.Category || analysis?.Typology || "").toLowerCase();
+  let capexRange = "USD 0.45M – 0.9M";
+  let costPerSqft = "$140 – $220 per sq.ft";
+  let roi = "12-16% IRR on stabilized operations";
+  let paybackMonths = 48;
+  if (/commercial|office|workspace/.test(category)) {
+    capexRange = "USD 0.9M – 1.8M";
+    costPerSqft = "$190 – $260 per sq.ft";
+    roi = "14-18% IRR with flexible leasing";
+    paybackMonths = 42;
+  } else if (/industrial|logistics|factory/.test(category)) {
+    capexRange = "USD 1.5M – 3.0M";
+    costPerSqft = "$110 – $160 per sq.ft";
+    roi = "16-22% IRR with anchor tenants";
+    paybackMonths = 36;
+  } else if (/hospitality|retail/.test(category)) {
+    capexRange = "USD 0.7M – 1.4M";
+    costPerSqft = "$150 – $230 per sq.ft";
+    roi = "18-24% IRR via blended ADR";
+    paybackMonths = 30;
+  }
+
+  const climate = analysis?.["Climate Adaptability"] || "Temperate";
+  const style = analysis?.Style || "Contemporary";
+  const notes = [
+    `Envelope tuned for ${climate.toLowerCase()} loads to contain MEP demand.`,
+    `Material mix: ${analysis?.["Material Used"] || "Reinforced concrete + local finishes"}.`,
+    `Style directive keeps ${style.toLowerCase()} FF&E allowances predictable.`,
+    promptText?.includes("phasing") ? "Client mentioned phasing, keep procurement staged." : "",
+  ]
+    .filter(Boolean)
+    .slice(0, MAX_ECON_NOTES);
+
+  return {
+    capexRange,
+    costPerSqft,
+    roi,
+    paybackMonths,
+    notes,
+  };
+}
+
+function buildPhasingPlan(analysis = {}, promptText = "") {
+  const climate = (analysis?.["Climate Adaptability"] || "").toLowerCase();
+  const phases = [
+    { phase: "Discovery & constraints", durationWeeks: 2, focus: "Surveys, zoning, and Gemini baseline runs." },
+    { phase: "Iterative schematic", durationWeeks: 3, focus: "Prompt loops + client checkpoints." },
+    { phase: "Detailed design", durationWeeks: 4, focus: "Structure, MEP, and envelope coordination." },
+    { phase: "Documentation & bid", durationWeeks: 3, focus: "Issue IFC set, vendor onboarding." },
+  ];
+  if (/tropical|hot/.test(climate)) {
+    phases[1].focus = "Cross-ventilation, shading, and massing refinement.";
+  }
+  if (/fast\s?track|accelerated/.test(promptText.toLowerCase())) {
+    phases[2].durationWeeks = 3;
+    phases[3].durationWeeks = 2;
+  }
+  return phases.slice(0, MAX_PHASING_ITEMS);
+}
+
+function buildRiskRegister(analysis = {}, promptText = "") {
+  const risks = [
+    {
+      risk: "Regulatory drift",
+      impact: "Medium",
+      mitigation: "Lock code assumptions in kickoff + run compliance audit per milestone.",
+    },
+    {
+      risk: "Scope creep from stakeholders",
+      impact: "Medium",
+      mitigation: "Freeze typology + GFA once schematic sign-off happens.",
+    },
+    {
+      risk: "Procurement volatility",
+      impact: "Low",
+      mitigation: "Pre-qualify suppliers for key finishes before DD issue.",
+    },
+  ];
+  const climate = (analysis?.["Climate Adaptability"] || "").toLowerCase();
+  if (/hot|tropical/.test(climate)) {
+    risks.unshift({
+      risk: "Thermal build-up",
+      impact: "High",
+      mitigation: "Model shading + ventilation loops early; include overhang allowances.",
+    });
+  } else if (/cold|alpine/.test(climate)) {
+    risks.unshift({
+      risk: "Envelope heat loss",
+      impact: "High",
+      mitigation: "Validate U-values + thermal bridges before DD freeze.",
+    });
+  }
+  if (/heritage|brownfield/.test(promptText.toLowerCase())) {
+    risks.push({
+      risk: "Site approvals",
+      impact: "High",
+      mitigation: "Engage authorities in pre-application workshop.",
+    });
+  }
+  return risks.slice(0, MAX_RISK_ITEMS);
+}
+
+function buildMaterialPalette(analysis = {}, promptText = "") {
+  const materials = [];
+  const primary = analysis?.["Material Used"] || "Reinforced concrete";
+  materials.push({
+    id: "mat-1",
+    name: primary,
+    finish: analysis?.Exterior || "Neutral plaster",
+    sustainability: analysis?.Sustainability || "Baseline efficiency",
+  });
+
+  if (analysis?.Style) {
+    materials.push({
+      id: "mat-2",
+      name: `${analysis.Style} accent`,
+      finish: analysis?.Style.includes("Industrial") ? "Brushed metal + exposed concrete" : "Warm timber fins",
+      sustainability: "Low-VOC finish schedule",
+    });
+  }
+
+  if (/courtyard|green|garden|deck/.test(promptText.toLowerCase())) {
+    materials.push({
+      id: "mat-3",
+      name: "Landscape deck",
+      finish: "Thermory planks + planters",
+      sustainability: "Rainwater-managed planting palette",
+    });
+  }
+
+  return materials.slice(0, MAX_MATERIAL_ITEMS);
+}
+
+function buildUnitEconomy(prompt = "", { multiplier = 1, image = false, analysis } = {}) {
+  const promptTokens = Math.max(50, Math.round(String(prompt || "").length / 4));
+  const multiplierValue = Number.isFinite(multiplier) ? multiplier : 1;
+  const tokenEstimate = estimateTokenUsage(prompt, {
+    multiplier: multiplierValue * (Number.isFinite(UNIT_ECONOMY_MULTIPLIER) ? UNIT_ECONOMY_MULTIPLIER : 1),
+    image,
+  });
+  const imageTokens = image ? 1800 : 0;
+  const responseTokens = Math.max(0, tokenEstimate - promptTokens - imageTokens);
+  const notes = [];
+  if (analysis?.["Additional Features"]) {
+    notes.push(`Feature uplift: ${analysis["Additional Features"]}`);
+  }
+  if (analysis?.Sustainability) {
+    notes.push(`Sustainability spec: ${analysis.Sustainability}`);
+  }
+
+  return {
+    tokenEstimate,
+    promptTokens,
+    responseTokens,
+    imageTokens,
+    estimatedCostUsd: Number.isFinite(tokenEstimate) && Number.isFinite(TOKEN_RATE_USD)
+      ? Number((tokenEstimate * TOKEN_RATE_USD).toFixed(4))
+      : undefined,
+    tokenRateUsd: Number.isFinite(TOKEN_RATE_USD) ? TOKEN_RATE_USD : 0.0025,
+    notes: notes.slice(0, MAX_ECON_NOTES),
+  };
+}
+
+function adjustUnitEconomy(base, { prompt, analysis, includeImage } = {}) {
+  const fallback = buildUnitEconomy(prompt, { multiplier: 1, image: includeImage, analysis });
+  if (!base) {
+    return fallback;
+  }
+  const merged = { ...fallback, ...base };
+  if (!Number.isFinite(merged.tokenEstimate)) {
+    merged.tokenEstimate = fallback.tokenEstimate;
+  }
+  if (!Number.isFinite(merged.promptTokens)) {
+    merged.promptTokens = fallback.promptTokens;
+  }
+  if (!Number.isFinite(merged.responseTokens)) {
+    merged.responseTokens = fallback.responseTokens;
+  }
+  if (includeImage && !Number.isFinite(merged.imageTokens)) {
+    merged.imageTokens = fallback.imageTokens;
+  }
+  if (!Number.isFinite(merged.estimatedCostUsd) && Number.isFinite(merged.tokenEstimate)) {
+    merged.estimatedCostUsd =
+      Number.isFinite(TOKEN_RATE_USD) && Number.isFinite(merged.tokenEstimate)
+        ? Number((merged.tokenEstimate * TOKEN_RATE_USD).toFixed(4))
+        : undefined;
+  }
+  if (!merged.notes || !merged.notes.length) {
+    merged.notes = fallback.notes;
+  }
+  return merged;
 }

@@ -1,6 +1,13 @@
 import { Router } from "express";
 import { getAnalysis, runAnalyzeAndGenerate } from "../services/vitruviService.js";
 import { recordVitruviPrompt } from "../services/vitruviPromptLog.js";
+import {
+  assertVitruviQuota,
+  recordVitruviUsage,
+  getVitruviUsageSummary,
+  creditVitruviUsage,
+  estimateTokenUsage,
+} from "../services/vitruviUsage.js";
 
 const router = Router();
 
@@ -16,8 +23,14 @@ router.post("/analyze", async (req, res) => {
 
   try {
     const started = Date.now();
+    const tokensEstimate = estimateTokenUsage(prompt, { multiplier: 0.4 });
+    await assertVitruviQuota(req, { prompts: 1, tokens: tokensEstimate });
     const result = await getAnalysis(prompt, options);
-    res.json(result);
+    const usage = await recordVitruviUsage(req, {
+      prompts: 1,
+      tokens: Math.max(tokensEstimate, result?.unitEconomy?.tokenEstimate || 0),
+    });
+    res.json({ ...result, usage });
     queuePromptLog(req, {
       prompt,
       options,
@@ -28,7 +41,7 @@ router.post("/analyze", async (req, res) => {
   } catch (err) {
     console.error("vitruvi_analyze_failed", err);
     const status = typeof err.status === "number" ? err.status : 500;
-    res.status(status).json({ error: "analyze_failed", detail: err.message });
+    res.status(status).json({ error: "analyze_failed", detail: err.message, usage: err.detail });
   }
 });
 
@@ -40,8 +53,14 @@ router.post("/analyze-and-generate", async (req, res) => {
 
   try {
     const started = Date.now();
+    const tokensEstimate = estimateTokenUsage(prompt, { multiplier: 1, image: true });
+    await assertVitruviQuota(req, { prompts: 1, tokens: tokensEstimate });
     const result = await runAnalyzeAndGenerate(prompt, options);
-    res.json(result);
+    const usage = await recordVitruviUsage(req, {
+      prompts: 1,
+      tokens: Math.max(tokensEstimate, result?.unitEconomy?.tokenEstimate || 0),
+    });
+    res.json({ ...result, usage });
     queuePromptLog(req, {
       prompt,
       options,
@@ -64,8 +83,14 @@ router.post("/generate", async (req, res) => {
 
   try {
     const started = Date.now();
+    const tokensEstimate = estimateTokenUsage(prompt, { multiplier: 1, image: true });
+    await assertVitruviQuota(req, { prompts: 1, tokens: tokensEstimate });
     const result = await runAnalyzeAndGenerate(prompt, options);
-    res.json(result);
+    const usage = await recordVitruviUsage(req, {
+      prompts: 1,
+      tokens: Math.max(tokensEstimate, result?.unitEconomy?.tokenEstimate || 0),
+    });
+    res.json({ ...result, usage });
     queuePromptLog(req, {
       prompt,
       options,
@@ -76,7 +101,28 @@ router.post("/generate", async (req, res) => {
   } catch (err) {
     console.error("vitruvi_generate_failed", err);
     const status = typeof err.status === "number" ? err.status : 500;
-    res.status(status).json({ error: "generate_failed", detail: err.message });
+    res.status(status).json({ error: "generate_failed", detail: err.message, usage: err.detail });
+  }
+});
+
+router.get("/usage", async (req, res) => {
+  try {
+    const usage = await getVitruviUsageSummary(req);
+    res.json({ ok: true, usage });
+  } catch (err) {
+    console.error("vitruvi_usage_fetch_failed", err);
+    res.status(500).json({ error: "usage_fetch_failed", detail: err.message });
+  }
+});
+
+router.post("/usage/credit", async (req, res) => {
+  try {
+    const usage = await creditVitruviUsage(req, req.body || {});
+    res.json({ ok: true, usage });
+  } catch (err) {
+    console.error("vitruvi_usage_credit_failed", err);
+    const status = typeof err.status === "number" ? err.status : 500;
+    res.status(status).json({ error: "usage_credit_failed", detail: err.message, usage: err.detail });
   }
 });
 

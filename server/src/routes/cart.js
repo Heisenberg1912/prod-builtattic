@@ -5,6 +5,13 @@ import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import { requireAuth } from '../rbac/guards.js';
 
+const parseCartUserId = (value) => {
+  if (!value) return null;
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  if (mongoose.isValidObjectId(value)) return new mongoose.Types.ObjectId(value);
+  return null;
+};
+
 const router = Router();
 
 const normalizeQuantity = (value, fallback = 1) => {
@@ -19,19 +26,22 @@ const sanitizeCurrency = (value) => {
 };
 
 const ensureCart = async (userId) => {
-  if (!userId) {
-    throw new Error('User id is required to load cart');
+  const parsedId = parseCartUserId(userId);
+  if (!parsedId) {
+    const err = new Error('invalid_user_id');
+    err.status = 400;
+    throw err;
   }
   try {
     const cart = await Cart.findOneAndUpdate(
-      { user: userId },
-      { $setOnInsert: { user: userId, items: [] } },
+      { user: parsedId },
+      { $setOnInsert: { user: parsedId, items: [] } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     return cart;
   } catch (error) {
     if (error?.code === 11000) {
-      return Cart.findOne({ user: userId });
+      return Cart.findOne({ user: parsedId });
     }
     throw error;
   }

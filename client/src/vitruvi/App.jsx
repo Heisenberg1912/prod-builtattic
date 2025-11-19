@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE } from "./config";
 import { FILTER_ORDER, FILTER_SETS } from "../constants/designFilters.js";
 
@@ -56,8 +56,9 @@ async function callAnalyzeAndGenerate(prompt, selected) {
 
 async function enrichError(prefix, response) {
   let detail = "";
+  let data;
   try {
-    const data = await response.clone().json();
+    data = await response.clone().json();
     detail = data?.detail || data?.error || JSON.stringify(data);
   } catch (_) {
     try {
@@ -67,7 +68,35 @@ async function enrichError(prefix, response) {
     }
   }
   const suffix = detail ? `: ${response.status} (${detail})` : `: ${response.status}`;
-  return new Error(`${prefix}${suffix}`);
+  const error = new Error(`${prefix}${suffix}`);
+  error.status = response.status;
+  if (data?.usage) {
+    error.usage = data.usage;
+  }
+  if (data) {
+    error.payload = data;
+  }
+  return error;
+}
+
+
+async function fetchUsageSummary() {
+  const r = await fetch(`${API_BASE}/usage`, { method: "GET" });
+  if (!r.ok) throw await enrichError("usage_fetch_failed", r);
+  const payload = await r.json();
+  return payload?.usage || null;
+}
+
+
+async function creditUsage({ tokens = 4000, prompts = 8 } = {}) {
+  const r = await fetch(`${API_BASE}/usage/credit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tokens, prompts })
+  });
+  if (!r.ok) throw await enrichError("usage_credit_failed", r);
+  const payload = await r.json();
+  return payload?.usage || null;
 }
 
 
@@ -209,6 +238,22 @@ const Modal = ({ title, onClose, children }) => (
     </div>
   </div>
 );
+
+
+const UsageBar = ({ label, used = 0, total = 0, remainingLabel }) => {
+  const percent = computePercent(used, total);
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs text-neutral-600 mb-1">
+        <span>{label}</span>
+        <span>{remainingLabel}</span>
+      </div>
+      <div className="h-2 rounded-full bg-neutral-200 overflow-hidden">
+        <div className="h-full bg-neutral-900 transition-all" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+};
 
 
 const PinterestLoader = () => (
@@ -398,6 +443,18 @@ export default function App() {
   const [variationIdeas, setVariationIdeas] = useState([]);
   const [programSummary, setProgramSummary] = useState(null);
   const [actionChecklist, setActionChecklist] = useState([]);
+  const [costEstimates, setCostEstimates] = useState(null);
+  const [phasingPlan, setPhasingPlan] = useState([]);
+  const [riskRegister, setRiskRegister] = useState([]);
+  const [materialPalette, setMaterialPalette] = useState([]);
+  const [unitEconomy, setUnitEconomy] = useState(null);
+  const [usage, setUsage] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [usageError, setUsageError] = useState(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [quotaDetail, setQuotaDetail] = useState(null);
+  const [billingMessage, setBillingMessage] = useState("");
+  const [billingBusy, setBillingBusy] = useState(false);
   const [insightSource, setInsightSource] = useState(null);
   const [isImageModalOpen, setImageModalOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -460,6 +517,35 @@ export default function App() {
 
 
   const openBuilt = useMemo(() => computeOpenBuiltFromRooms(roomSplits), [roomSplits]);
+  const usageStats = useMemo(() => {
+    if (!usage) return null;
+    const promptsRemaining = Math.max(0, Math.round((usage.promptAllowance || 0) - (usage.promptsUsed || 0)));
+    const tokensRemaining = Math.max(0, Math.round((usage.tokenAllowance || 0) - (usage.tokensUsed || 0)));
+    return {
+      promptsRemaining,
+      tokensRemaining,
+      promptPct: computePercent(usage.promptsUsed || 0, usage.promptAllowance || 0),
+      tokenPct: computePercent(usage.tokensUsed || 0, usage.tokenAllowance || 0),
+    };
+  }, [usage]);
+  const usagePlanLabel = useMemo(() => {
+    if (!usage?.plan) return "Free tier";
+    return toTitleCase(usage.plan.replace(/_/g, " "));
+  }, [usage]);
+  const usageResetLabel = useMemo(() => {
+    if (!usage?.resetAt) return "Monthly reset";
+    try {
+      return `Resets on ${new Date(usage.resetAt).toLocaleDateString()}`;
+    } catch {
+      return "Monthly reset";
+    }
+  }, [usage]);
+  const quotaSummary = useMemo(() => {
+    if (quotaDetail && typeof quotaDetail === "object") {
+      return quotaDetail;
+    }
+    return usage || null;
+  }, [quotaDetail, usage]);
 
 
   useEffect(() => {
@@ -475,6 +561,25 @@ export default function App() {
       flushPhaseTimers();
     };
   }, []);
+
+
+  const loadUsage = useCallback(async () => {
+    setUsageLoading(true);
+    setUsageError(null);
+    try {
+      const summary = await fetchUsageSummary();
+      setUsage(summary);
+    } catch (err) {
+      setUsageError(err.message || "Unable to load usage.");
+    } finally {
+      setUsageLoading(false);
+    }
+  }, []);
+
+
+  useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
 
 
   const handleToggle = (section, opt) => {
@@ -521,6 +626,14 @@ export default function App() {
     setNlpBreakdown(resolveNlpBreakdown(result?.nlpBreakdown, promptText, normalizedPrompt, resolvedRooms));
     setVariationIdeas(resolveVariationIdeas(result?.variationIdeas, normalizedPrompt, promptText));
     setActionChecklist(resolveActionChecklist(result?.actionChecklist, normalizedPrompt, promptText));
+    setCostEstimates(resolveFeasibilitySnapshot(result?.costEstimates, normalizedPrompt, promptText));
+    setPhasingPlan(resolvePhasingPlan(result?.phasingPlan, normalizedPrompt, promptText));
+    setRiskRegister(resolveRiskRegister(result?.riskRegister, normalizedPrompt, promptText));
+    setMaterialPalette(resolveMaterialPalette(result?.materialPalette, normalizedPrompt, promptText));
+    setUnitEconomy(resolveUnitEconomy(result?.unitEconomy, promptText, Boolean(result?.base64 || result?.imageUrl)));
+    if (result?.usage) {
+      setUsage(result.usage);
+    }
     setImageModalOpen(false);
 
 
@@ -550,19 +663,17 @@ export default function App() {
     const trimmed = promptDraft.trim();
     if (!trimmed) return;
 
-
     const snapshot = selected;
     const finalPrompt = buildPromptWithFilters(trimmed, snapshot);
     const annotatedPrompt = attachment
       ? `${finalPrompt}${finalPrompt ? "\n\n" : ""}Attachment Reference: ${attachment.name}`
       : finalPrompt;
 
-
     const entry = { id: crypto.randomUUID(), text: annotatedPrompt, ts: new Date().toISOString() };
     setHistory((h) => [entry, ...h]);
 
-
     setError(null);
+    setQuotaDetail(null);
     setLoading(true);
     startPhaseFlow();
     setImageModalOpen(false);
@@ -572,10 +683,21 @@ export default function App() {
     setProgramSummary(null);
     setActionChecklist([]);
     setInsightSource(null);
+
+    let shouldResetComposer = false;
+
     try {
       const result = await callAnalyzeAndGenerate(annotatedPrompt, snapshot);
       applyAnalyzeResult(result, annotatedPrompt, snapshot);
+      shouldResetComposer = true;
     } catch (err) {
+      if (err?.status === 402) {
+        setError("Usage limit reached. Upgrade your workspace to keep generating.");
+        setQuotaDetail(err?.usage || err?.payload || err?.message);
+        setShowUpgradeModal(true);
+        completePhaseFlow(true);
+        return;
+      }
       setError(String(err?.message || err));
       const fallbackPrompt = simulatePromptAnalysis(annotatedPrompt, snapshot);
       setAnalysis(fallbackPrompt);
@@ -587,21 +709,27 @@ export default function App() {
       setNlpBreakdown(resolveNlpBreakdown(null, annotatedPrompt, fallbackPrompt, resolvedRooms));
       setVariationIdeas(resolveVariationIdeas(null, fallbackPrompt, annotatedPrompt));
       setActionChecklist(resolveActionChecklist(null, fallbackPrompt, annotatedPrompt));
+      setCostEstimates(resolveFeasibilitySnapshot(null, fallbackPrompt, annotatedPrompt));
+      setPhasingPlan(resolvePhasingPlan(null, fallbackPrompt, annotatedPrompt));
+      setRiskRegister(resolveRiskRegister(null, fallbackPrompt, annotatedPrompt));
+      setMaterialPalette(resolveMaterialPalette(null, fallbackPrompt, annotatedPrompt));
+      setUnitEconomy(resolveUnitEconomy(null, annotatedPrompt, false));
       setImgB64(null);
       setImageUrl(null);
       completePhaseFlow(true);
+    } finally {
+      if (shouldResetComposer) {
+        setPromptDraft("");
+        setAttachment(null);
+      }
+      setListening(false);
+      setVoiceHint("");
+      if (voiceTimeoutRef.current) {
+        clearTimeout(voiceTimeoutRef.current);
+        voiceTimeoutRef.current = null;
+      }
+      setLoading(false);
     }
-
-
-    setPromptDraft("");
-    setAttachment(null);
-    setListening(false);
-    setVoiceHint("");
-    if (voiceTimeoutRef.current) {
-      clearTimeout(voiceTimeoutRef.current);
-      voiceTimeoutRef.current = null;
-    }
-    setLoading(false);
   };
 
 
@@ -711,6 +839,37 @@ ${snippet}` : snippet));
   const closeModal = () => setModal(null);
 
 
+  const handleUpgradeClick = () => {
+    setBillingMessage("");
+    setShowUpgradeModal(true);
+  };
+
+
+  const handleCloseUpgrade = () => {
+    setShowUpgradeModal(false);
+    setBillingMessage("");
+  };
+
+
+  const handlePurchaseCredits = async () => {
+    setBillingBusy(true);
+    setBillingMessage("");
+    try {
+      const summary = await creditUsage();
+      if (summary) {
+        setUsage(summary);
+        setQuotaDetail(null);
+        setBillingMessage("Credits added. Keep exploring new schemes.");
+        setShowUpgradeModal(false);
+      }
+    } catch (err) {
+      setBillingMessage(err?.status === 401 ? "Sign in to your workspace to purchase credits." : (err?.message || "Unable to add credits right now."));
+    } finally {
+      setBillingBusy(false);
+    }
+  };
+
+
   const handleHistoryReuse = (text) => {
     setPromptDraft(text);
     closeModal();
@@ -816,6 +975,48 @@ ${snippet}` : snippet));
       {modalInfo && (
         <Modal title={modalInfo.title} onClose={closeModal}>
           {modalInfo.content}
+        </Modal>
+      )}
+
+      {showUpgradeModal && (
+        <Modal title="Upgrade Vitruvi workspace" onClose={handleCloseUpgrade}>
+          <p className="text-sm text-neutral-600">
+            You&apos;ve reached the collaborative free tier (6 prompts / 18k tokens per reset). Add credits or talk to billing to keep generating.
+          </p>
+          {quotaSummary ? (
+            <div className="text-xs text-neutral-600 bg-neutral-100 border border-neutral-200 rounded-2xl px-3 py-2 space-y-1">
+              <div>
+                Prompts used: {quotaSummary.promptsUsed ?? usage?.promptsUsed ?? 0} /{" "}
+                {quotaSummary.promptAllowance ?? usage?.promptAllowance ?? 0}
+              </div>
+              <div>
+                Tokens used: {formatNumber(quotaSummary.tokensUsed ?? usage?.tokensUsed ?? 0)} /{" "}
+                {formatNumber(quotaSummary.tokenAllowance ?? usage?.tokenAllowance ?? 0)}
+              </div>
+            </div>
+          ) : null}
+          {billingMessage && (
+            <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+              {billingMessage}
+            </div>
+          )}
+          <div className="space-y-2">
+            <button
+              onClick={handlePurchaseCredits}
+              disabled={billingBusy}
+              className={`w-full text-sm px-4 py-2 rounded-xl ${
+                billingBusy ? "bg-neutral-300 text-neutral-600" : "bg-neutral-900 text-white hover:bg-neutral-800"
+              }`}
+            >
+              {billingBusy ? "Processing…" : "Add 4k tokens for $12"}
+            </button>
+            <a
+              className="block text-center text-sm px-4 py-2 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-100"
+              href="mailto:sales@builtattic.com?subject=VitruviAI%20billing"
+            >
+              Email billing
+            </a>
+          </div>
         </Modal>
       )}
 
@@ -934,6 +1135,204 @@ ${snippet}` : snippet));
                 <p className="text-xs text-neutral-500">No filters selected yet.</p>
               )}
             </div>
+
+            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
+              <Card className="col-span-1 xl:col-span-5 p-4">
+                <Section title="Feasibility Snapshot" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Budget cues</span>} />
+                {costEstimates ? (
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-neutral-500">Capex</span>
+                      <span className="font-semibold text-neutral-900">{costEstimates.capexRange || "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-neutral-500">Cost / sq.ft</span>
+                      <span className="font-semibold text-neutral-900">{costEstimates.costPerSqft || "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-neutral-500">ROI</span>
+                      <span className="font-semibold text-neutral-900">{costEstimates.roi || "—"}</span>
+                    </div>
+                    {Number.isFinite(costEstimates.paybackMonths) && (
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-neutral-500">Payback</span>
+                        <span className="font-semibold text-neutral-900">{costEstimates.paybackMonths} months</span>
+                      </div>
+                    )}
+                    {costEstimates.notes?.length ? (
+                      <ul className="list-disc list-inside text-xs space-y-1 text-neutral-600">
+                        {costEstimates.notes.map((note, index) => (
+                          <li key={index}>{note}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-neutral-500">Generate a brief to unpack feasibility detail.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-neutral-500">Generate a concept to unlock feasibility signals.</div>
+                )}
+              </Card>
+
+              <Card className="col-span-1 xl:col-span-4 p-4">
+                <Section title="Unit Economics" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Token spend</span>} />
+                {unitEconomy ? (
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-neutral-500">Token estimate</span>
+                      <span className="font-semibold text-neutral-900">{formatNumber(unitEconomy.tokenEstimate) || "—"} tokens</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-neutral-500">Prompt / Response</span>
+                      <span className="font-semibold text-neutral-900">
+                        {(formatNumber(unitEconomy.promptTokens) || "—")}/{formatNumber(unitEconomy.responseTokens) || "—"}
+                      </span>
+                    </div>
+                    {Number.isFinite(unitEconomy.imageTokens) && (
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-neutral-500">Image render</span>
+                        <span className="font-semibold text-neutral-900">{formatNumber(unitEconomy.imageTokens)} tokens</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-neutral-500">Est. cost</span>
+                      <span className="font-semibold text-neutral-900">
+                        {unitEconomy.estimatedCostUsd ? `$${unitEconomy.estimatedCostUsd.toFixed(2)}` : "—"}
+                      </span>
+                    </div>
+                    {unitEconomy.notes?.length ? (
+                      <ul className="text-xs list-disc list-inside text-neutral-600 space-y-1">
+                        {unitEconomy.notes.map((note, index) => (
+                          <li key={index}>{note}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-neutral-500">Run a prompt to see the Gemini cost split.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-neutral-500">Send a prompt to reveal token economics.</div>
+                )}
+              </Card>
+
+              <Card className="col-span-1 xl:col-span-3 p-4">
+                <Section title="Phasing Playbook" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Timeline</span>} />
+                {phasingPlan.length ? (
+                  <ol className="space-y-3 text-sm">
+                    {phasingPlan.map((phase) => (
+                      <li key={phase.id} className="border border-neutral-200 rounded-2xl px-3 py-2 bg-white/80">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-semibold text-neutral-900">{phase.phase}</span>
+                          {Number.isFinite(phase.durationWeeks) && (
+                            <span className="text-xs text-neutral-500">{phase.durationWeeks} wk</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{phase.focus}</p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className="text-sm text-neutral-500">Generate to pull in the execution plan.</div>
+                )}
+              </Card>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
+              <Card className="col-span-1 xl:col-span-5 p-4">
+                <Section title="Material Palette" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Finish strategy</span>} />
+                {materialPalette.length ? (
+                  <div className="space-y-3">
+                    {materialPalette.map((material) => (
+                      <div key={material.id} className="rounded-2xl border border-neutral-200 px-3 py-2 bg-white/80">
+                        <div className="text-sm font-semibold text-neutral-900">{material.name}</div>
+                        {material.finish && <div className="text-xs text-neutral-600">{material.finish}</div>}
+                        {material.sustainability && (
+                          <div className="text-[11px] text-emerald-600">{material.sustainability}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-neutral-500">Generate to see the curated material stack.</div>
+                )}
+              </Card>
+
+              <Card className="col-span-1 xl:col-span-7 p-4">
+                <Section title="Risk Register" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Mitigations</span>} />
+                {riskRegister.length ? (
+                  <div className="space-y-3">
+                    {riskRegister.map((risk) => (
+                      <div key={risk.id} className="border border-neutral-200 rounded-2xl px-3 py-2 bg-white/80">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-neutral-900">{risk.risk}</span>
+                          {risk.impact && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                              {risk.impact}
+                            </span>
+                          )}
+                        </div>
+                        {risk.mitigation && <p className="text-xs text-neutral-600 mt-1">{risk.mitigation}</p>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-neutral-500">Run Gemini to pull risk + mitigation cues.</div>
+                )}
+              </Card>
+            </div>
+
+            {(usageLoading || usage || usageError) && (
+              <Card className="mb-4 p-4 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-neutral-500">Usage & Billing</div>
+                    <div className="text-lg font-semibold text-neutral-900">{usagePlanLabel}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleUpgradeClick}
+                      className="text-xs px-4 py-2 rounded-full border border-neutral-900 text-neutral-900 hover:bg-neutral-900 hover:text-white"
+                    >
+                      Upgrade
+                    </button>
+                    <button
+                      onClick={loadUsage}
+                      className="text-xs px-4 py-2 rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-100"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                {usageError ? (
+                  <div className="text-sm text-red-600">{usageError}</div>
+                ) : usageLoading ? (
+                  <div className="text-sm text-neutral-500">Loading usage…</div>
+                ) : usage ? (
+                  <>
+                    <UsageBar
+                      label="Prompts"
+                      used={usage.promptsUsed || 0}
+                      total={usage.promptAllowance || 0}
+                      remainingLabel={`${usageStats?.promptsRemaining || 0} left`}
+                    />
+                    <UsageBar
+                      label="Tokens"
+                      used={usage.tokensUsed || 0}
+                      total={usage.tokenAllowance || 0}
+                      remainingLabel={`${formatNumber(usageStats?.tokensRemaining || 0) || 0} tokens left`}
+                    />
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+                      <span>{usageResetLabel}</span>
+                      {usage.blocked && <span className="text-red-600 font-semibold">Limit reached</span>}
+                      <span>
+                        Lifetime prompts: {formatNumber(usage.lifetimePrompts || 0)} | Tokens:{" "}
+                        {formatNumber(usage.lifetimeTokens || 0)}
+                      </span>
+                    </div>
+                  </>
+                ) : null}
+              </Card>
+            )}
 
 
             {/* Top grid: Image + Suggested Design */}
@@ -2167,6 +2566,301 @@ function buildVariationIdeas(analysis, promptText = "") {
     const pick = variations[(seed + offset) % variations.length];
     return { ...pick, id: `variation-${offset}` };
   });
+}
+
+
+
+
+function resolveFeasibilitySnapshot(serverFeasibility, analysis, promptText = "") {
+  if (serverFeasibility && typeof serverFeasibility === "object") {
+    const normalized = {
+      capexRange: serverFeasibility.capexRange || serverFeasibility.capex || serverFeasibility.costRange || "",
+      costPerSqft: serverFeasibility.costPerSqft || serverFeasibility.perSqft || "",
+      roi: serverFeasibility.roi || serverFeasibility.return || "",
+      paybackMonths: Number.isFinite(serverFeasibility.paybackMonths) ? serverFeasibility.paybackMonths : undefined,
+      notes: Array.isArray(serverFeasibility.notes)
+        ? serverFeasibility.notes.map((note) => String(note).trim()).filter(Boolean).slice(0, 5)
+        : serverFeasibility.notes
+        ? [String(serverFeasibility.notes).trim()]
+        : [],
+    };
+    if (normalized.capexRange || normalized.costPerSqft || normalized.roi || normalized.notes.length) {
+      return normalized;
+    }
+  }
+  return fallbackFeasibility(analysis, promptText);
+}
+
+function fallbackFeasibility(analysis = {}, promptText = "") {
+  const category = (analysis?.Category || analysis?.Typology || promptText || "").toLowerCase();
+  let capexRange = "USD 0.45M – 0.9M";
+  let costPerSqft = "$140 – $210 per sq.ft";
+  let roi = "12-16% IRR over 5 years";
+  let paybackMonths = 48;
+  if (/commercial|office/.test(category)) {
+    capexRange = "USD 0.9M – 1.8M";
+    costPerSqft = "$180 – $250 per sq.ft";
+    roi = "14-18% IRR via blended leasing";
+    paybackMonths = 42;
+  } else if (/industrial|logistics|factory/.test(category)) {
+    capexRange = "USD 1.4M – 2.6M";
+    costPerSqft = "$110 – $160 per sq.ft";
+    roi = "16-22% IRR anchored by longer leases";
+    paybackMonths = 36;
+  } else if (/hospitality|retail/.test(category)) {
+    capexRange = "USD 0.7M – 1.4M";
+    costPerSqft = "$150 – $230 per sq.ft";
+    roi = "18-24% IRR if ADR targets hold";
+    paybackMonths = 30;
+  }
+  const notes = [
+    analysis?.["Material Used"] ? `Material mix: ${analysis["Material Used"].toLowerCase()}.` : "",
+    analysis?.Style ? `FF&E allowances tuned for ${analysis.Style.toLowerCase()} finish.` : "",
+    analysis?.["Climate Adaptability"]
+      ? `Envelope sized for ${analysis["Climate Adaptability"].toLowerCase()} loads.`
+      : "",
+  ].filter(Boolean);
+  if (/phase|fast track/.test(promptText.toLowerCase())) {
+    notes.push("Owner flagged phasing—stage procurement to manage cash flow.");
+  }
+  return {
+    capexRange,
+    costPerSqft,
+    roi,
+    paybackMonths,
+    notes: notes.slice(0, 4),
+  };
+}
+
+function resolvePhasingPlan(serverPlan, analysis, promptText = "") {
+  if (Array.isArray(serverPlan) && serverPlan.length) {
+    const normalized = serverPlan
+      .map((item, index) => {
+        if (!item) return null;
+        if (typeof item === "string") {
+          return { id: `phase-${index}`, phase: item.split(":")[0], focus: item };
+        }
+        const phase = item.phase || item.title || item.name || `Phase ${index + 1}`;
+        const focus = item.focus || item.summary || item.detail || "";
+        const durationWeeks = Number.isFinite(item.durationWeeks)
+          ? item.durationWeeks
+          : Number.isFinite(item.duration)
+          ? Number(item.duration)
+          : undefined;
+        return { id: item.id || `phase-${index}`, phase, focus, durationWeeks };
+      })
+      .filter(Boolean)
+      .slice(0, 4);
+    if (normalized.length) return normalized;
+  }
+  return fallbackPhasingPlan(analysis, promptText);
+}
+
+function fallbackPhasingPlan(analysis = {}, promptText = "") {
+  const base = [
+    { id: "phase-1", phase: "Discovery & constraints", durationWeeks: 2, focus: "Surveys, zoning, Gemini baselines." },
+    { id: "phase-2", phase: "Iterative schematic", durationWeeks: 3, focus: "Prompt loops + owner reviews." },
+    { id: "phase-3", phase: "Detailed design", durationWeeks: 4, focus: "Structure + MEP coordination." },
+    { id: "phase-4", phase: "Documentation & bid", durationWeeks: 3, focus: "Issue DD + IFC packages." },
+  ];
+  if (/accelerated|fast track/.test(promptText.toLowerCase())) {
+    base[2].durationWeeks = 3;
+    base[3].durationWeeks = 2;
+  }
+  if (/retrofit|renovation/.test((analysis?.Typology || "").toLowerCase())) {
+    base[0].focus = "As-built capture + constraint modeling.";
+  }
+  return base;
+}
+
+function resolveRiskRegister(serverRisks, analysis, promptText = "") {
+  if (Array.isArray(serverRisks) && serverRisks.length) {
+    const normalized = serverRisks
+      .map((item, index) => {
+        if (!item) return null;
+        if (typeof item === "string") {
+          return { id: `risk-${index}`, risk: item, impact: "Medium" };
+        }
+        const risk = item.risk || item.title || item.issue;
+        if (!risk) return null;
+        return {
+          id: item.id || `risk-${index}`,
+          risk,
+          impact: item.impact || item.severity || "",
+          mitigation: item.mitigation || item.action || item.response || "",
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 5);
+    if (normalized.length) return normalized;
+  }
+  return fallbackRiskRegister(analysis, promptText);
+}
+
+function fallbackRiskRegister(analysis = {}, promptText = "") {
+  const entries = [
+    {
+      id: "risk-1",
+      risk: "Scope creep",
+      impact: "Medium",
+      mitigation: "Freeze typology + GFA once schematic is approved.",
+    },
+    {
+      id: "risk-2",
+      risk: "Procurement volatility",
+      impact: "Low",
+      mitigation: "Lock alternates for long-lead finishes before DD.",
+    },
+  ];
+  const climate = (analysis?.["Climate Adaptability"] || "").toLowerCase();
+  if (/hot|tropical/.test(climate)) {
+    entries.unshift({
+      id: "risk-thermal",
+      risk: "Thermal build-up",
+      impact: "High",
+      mitigation: "Model shading + stack ventilation early; size overhangs properly.",
+    });
+  } else if (/cold|alpine/.test(climate)) {
+    entries.unshift({
+      id: "risk-envelope",
+      risk: "Envelope heat loss",
+      impact: "High",
+      mitigation: "Tighten glazing U-values + capture detailing before DD.",
+    });
+  }
+  if (/heritage|brownfield/.test(promptText.toLowerCase())) {
+    entries.push({
+      id: "risk-heritage",
+      risk: "Approval drag",
+      impact: "High",
+      mitigation: "Schedule authority workshops before documentation sprint.",
+    });
+  }
+  return entries.slice(0, 5);
+}
+
+function resolveMaterialPalette(serverPalette, analysis, promptText = "") {
+  if (Array.isArray(serverPalette) && serverPalette.length) {
+    const normalized = serverPalette
+      .map((item, index) => {
+        if (!item) return null;
+        if (typeof item === "string") return { id: `palette-${index}`, name: item, finish: "", sustainability: "" };
+        const name = item.name || item.material || item.label;
+        const finish = item.finish || item.treatment || item.spec;
+        const sustainability = item.sustainability || item.impact || "";
+        if (!name && !finish) return null;
+        return { id: item.id || `palette-${index}`, name: name || finish, finish, sustainability };
+      })
+      .filter(Boolean)
+      .slice(0, 5);
+    if (normalized.length) return normalized;
+  }
+  return fallbackMaterialPalette(analysis, promptText);
+}
+
+function fallbackMaterialPalette(analysis = {}, promptText = "") {
+  const palette = [
+    {
+      id: "palette-1",
+      name: analysis?.["Material Used"] || "Exposed concrete",
+      finish: analysis?.Exterior || "Neutral plaster finish",
+      sustainability: analysis?.Sustainability || "Baseline efficiency envelope",
+    },
+  ];
+  if (analysis?.Style) {
+    palette.push({
+      id: "palette-2",
+      name: `${analysis.Style} accent`,
+      finish: analysis.Style.includes("Industrial") ? "Brushed metal + concrete floor" : "Timber fins + warm brass",
+      sustainability: "Low-VOC top coats",
+    });
+  }
+  if (/courtyard|garden|deck|green/.test(promptText.toLowerCase())) {
+    palette.push({
+      id: "palette-3",
+      name: "Landscape deck",
+      finish: "Thermory planks, planters, gravel",
+      sustainability: "Rainwater-managed planting palette",
+    });
+  }
+  return palette.slice(0, 5);
+}
+
+function resolveUnitEconomy(serverEconomy, promptText = "", includeImage = false) {
+  if (serverEconomy && typeof serverEconomy === "object") {
+    const normalized = {
+      tokenEstimate: Number.isFinite(serverEconomy.tokenEstimate)
+        ? serverEconomy.tokenEstimate
+        : Number(serverEconomy.tokens),
+      promptTokens: Number.isFinite(serverEconomy.promptTokens) ? serverEconomy.promptTokens : undefined,
+      responseTokens: Number.isFinite(serverEconomy.responseTokens) ? serverEconomy.responseTokens : undefined,
+      imageTokens: Number.isFinite(serverEconomy.imageTokens)
+        ? serverEconomy.imageTokens
+        : includeImage
+        ? 1800
+        : undefined,
+      estimatedCostUsd: Number.isFinite(serverEconomy.estimatedCostUsd)
+        ? serverEconomy.estimatedCostUsd
+        : undefined,
+      tokenRateUsd: Number.isFinite(serverEconomy.tokenRateUsd)
+        ? serverEconomy.tokenRateUsd
+        : Number.isFinite(serverEconomy.avgTokenCostUsd)
+        ? serverEconomy.avgTokenCostUsd
+        : undefined,
+      notes: Array.isArray(serverEconomy.notes)
+        ? serverEconomy.notes.map((note) => String(note).trim()).filter(Boolean).slice(0, 4)
+        : [],
+    };
+    if (normalized.tokenEstimate) {
+      if (!normalized.estimatedCostUsd && normalized.tokenRateUsd) {
+        normalized.estimatedCostUsd = Number((normalized.tokenEstimate * normalized.tokenRateUsd).toFixed(4));
+      }
+      if (!normalized.promptTokens) {
+        normalized.promptTokens = Math.max(50, Math.round(promptText.length / 4));
+      }
+      if (!normalized.responseTokens && normalized.promptTokens) {
+        normalized.responseTokens = Math.max(
+          0,
+          normalized.tokenEstimate - normalized.promptTokens - (normalized.imageTokens || 0),
+        );
+      }
+      return normalized;
+    }
+  }
+  return fallbackUnitEconomy(promptText, includeImage);
+}
+
+function fallbackUnitEconomy(promptText = "", includeImage = false) {
+  const promptTokens = Math.max(50, Math.round(promptText.length / 4));
+  const tokenEstimate = estimateLocalTokenUsage(promptText, { image: includeImage });
+  const imageTokens = includeImage ? 1800 : 0;
+  const responseTokens = Math.max(0, tokenEstimate - promptTokens - imageTokens);
+  return {
+    tokenEstimate,
+    promptTokens,
+    responseTokens,
+    imageTokens,
+    estimatedCostUsd: Number((tokenEstimate * 0.0025).toFixed(4)),
+    tokenRateUsd: 0.0025,
+    notes: ["Includes Gemini analysis + optional plan render allocation."],
+  };
+}
+
+function estimateLocalTokenUsage(prompt = "", { image = false } = {}) {
+  const promptTokens = Math.max(200, Math.round(prompt.length / 3));
+  const responseTokens = 900;
+  const imageTokens = image ? 1800 : 0;
+  return promptTokens + responseTokens + imageTokens;
+}
+
+function computePercent(used, total) {
+  if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return 0;
+  return Math.min(100, Math.round((used / total) * 100));
+}
+
+function formatNumber(value) {
+  if (!Number.isFinite(value)) return null;
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
 
