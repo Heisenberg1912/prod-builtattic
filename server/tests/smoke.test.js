@@ -10,7 +10,6 @@ import app from '../src/app.js';
 import { ensureInitialised, disconnect } from '../src/bootstrap.js';
 import User from '../src/models/User.js';
 import Firm from '../src/models/Firm.js';
-import { redis } from '../src/config/redis.js';
 
 const accessSecret = process.env.JWT_ACCESS_SECRET || 'test-access-secret';
 
@@ -52,15 +51,6 @@ test.before(async () => {
 
 test.after(async () => {
   await disconnect();
-  if (redis && typeof redis.quit === 'function') {
-    try {
-      await redis.quit();
-    } catch {
-      if (typeof redis.disconnect === 'function') {
-        redis.disconnect();
-      }
-    }
-  }
 });
 
 test.beforeEach(async () => {
