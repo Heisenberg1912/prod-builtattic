@@ -54,6 +54,18 @@ const formatCurrency = (value, currency = "USD") => {
   }
 };
 
+const formatPlanMeasurement = (value, suffix = "sq ft") => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "Add details";
+  return `${number(numeric)} ${suffix}`.trim();
+};
+
+const formatPlanRate = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "Share rate";
+  return `$${number(numeric)} / sqft`;
+};
+
 const bundleToServiceTile = (bundle) => {
   if (!bundle) return null;
   const details = [];
@@ -570,6 +582,7 @@ const StudioDetail = () => {
     };
   }, []);
   const workspaceServiceBundles = workspaceCollections?.serviceBundles || [];
+  const workspacePlanUploads = workspaceCollections?.planUploads || [];
 
   const handleAddRecommendedToCart = async (entry) => {
     const payload = buildCartPayload(entry);
@@ -583,6 +596,16 @@ const StudioDetail = () => {
     }
   };
   const hostingConfig = studio?.firm?.hosting;
+  const studioPlanUploads = useMemo(
+    () => (Array.isArray(studio?.planUploads) ? studio.planUploads : []),
+    [studio]
+  );
+
+  const hostedPlanUploads = useMemo(() => {
+    if (studioPlanUploads.length) return studioPlanUploads;
+    return workspacePlanUploads;
+  }, [studioPlanUploads, workspacePlanUploads]);
+
   const tileConfig = useMemo(() => {
     const summary = hostingConfig?.serviceSummary?.trim() || "";
     const services = Array.isArray(hostingConfig?.services) ? hostingConfig.services : [];
@@ -614,6 +637,7 @@ const StudioDetail = () => {
   const hasServiceSummary = Boolean(serviceSummary && serviceSummary.trim());
   const hasServiceTiles = serviceTiles.length > 0;
   const hasProductTiles = productTiles.length > 0;
+  const hasHostedPlanUploads = hostedPlanUploads.length > 0;
   const ownerChecklist = useMemo(() => {
     if (!studio) return [];
     const slug = studio.slug;
@@ -1228,6 +1252,122 @@ const StudioDetail = () => {
             </div>
           </div>
         </section>
+
+        {hasHostedPlanUploads ? (
+          <section className="mt-10 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Concept hosting</p>
+                <h2 className="text-lg font-semibold text-slate-900">Plan catalogue preview</h2>
+                <p className="text-sm text-slate-600">
+                  Direct uploads from the firm’s dashboard. Each concept includes specs, pricing cues, and media so you
+                  know exactly what is packaged.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              {hostedPlanUploads.map((plan) => {
+                const chipLabels = [];
+                if (Array.isArray(plan.renderImages) && plan.renderImages.length) {
+                  chipLabels.push(
+                    `${plan.renderImages.length} render${plan.renderImages.length === 1 ? "" : "s"}`
+                  );
+                }
+                if (plan.conceptPlan) chipLabels.push("Concept file");
+                if (plan.walkthrough) chipLabels.push("Walkthrough");
+                const floorsValue = Number(plan.floors);
+                const constructionValue = Number(plan.constructionCost);
+                return (
+                  <article
+                    key={plan.id || plan.projectTitle}
+                    className="rounded-2xl border border-slate-100 bg-slate-50/70 p-5 shadow-sm space-y-4"
+                  >
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                        {plan.category || "Category"}{plan.subtype ? ` · ${plan.subtype}` : ""}
+                      </p>
+                      <h3 className="mt-1 text-base font-semibold text-slate-900">
+                        {plan.projectTitle || "Untitled concept"}
+                      </h3>
+                      <p className="text-sm text-slate-500">{plan.primaryStyle || "Add a primary style"}</p>
+                    </div>
+                    <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                      <div>
+                        <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Built area</dt>
+                        <dd>{formatPlanMeasurement(plan.areaSqft)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Floors</dt>
+                        <dd>{Number.isFinite(floorsValue) ? number(floorsValue) : "Add floors"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Design rate</dt>
+                        <dd>{formatPlanRate(plan.designRate)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-[0.25em] text-slate-400">Construction</dt>
+                        <dd>{Number.isFinite(constructionValue) ? `$${number(constructionValue)}` : "On request"}</dd>
+                      </div>
+                    </dl>
+                    {chipLabels.length ? (
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                        {chipLabels.map((label) => (
+                          <span key={`${plan.id || plan.projectTitle}-${label}`} className="rounded-full bg-white/70 px-3 py-1">
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    {plan.description ? (
+                      <p className="text-sm text-slate-600">{plan.description}</p>
+                    ) : null}
+                    {Array.isArray(plan.materials) && plan.materials.length ? (
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        {plan.materials.slice(0, 6).map((material, index) => (
+                          <span
+                            key={`${plan.id || plan.projectTitle}-material-${index}`}
+                            className="rounded-full border border-slate-200 bg-white/70 px-3 py-1"
+                          >
+                            {material}
+                          </span>
+                        ))}
+                        {plan.materials.length > 6 ? (
+                          <span className="rounded-full border border-slate-200 bg-white/50 px-3 py-1">
+                            +{plan.materials.length - 6} more
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {(plan.conceptPlan || plan.walkthrough) && (
+                      <div className="flex flex-wrap gap-3 text-sm">
+                        {plan.conceptPlan ? (
+                          <a
+                            href={plan.conceptPlan}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1 text-slate-700 hover:border-slate-400"
+                          >
+                            View concept
+                          </a>
+                        ) : null}
+                        {plan.walkthrough ? (
+                          <a
+                            href={plan.walkthrough}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1 text-slate-700 hover:border-slate-400"
+                          >
+                            Watch walkthrough
+                          </a>
+                        ) : null}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         {/* Service & product profile */}
         <section className="mt-10 grid gap-6 lg:grid-cols-2">

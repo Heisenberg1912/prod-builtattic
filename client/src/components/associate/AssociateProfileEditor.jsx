@@ -58,6 +58,11 @@ const Hint = ({ children, className = "" }) => (
   <p className={`text-xs text-slate-500 ${className}`}>{children}</p>
 );
 
+const HERO_PLACEHOLDER = "https://images.builtattic.com/placeholders/hero-light.jpg";
+const AVATAR_PLACEHOLDER = "https://images.builtattic.com/placeholders/avatar-default.jpg";
+const SERVICE_FILE_ACCEPT =
+  ".pdf,.doc,.docx,.ppt,.pptx,.zip,.jpg,.jpeg,.png,.mp4,.mov,.webm,.heic";
+
 const PreviewCard = ({ form }) => {
   const stats = useMemo(() => deriveProfileStats(form), [form]);
   return (
@@ -113,6 +118,16 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
   const [authRequired, setAuthRequired] = useState(false);
   const [lastSynced, setLastSynced] = useState(null);
   const [mediaUploadIndex, setMediaUploadIndex] = useState(null);
+  const heroFileInputRef = useRef(null);
+  const profileFileInputRef = useRef(null);
+  const workingDrawingsFileInputRef = useRef(null);
+  const servicePackFileInputRef = useRef(null);
+  const [imageUploading, setImageUploading] = useState({ hero: false, profile: false });
+  const [serviceUploading, setServiceUploading] = useState({
+    workingDrawings: false,
+    servicePack: false,
+  });
+  const [imagePreviews, setImagePreviews] = useState({ hero: null, profile: null });
 
   const hasChanges = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm]);
 
@@ -126,6 +141,10 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
       const mapped = mapProfileToForm(response.profile || {});
       setForm(mapped);
       setInitialForm(mapped);
+      setImagePreviews({
+        hero: mapped.heroImage || null,
+        profile: mapped.profileImage || null,
+      });
       setOfflineMode(response.source !== "remote");
       setAuthRequired(Boolean(response.authRequired));
       setLastSynced(getLastUpdated(response.profile || {}));
@@ -210,6 +229,47 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleBrandInputChange = (field, previewKey) => (event) => {
+    const value = event.target.value;
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setImagePreviews((prev) => ({ ...prev, [previewKey]: value || null }));
+  };
+
+  const serviceFileRefs = {
+    workingDrawings: workingDrawingsFileInputRef,
+    servicePack: servicePackFileInputRef,
+  };
+
+  const triggerServiceFileDialog = (field) => {
+    serviceFileRefs[field]?.current?.click();
+  };
+
+  const handleServiceDocumentUpload = async (field, file) => {
+    if (!file) return;
+    setServiceUploading((prev) => ({ ...prev, [field]: true }));
+    try {
+      const { url } = await uploadStudioAsset(file, {
+        kind: `associate_service_${field}`,
+        secure: true,
+      });
+      if (!url) throw new Error("Upload failed. Try another file.");
+      setForm((prev) => ({ ...prev, [field]: url }));
+      toast.success("Document uploaded");
+    } catch (error) {
+      console.error("service_document_upload_error", error);
+      toast.error(error?.message || "Unable to upload document");
+    } finally {
+      setServiceUploading((prev) => ({ ...prev, [field]: false }));
+    }
+  };
+
+  const handleServiceFileInput = (field) => async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    await handleServiceDocumentUpload(field, file);
+  };
+
   const handleMediaChange = (index, field, value) => {
     setForm((prev) => {
       const nextItems = Array.isArray(prev.portfolioMedia) ? [...prev.portfolioMedia] : [];
@@ -274,6 +334,40 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
       setMediaUploadIndex(null);
     }
   };
+
+  const handleBrandImageUpload = async (event, targetKey, trackerKey, kind) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setImageUploading((prev) => ({ ...prev, [trackerKey]: true }));
+    const previewKey = trackerKey;
+    const previousUrl = form[targetKey];
+    let tempUrl = null;
+    try {
+      tempUrl = URL.createObjectURL(file);
+      setImagePreviews((prev) => ({ ...prev, [previewKey]: tempUrl }));
+      const { url } = await uploadStudioAsset(file, { kind, secure: true });
+      if (!url) throw new Error("Upload failed. Try another file.");
+      setForm((prev) => ({ ...prev, [targetKey]: url }));
+      setImagePreviews((prev) => ({ ...prev, [previewKey]: url }));
+      toast.success("Image uploaded");
+    } catch (error) {
+      console.error("brand_image_upload_error", error);
+      toast.error(error?.message || "Unable to upload image");
+      setImagePreviews((prev) => ({ ...prev, [previewKey]: previousUrl || null }));
+    } finally {
+      setImageUploading((prev) => ({ ...prev, [trackerKey]: false }));
+      if (tempUrl) {
+        URL.revokeObjectURL(tempUrl);
+      }
+    }
+  };
+
+  const heroPreviewSrc = imagePreviews.hero || form.heroImage || HERO_PLACEHOLDER;
+  const profilePreviewSrc =
+    imagePreviews.profile || form.profileImage || form.heroImage || AVATAR_PLACEHOLDER;
+  const handleHeroInputChange = handleBrandInputChange("heroImage", "hero");
+  const handleProfileInputChange = handleBrandInputChange("profileImage", "profile");
 
   const handleSave = async () => {
     if (authRequired) {
@@ -373,22 +467,84 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
             <Section title="Branding & contact" description="Control your hero media, avatar, and how clients should reach out.">
               <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="text-sm font-medium text-slate-700">
-                    Hero / cover image URL
-                    <Input
-                      value={form.heroImage}
-                      onChange={handleInput("heroImage")}
-                      placeholder="https://images.builtattic.com/cover.jpg"
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-slate-700">Hero / cover image</span>
+                    <img
+                      src={heroPreviewSrc}
+                      alt="Hero preview"
+                      className="h-32 w-full rounded-xl border border-slate-200 object-cover"
+                      onError={(event) => {
+                        event.currentTarget.src = HERO_PLACEHOLDER;
+                      }}
                     />
-                  </label>
-                  <label className="text-sm font-medium text-slate-700">
-                    Profile image URL
-                    <Input
-                      value={form.profileImage}
-                      onChange={handleInput("profileImage")}
-                      placeholder="https://images.builtattic.com/avatar.png"
-                    />
-                  </label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={form.heroImage}
+                        onChange={handleHeroInputChange}
+                        placeholder="Paste a hosted image URL"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => heroFileInputRef.current?.click()}
+                        disabled={imageUploading.hero}
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400 disabled:opacity-60"
+                      >
+                        {imageUploading.hero ? "Uploading..." : "Upload"}
+                      </button>
+                      <input
+                        ref={heroFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) =>
+                          handleBrandImageUpload(event, "heroImage", "hero", "associate_hero")
+                        }
+                      />
+                    </div>
+                    <Hint>Paste an existing link or upload a new image directly.</Hint>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-medium text-slate-700">Profile image</span>
+                    <div className="flex items-center gap-3">
+                      <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-200">
+                        <img
+                          src={profilePreviewSrc}
+                          alt="Avatar preview"
+                          className="h-full w-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.src = AVATAR_PLACEHOLDER;
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <Input
+                          value={form.profileImage}
+                          onChange={handleProfileInputChange}
+                          placeholder="Paste a hosted avatar link"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => profileFileInputRef.current?.click()}
+                            disabled={imageUploading.profile}
+                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400 disabled:opacity-60"
+                          >
+                            {imageUploading.profile ? "Uploading..." : "Upload"}
+                          </button>
+                          <input
+                            ref={profileFileInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(event) =>
+                              handleBrandImageUpload(event, "profileImage", "profile", "associate_avatar")
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <Hint>Square images work best. This avatar shows up next to every application.</Hint>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-slate-700">Public contact email</span>
@@ -576,6 +732,95 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
                 >
                   Add media block
                 </button>
+              </div>
+            </Section>
+
+            <Section
+              title="Service Offerings"
+              description="Specify your service bundles, deliverables, and booking details for buyers."
+            >
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Service bundle description</span>
+                  <TextArea
+                    value={form.serviceBundle}
+                    onChange={handleInput("serviceBundle")}
+                    rows={3}
+                    placeholder="Comprehensive design package including concept development, working drawings, and project management."
+                  />
+                  <Hint>Describe your service offering to help buyers understand what you provide.</Hint>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Working drawings link</span>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <Input
+                      value={form.workingDrawings}
+                      onChange={handleInput("workingDrawings")}
+                      placeholder="https://example.com/working-drawings-sample.pdf"
+                      className="flex-1"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => triggerServiceFileDialog("workingDrawings")}
+                        disabled={serviceUploading.workingDrawings}
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {serviceUploading.workingDrawings ? "Uploading..." : "Upload file"}
+                      </button>
+                      <input
+                        ref={workingDrawingsFileInputRef}
+                        type="file"
+                        accept={SERVICE_FILE_ACCEPT}
+                        className="hidden"
+                        onChange={handleServiceFileInput("workingDrawings")}
+                      />
+                    </div>
+                  </div>
+                  <Hint>
+                    Link to sample working drawings or upload a PDF/ZIP so buyers can download directly.
+                  </Hint>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Service pack / pricing link</span>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <Input
+                      value={form.servicePack}
+                      onChange={handleInput("servicePack")}
+                      placeholder="https://example.com/service-packages.pdf"
+                      className="flex-1"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => triggerServiceFileDialog("servicePack")}
+                        disabled={serviceUploading.servicePack}
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {serviceUploading.servicePack ? "Uploading..." : "Upload file"}
+                      </button>
+                      <input
+                        ref={servicePackFileInputRef}
+                        type="file"
+                        accept={SERVICE_FILE_ACCEPT}
+                        className="hidden"
+                        onChange={handleServiceFileInput("servicePack")}
+                      />
+                    </div>
+                  </div>
+                  <Hint>
+                    Link to your service packages, pricing tiers, or upload a brochure for buyers to review.
+                  </Hint>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-700">Scheduling meeting link</span>
+                  <Input
+                    value={form.schedulingMeeting}
+                    onChange={handleInput("schedulingMeeting")}
+                    placeholder="https://calendly.com/yourname or https://cal.com/yourname"
+                  />
+                  <Hint>Calendly, Cal.com, or any booking link where buyers can schedule a discovery call.</Hint>
+                </div>
               </div>
             </Section>
 

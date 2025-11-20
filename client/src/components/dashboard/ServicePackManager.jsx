@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { createServicePack, updateServicePack, deleteServicePack } from "../../services/collaboration.js";
+import {
+  replaceServiceBundles,
+  upsertServiceBundle as upsertWorkspaceServiceBundle,
+  removeServiceBundle as removeWorkspaceServiceBundle,
+} from "../../utils/workspaceSync.js";
 
 const defaultFormState = {
   id: null,
@@ -52,8 +57,10 @@ export default function ServicePackManager({
   const [busyPackId, setBusyPackId] = useState(null);
 
   useEffect(() => {
-    setPacks(Array.isArray(initialPacks) ? [...initialPacks] : []);
-  }, [initialPacks]);
+    const nextPacks = Array.isArray(initialPacks) ? [...initialPacks] : [];
+    setPacks(nextPacks);
+    replaceServiceBundles(ownerType, nextPacks);
+  }, [initialPacks, ownerType]);
 
   const sortedPacks = useMemo(
     () => [...packs].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0)),
@@ -100,6 +107,7 @@ export default function ServicePackManager({
         const filtered = prev.filter((pack) => pack.id !== updatedPack.id);
         return [updatedPack, ...filtered];
       });
+      upsertWorkspaceServiceBundle(ownerType, updatedPack);
       toast.success(form.id ? "Service pack updated" : "Service pack published");
       resetForm();
     } catch (error) {
@@ -130,6 +138,7 @@ export default function ServicePackManager({
       const nextStatus = pack.status === "published" ? "draft" : "published";
       const { servicePack } = await updateServicePack(pack.id, { ownerType, status: nextStatus });
       setPacks((prev) => prev.map((entry) => (entry.id === servicePack.id ? servicePack : entry)));
+      upsertWorkspaceServiceBundle(ownerType, servicePack);
       toast.success(`Marked as ${nextStatus}`);
     } catch (error) {
       toast.error(error?.message || "Unable to update pack");
@@ -144,6 +153,7 @@ export default function ServicePackManager({
     try {
       await deleteServicePack(pack.id, { ownerType });
       setPacks((prev) => prev.filter((entry) => entry.id !== pack.id));
+      removeWorkspaceServiceBundle(ownerType, pack.id);
       toast.success("Service pack removed");
       if (form.id === pack.id) {
         resetForm();

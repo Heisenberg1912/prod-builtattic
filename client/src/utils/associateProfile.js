@@ -1,32 +1,61 @@
-const toLineString = (value) => (Array.isArray(value) ? value.join("\n") : value || "");
-const toCommaString = (value) => (Array.isArray(value) ? value.join(", ") : value || "");
-
-const normaliseEntries = (value, splitter) => {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value.map((item) => (item == null ? "" : String(item))).filter(Boolean);
-  }
-  if (typeof value === "string") {
-    return value.split(splitter).map((item) => item.trim()).filter(Boolean);
-  }
-  if (value instanceof Set) {
-    return Array.from(value).map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (typeof value === "object") {
-    return Object.values(value).map((item) => String(item).trim()).filter(Boolean);
-  }
-  return [String(value).trim()].filter(Boolean);
-};
-
-const splitLines = (value, limit) => {
-  const entries = normaliseEntries(value, /\r?\n/);
-  return typeof limit === "number" ? entries.slice(0, limit) : entries;
-};
-
-const splitComma = (value, limit) => {
-  const entries = normaliseEntries(value, /[,\n]/);
-  return typeof limit === "number" ? entries.slice(0, limit) : entries;
-};
+const toLineString = (value) => (Array.isArray(value) ? value.join("\n") : value || "");
+
+const toCommaString = (value) => (Array.isArray(value) ? value.join(", ") : value || "");
+
+
+
+const normaliseEntries = (value, splitter) => {
+
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+
+    return value.map((item) => (item == null ? "" : String(item))).filter(Boolean);
+
+  }
+
+  if (typeof value === "string") {
+
+    return value.split(splitter).map((item) => item.trim()).filter(Boolean);
+
+  }
+
+  if (value instanceof Set) {
+
+    return Array.from(value).map((item) => String(item).trim()).filter(Boolean);
+
+  }
+
+  if (typeof value === "object") {
+
+    return Object.values(value).map((item) => String(item).trim()).filter(Boolean);
+
+  }
+
+  return [String(value).trim()].filter(Boolean);
+
+};
+
+
+
+const splitLines = (value, limit) => {
+
+  const entries = normaliseEntries(value, /\r?\n/);
+
+  return typeof limit === "number" ? entries.slice(0, limit) : entries;
+
+};
+
+
+
+const splitComma = (value, limit) => {
+
+  const entries = normaliseEntries(value, /[,\n]/);
+
+  return typeof limit === "number" ? entries.slice(0, limit) : entries;
+
+};
+
 
 export const EMPTY_PROFILE_FORM = {
   title: "",
@@ -52,6 +81,10 @@ export const EMPTY_PROFILE_FORM = {
   portfolioLinks: "",
   portfolioMedia: [],
   keyProjects: "",
+  serviceBundle: "",
+  workingDrawings: "",
+  servicePack: "",
+  schedulingMeeting: "",
 };
 
 export const mapProfileToForm = (profile = {}) => ({
@@ -79,22 +112,26 @@ export const mapProfileToForm = (profile = {}) => ({
   portfolioLinks: toLineString(profile.portfolioLinks),
   portfolioMedia: Array.isArray(profile.portfolioMedia)
     ? profile.portfolioMedia.map((item) => ({
-        title: item.title || "",
-        description: item.description || "",
-        mediaUrl: item.mediaUrl || item.url || item.image || "",
-        kind: item.kind || "",
-      }))
+      title: item.title || "",
+      description: item.description || "",
+      mediaUrl: item.mediaUrl || item.url || item.image || "",
+      kind: item.kind || "",
+    }))
     : (profile.portfolioImages || [])
-        .map((url) => ({ title: "", description: "", mediaUrl: url, kind: "image" }))
-        .slice(0, 6),
+      .map((url) => ({ title: "", description: "", mediaUrl: url, kind: "image" }))
+      .slice(0, 6),
   keyProjects: toLineString(
     Array.isArray(profile.keyProjects)
       ? profile.keyProjects.map((project) => {
-          const parts = [project.title, project.scope, project.year, project.role].filter(Boolean);
-          return parts.join(" | ");
-        })
+        const parts = [project.title, project.scope, project.year, project.role].filter(Boolean);
+        return parts.join(" | ");
+      })
       : []
   ),
+  serviceBundle: profile.serviceBundle || "",
+  workingDrawings: profile.workingDrawings || "",
+  servicePack: profile.servicePack || "",
+  schedulingMeeting: profile.schedulingMeeting || "",
 });
 
 const sanitiseNumber = (value) => {
@@ -130,13 +167,13 @@ export const formToPayload = (form = {}) => {
     portfolioLinks: splitLines(form.portfolioLinks, 15),
     portfolioMedia: Array.isArray(form.portfolioMedia)
       ? form.portfolioMedia
-          .map((item) => ({
-            title: (item.title || "").trim() || undefined,
-            description: (item.description || "").trim() || undefined,
-            mediaUrl: (item.mediaUrl || "").trim() || undefined,
-            kind: (item.kind || "").trim() || undefined,
-          }))
-          .filter((item) => item.mediaUrl)
+        .map((item) => ({
+          title: (item.title || "").trim() || undefined,
+          description: (item.description || "").trim() || undefined,
+          mediaUrl: (item.mediaUrl || "").trim() || undefined,
+          kind: (item.kind || "").trim() || undefined,
+        }))
+        .filter((item) => item.mediaUrl)
       : undefined,
     keyProjects: splitLines(form.keyProjects, 12)
       .map((entry) => {
@@ -149,6 +186,10 @@ export const formToPayload = (form = {}) => {
         };
       })
       .filter((project) => project.title),
+    serviceBundle: form.serviceBundle?.trim() || undefined,
+    workingDrawings: form.workingDrawings?.trim() || undefined,
+    servicePack: form.servicePack?.trim() || undefined,
+    schedulingMeeting: form.schedulingMeeting?.trim() || undefined,
   };
 
   if (!payload.rates.daily && !payload.rates.currency && !payload.rates.hourly) {

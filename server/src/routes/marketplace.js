@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import Firm from '../models/Firm.js';
 import AssociateProfile from '../models/AssociateProfile.js';
+import PlanUpload from '../models/PlanUpload.js';
+import ServicePack from '../models/ServicePack.js';
 import DummyCatalogEntry from '../models/DummyCatalogEntry.js';
 import { attachWeb3Proof, createWeb3Proof, summariseProofs } from '../services/web3ProofService.js';
 import { mapCatalogEntry } from '../utils/dummyCatalog.js';
@@ -102,6 +104,42 @@ const promotionSummaries = [
     image: 'https://images.unsplash.com/photo-1504457047772-27faf1ee1873?auto=format&fit=crop&w=1200&q=80',
   },
 ];
+
+const mapPlanUploadForMarketplace = (plan) => ({
+  id: plan._id.toString(),
+  projectTitle: plan.projectTitle,
+  category: plan.category || '',
+  subtype: plan.subtype || '',
+  primaryStyle: plan.primaryStyle || '',
+  conceptPlan: plan.conceptPlan || '',
+  renderImages: Array.isArray(plan.renderImages) ? plan.renderImages : [],
+  walkthrough: plan.walkthrough || '',
+  areaSqft: plan.areaSqft ?? null,
+  floors: plan.floors ?? null,
+  materials: Array.isArray(plan.materials) ? plan.materials : [],
+  climate: plan.climate || '',
+  designRate: plan.designRate ?? null,
+  constructionCost: plan.constructionCost ?? null,
+  licenseType: plan.licenseType || '',
+  delivery: plan.delivery || '',
+  description: plan.description || '',
+  tags: Array.isArray(plan.tags) ? plan.tags : [],
+  updatedAt: plan.updatedAt,
+});
+
+const mapServicePackForMarketplace = (pack) => ({
+  id: pack._id.toString(),
+  title: pack.title,
+  summary: pack.summary || '',
+  price: pack.price ?? null,
+  currency: pack.currency || 'USD',
+  deliverables: Array.isArray(pack.deliverables) ? pack.deliverables : [],
+  duration: pack.duration || '',
+  availability: pack.availability || '',
+  meetingPrep: pack.meetingPrep || '',
+  status: pack.status || 'draft',
+  updatedAt: pack.updatedAt,
+});
 
 async function fetchCatalog(kind, query, { includeFirm = true, defaultLimit = 12 } = {}) {
   const {
@@ -244,8 +282,27 @@ router.get('/studios/:slug', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Studio not found' });
     }
 
-    attachWeb3Proof(item, 'studio');
-    res.json({ ok: true, item });
+    let planUploads = [];
+    let servicePacks = [];
+    if (item.firm?._id) {
+      const ownerId = new mongoose.Types.ObjectId(item.firm._id);
+      [planUploads, servicePacks] = await Promise.all([
+        PlanUpload.find({ ownerType: 'firm', ownerId }).sort({ updatedAt: -1 }).limit(12).lean(),
+        ServicePack.find({ ownerType: 'firm', ownerId, status: { $in: ['published', 'active', 'available'] } })
+          .sort({ updatedAt: -1 })
+          .limit(8)
+          .lean(),
+      ]);
+    }
+
+    const decoratedItem = {
+      ...item,
+      planUploads: planUploads.map(mapPlanUploadForMarketplace),
+      servicePacks: servicePacks.map(mapServicePackForMarketplace),
+    };
+
+    attachWeb3Proof(decoratedItem, 'studio');
+    res.json({ ok: true, item: decoratedItem });
   } catch (error) {
     logger.warn('marketplace_studio_detail_fallback', { error: error.message, slug: req.params.slug });
     const fallback = findFallbackStudio(req.params.slug);

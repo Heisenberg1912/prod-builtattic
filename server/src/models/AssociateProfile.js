@@ -56,6 +56,10 @@ const AssociateProfileSchema = new mongoose.Schema(
         role: String,
       },
     ],
+    serviceBundle: String,
+    workingDrawings: String,
+    servicePack: String,
+    schedulingMeeting: String,
   },
   { timestamps: true }
 );

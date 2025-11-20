@@ -147,15 +147,15 @@ const AssociatePortfolio = () => {
 
     const bookingSummary = associate.booking
       ? {
-          leadTimeHours: associate.booking.leadTimeHours || null,
-          rescheduleWindowHours: associate.booking.rescheduleWindowHours || null,
-          cancelWindowHours: associate.booking.cancelWindowHours || null,
-          bufferMinutes: associate.booking.bufferMinutes || null,
-          timezones: associate.booking.timezones || [],
-          slots: (associate.booking.slots || []).slice(0, 3),
-          etaStages: associate.booking.etaStages || [],
-          communications: associate.booking.communications || null,
-        }
+        leadTimeHours: associate.booking.leadTimeHours || null,
+        rescheduleWindowHours: associate.booking.rescheduleWindowHours || null,
+        cancelWindowHours: associate.booking.cancelWindowHours || null,
+        bufferMinutes: associate.booking.bufferMinutes || null,
+        timezones: associate.booking.timezones || [],
+        slots: (associate.booking.slots || []).slice(0, 3),
+        etaStages: associate.booking.etaStages || [],
+        communications: associate.booking.communications || null,
+      }
       : null;
 
     return {
@@ -183,11 +183,11 @@ const AssociatePortfolio = () => {
         associate.workHistory && associate.workHistory.length
           ? associate.workHistory
           : (associate.keyProjects || []).map((project) => ({
-              role: project.role || associate.title,
-              company: project.title,
-              duration: project.year ? String(project.year) : "",
-              description: project.scope,
-            })),
+            role: project.role || associate.title,
+            company: project.title,
+            duration: project.year ? String(project.year) : "",
+            description: project.scope,
+          })),
       stats,
       serviceBadges: associate.serviceBadges || [],
       deliverables: associate.deliverables || [],
@@ -206,6 +206,10 @@ const AssociatePortfolio = () => {
       contactEmail: associate.user?.email || associate.contactEmail || null,
       keyProjects: Array.isArray(associate.keyProjects) ? associate.keyProjects : [],
       portfolioLinks: Array.isArray(associate.portfolioLinks) ? associate.portfolioLinks : [],
+      serviceBundle: associate.serviceBundle || null,
+      workingDrawings: associate.workingDrawings || null,
+      servicePack: associate.servicePack || null,
+      schedulingMeeting: associate.schedulingMeeting || null,
     };
   }, [associate]);
 
@@ -214,19 +218,18 @@ const AssociatePortfolio = () => {
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white flex flex-col">
         <div className="flex-1 flex items-center justify-center px-4">
           <div
-            className={`w-full max-w-xl rounded-2xl border p-8 text-center text-sm font-medium shadow-sm ${
-              loading
+            className={`w-full max-w-xl rounded-2xl border p-8 text-center text-sm font-medium shadow-sm ${loading
                 ? "border-slate-200 bg-white text-slate-600"
                 : error === "not_found"
-                ? "border-rose-200 bg-rose-50 text-rose-700"
-                : "border-amber-200 bg-amber-50 text-amber-700"
-            }`}
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+              }`}
           >
             {loading
               ? "Loading associate profile..."
               : error === "not_found"
-              ? "We couldn’t find this associate profile."
-              : error || "Associate profile is unavailable right now."}
+                ? "We couldn’t find this associate profile."
+                : error || "Associate profile is unavailable right now."}
           </div>
         </div>
         <Footer />
@@ -263,6 +266,10 @@ const AssociatePortfolio = () => {
     contactEmail,
     keyProjects,
     portfolioLinks,
+    serviceBundle,
+    workingDrawings,
+    servicePack,
+    schedulingMeeting,
   } = view;
 
   const renderChipGroup = (label, items) => {
@@ -540,6 +547,72 @@ const AssociatePortfolio = () => {
                 </section>
               )}
             </section>
+
+              {(serviceBundle || workingDrawings || servicePack || schedulingMeeting) && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-slate-900">Service Offerings</h2>
+                    <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                      Packages & Resources
+                    </span>
+                  </div>
+                  <div className="space-y-4">
+                    {serviceBundle && (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                          Service Bundle
+                        </p>
+                        <p className="text-sm text-slate-700">{serviceBundle}</p>
+                      </div>
+                    )}
+                    {workingDrawings && (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                          Working Drawings
+                        </p>
+                        <a
+                          href={workingDrawings}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm font-semibold text-slate-900 underline hover:text-slate-700"
+                        >
+                          View Sample Working Drawings
+                        </a>
+                      </div>
+                    )}
+                    {servicePack && (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
+                          Service Pack
+                        </p>
+                        <a
+                          href={servicePack}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm font-semibold text-slate-900 underline hover:text-slate-700"
+                        >
+                          View Service Packages & Pricing
+                        </a>
+                      </div>
+                    )}
+                    {schedulingMeeting && (
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600 mb-2">
+                          Schedule a Meeting
+                        </p>
+                        <a
+                          href={schedulingMeeting}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
+                        >
+                          Book a Discovery Call
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
 
             <aside className="space-y-6">
               {(contactEmail || availability || timezone) && (

@@ -116,7 +116,7 @@ const buildPlanPayload = (payload = {}) => {
     delivery: cleanString(payload.delivery),
     description: cleanString(payload.description),
     tags: normaliseList(payload.tags),
-    updatedAt: new Date().toISOString(),
+    updatedAt: payload.updatedAt || new Date().toISOString(),
   };
 };
 
@@ -134,7 +134,7 @@ const buildBundlePayload = (payload = {}) => ({
   references: normaliseList(payload.references),
   durationLabel: cleanString(payload.durationLabel || payload.type),
   notes: cleanString(payload.notes),
-  updatedAt: new Date().toISOString(),
+  updatedAt: payload.updatedAt || new Date().toISOString(),
 });
 
 const updateRoleState = (role, mutator) => {
@@ -183,6 +183,16 @@ export const removePlanUpload = (role, planId) => {
   return result.planUploads;
 };
 
+export const replacePlanUploads = (role, plans = []) => {
+  const normalised = Array.isArray(plans)
+    ? plans.map((plan) => buildPlanPayload(plan))
+    : [];
+  const result = updateRoleState(role, () => ({
+    planUploads: normalised,
+  }));
+  return result.planUploads;
+};
+
 export const upsertServiceBundle = (role, payload) => {
   const bundle = buildBundlePayload(payload);
   const result = updateRoleState(role, (roleState) => {
@@ -203,6 +213,16 @@ export const removeServiceBundle = (role, bundleId) => {
     const nextBundles = (roleState.serviceBundles || []).filter((bundle) => bundle.id !== bundleId);
     return { serviceBundles: nextBundles };
   });
+  return result.serviceBundles;
+};
+
+export const replaceServiceBundles = (role, bundles = []) => {
+  const normalised = Array.isArray(bundles)
+    ? bundles.map((bundle) => buildBundlePayload(bundle))
+    : [];
+  const result = updateRoleState(role, () => ({
+    serviceBundles: normalised,
+  }));
   return result.serviceBundles;
 };
 
@@ -230,8 +250,10 @@ export default {
   getWorkspaceCollections,
   upsertPlanUpload,
   removePlanUpload,
+  replacePlanUploads,
   upsertServiceBundle,
   removeServiceBundle,
+  replaceServiceBundles,
   subscribeToWorkspaceRole,
   WORKSPACE_SYNC_STORAGE_KEY,
   WORKSPACE_SYNC_EVENT,

@@ -1,5 +1,20 @@
 import createTransporter from './emailConfig.js';
 
+const fallbackMailbox = process.env.EMAIL_USER || 'sup@builtattic.com';
+const configuredFrom = (process.env.EMAIL_FROM || '').trim();
+const DEFAULT_FROM_ADDRESS = configuredFrom || `Builtattic <${fallbackMailbox}>`;
+const DEFAULT_SENDER_EMAIL = (() => {
+  if (!configuredFrom) return fallbackMailbox;
+  const match = configuredFrom.match(/<([^>]+)>/);
+  if (match && match[1]) return match[1].trim();
+  if (/^[^<>\s]+@[^<>\s]+$/.test(configuredFrom)) return configuredFrom;
+  return fallbackMailbox;
+})();
+const formatFromAddress = (label) => {
+  if (!label) return DEFAULT_FROM_ADDRESS;
+  return `${label} <${DEFAULT_SENDER_EMAIL}>`;
+};
+
 export const sendOTPEmail = async (email, otp, purpose = 'verification') => {
   try {
     const transporter = createTransporter();
@@ -94,7 +109,7 @@ export const sendOTPEmail = async (email, otp, purpose = 'verification') => {
     const template = emailTemplates[purpose] || emailTemplates.login;
     
     const mailOptions = {
-      from: `"Builtatic" <${process.env.EMAIL_USER}>`,
+      from: DEFAULT_FROM_ADDRESS,
       to: email,
       subject: template.subject,
       html: template.html,
@@ -114,7 +129,7 @@ export const sendWelcomeEmail = async (email, name) => {
     const transporter = createTransporter();
     
     const mailOptions = {
-      from: `"Builtatic" <${process.env.EMAIL_USER}>`,
+      from: DEFAULT_FROM_ADDRESS,
       to: email,
       subject: 'Welcome to Builtatic!',
       html: `
@@ -189,8 +204,7 @@ export const sendSignupCredentialsEmail = async ({ to, password, loginUrl, role 
       <p style="color:#64748b; font-size:12px; text-align:center;">If you did not request this account, please ignore this email or contact support.</p>
     </div>
   `;
-  const fromAddress = process.env.EMAIL_FROM || `Builtattic <${process.env.EMAIL_USER}>`;
-  await transporter.sendMail({ from: fromAddress, to, subject, html });
+  await transporter.sendMail({ from: DEFAULT_FROM_ADDRESS, to, subject, html });
 };
 
 export const sendSupportEmailNotification = async ({
@@ -214,10 +228,10 @@ export const sendSupportEmailNotification = async ({
           .map((item) => item.trim())
           .filter(Boolean);
     const mailOptions = {
-      from: `"Builtattic Support Bot" <${process.env.EMAIL_USER}>`,
+      from: formatFromAddress('Builtattic Support Bot'),
       to: recipients,
       subject: `[Support #${threadId}] New message from ${displayName}`,
-      replyTo: process.env.EMAIL_USER,
+      replyTo: DEFAULT_SENDER_EMAIL,
       html: `
         <div style="font-family: 'Montserrat', Arial, sans-serif; max-width:600px; margin:0 auto; padding:20px;">
           <h2 style="color:#111;">New support chat message</h2>
@@ -274,11 +288,10 @@ export const sendAdminNotificationEmail = async ({ subject, html, text }) => {
     return { skipped: true, reason: 'admin email not configured' };
   }
   const transporter = createTransporter();
-  const fromAddress = process.env.EMAIL_FROM || 'Builtattic <' + (process.env.EMAIL_USER || 'noreply@builtattic.com') + '>';
   const fallbackText = text || (typeof html === 'string' ? html.replace(/<[^>]+>/g, ' ') : 'New marketplace activity');
   const finalHtml = html || '<p>' + fallbackText + '</p>';
   const mailOptions = {
-    from: fromAddress,
+    from: DEFAULT_FROM_ADDRESS,
     to: recipients,
     subject: subject || 'Marketplace notification',
     html: finalHtml,
@@ -290,7 +303,6 @@ export const sendAdminNotificationEmail = async ({ subject, html, text }) => {
 
 export const sendPasswordResetEmail = async ({ to, resetUrl, expiresInMinutes = 60 }) => {
   const transporter = createTransporter();
-  const fromAddress = process.env.EMAIL_FROM || `Builtattic <${process.env.EMAIL_USER}>`;
   const secureUrl = (typeof resetUrl === "string" && resetUrl.trim()) ? resetUrl.trim() : "http://localhost:5173/reset-password";
   const subject = 'Reset your Builtattic password';
   const minutes = Math.max(5, parseInt(expiresInMinutes, 10) || 60);
@@ -305,6 +317,5 @@ export const sendPasswordResetEmail = async ({ to, resetUrl, expiresInMinutes = 
       <p style="margin: 24px 0 0; color: #64748b; font-size: 12px;">For security reasons, the link above can only be used once.</p>
     </div>
   `;
-  await transporter.sendMail({ from: fromAddress, to, subject, html });
+  await transporter.sendMail({ from: DEFAULT_FROM_ADDRESS, to, subject, html });
 };
-

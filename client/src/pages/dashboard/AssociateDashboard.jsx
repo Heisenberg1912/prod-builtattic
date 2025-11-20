@@ -776,6 +776,8 @@ function AssociateDashboard() {
             sectionError={renderSectionError("overview", "Some insights might be cached.")}
             servicePacks={dashboardServicePacks}
             meetings={dashboardMeetings}
+            downloads={downloads}
+            chats={chats}
             onPlanRefresh={() => refreshDashboard(null, { silent: true })}
           />
         );
@@ -950,6 +952,8 @@ function OverviewView({
   sectionError,
   servicePacks = [],
   meetings = [],
+  downloads = [],
+  chats = [],
   onPlanRefresh = () => {},
 }) {
   const completenessValue = Number.isFinite(metrics?.profileCompleteness)
@@ -989,35 +993,108 @@ function OverviewView({
       }))
     : [];
 
+  const planPreviewEntries = planUploads.slice(0, 3);
+  const planRenderAssets = planUploads.reduce(
+    (sum, plan) => sum + (Array.isArray(plan.renderImages) ? plan.renderImages.length : 0),
+    0,
+  );
+  const planWalkthroughCount = planUploads.filter((plan) => Boolean(plan.walkthrough)).length;
+  const planStats = {
+    total: planUploads.length,
+    renders: planRenderAssets,
+    walkthroughs: planWalkthroughCount,
+  };
+  const publishedServicePacks = servicePacks.filter(
+    (pack) => (pack.status || "").toLowerCase() === "published",
+  );
+  const draftServicePackCount = Math.max(servicePacks.length - publishedServicePacks.length, 0);
+  const getTimeValue = (value) => {
+    const timestamp = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+    return Number.isFinite(timestamp) ? timestamp : Number.POSITIVE_INFINITY;
+  };
+  const pipelinePreview = opportunityMatches.slice(0, 3);
+  const activityPreview = activity.slice(0, 4);
+  const meetingPreviews = [...meetings]
+    .sort((a, b) => getTimeValue(a.scheduledFor) - getTimeValue(b.scheduledFor))
+    .slice(0, 3);
+  const downloadPreviews = downloads.slice(0, 3);
+  const chatPreviews = chats.slice(0, 3);
+  const formatDateTime = (value, options = { dateStyle: "medium", timeStyle: "short" }) => {
+    if (!value) return "Schedule TBA";
+    try {
+      return new Date(value).toLocaleString(undefined, options);
+    } catch {
+      return "Schedule TBA";
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Marketplace readiness
-          </h2>
-          <p className="text-sm text-slate-600">
-            Monitor how your Skill Studio profile performs and surface the next best actions.
-          </p>
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">Skill Studio overview</p>
+            <h2 className="text-2xl font-semibold text-slate-900">
+              {profile?.title || "Associate dashboard"}
+            </h2>
+            <p className="text-sm text-slate-600">
+              Keep availability, plan uploads, and buyer-ready packs synced to the marketplace.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {refreshButton}
+            <button
+              type="button"
+              onClick={onRefreshProfile}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-400"
+            >
+              Reload profile
+            </button>
+            <button
+              type="button"
+              onClick={onNavigateProfile}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Update profile <ArrowRight size={16} />
+            </button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {refreshButton}
-          <button
-            type="button"
-            onClick={onRefreshProfile}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-400"
-          >
-            Reload profile
-          </button>
-          <button
-            type="button"
-            onClick={onNavigateProfile}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            Update profile <ArrowRight size={16} />
-          </button>
-        </div>
-      </div>
+        {dashboardLoading ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-32 rounded-2xl bg-slate-200/60 animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              icon={ShieldCheck}
+              label="Profile completeness"
+              value={`${completenessValue}%`}
+              helper={listingStatus.label}
+              tone={listingStatus.tone}
+            />
+            <StatCard
+              icon={DollarSign}
+              label="Hourly rate"
+              value={hourlyRate}
+              helper={dailyRate ? `Day rate ${dailyRate}` : "Set your preferred rates"}
+            />
+            <StatCard
+              icon={Sparkles}
+              label="Plan uploads"
+              value={`${planStats.total || 0} concepts`}
+              helper={`${planStats.renders} renders · ${planStats.walkthroughs} walkthroughs`}
+            />
+            <StatCard
+              icon={Briefcase}
+              label="Service packs"
+              value={`${publishedServicePacks.length} live`}
+              helper={`${draftServicePackCount} drafts waiting`}
+            />
+          </div>
+        )}
+      </section>
 
       {sectionError}
 
@@ -1027,117 +1104,275 @@ function OverviewView({
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[2fr,1fr]">
-        <div className="space-y-4">
-          {dashboardLoading ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div key={index} className="h-32 rounded-2xl bg-slate-200/60 animate-pulse" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                icon={ShieldCheck}
-                label="Profile completeness"
-                value={`${completenessValue}%`}
-                helper={listingStatus.label}
-                tone={listingStatus.tone}
-              />
-              <StatCard
-                icon={DollarSign}
-                label="Hourly rate"
-                value={hourlyRate}
-                helper={dailyRate ? `Day rate ${dailyRate}` : "Set your preferred rates"}
-              />
-              <StatCard
-                icon={Target}
-                label="Active leads"
-                value={leadsCount || "0"}
-                helper={nextOpportunity ? `Next deadline ${nextOpportunity.due.toLocaleDateString()}` : "Keep filling out your profile to unlock matches"}
-              />
-              <StatCard
-                icon={CalendarCheck}
-                label="Applications tracked"
-                value={applicationsCount || "0"}
-                helper={`${alertsCount} unread alerts`}
-              />
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="flex items-start justify-between gap-4">
+      <div className="grid gap-6 2xl:grid-cols-[3fr,2fr]">
+        <div className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Next best actions</h3>
-                <p className="text-sm text-slate-500">
-                  Complete the remaining sections so your card stands out on the Skill Studio marketplace.
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Concept hosting</p>
+                <h3 className="text-lg font-semibold text-slate-900">Plan catalogue</h3>
+                <p className="text-sm text-slate-600">
+                  Surface the renders, walkthroughs, and specs you want ops to send buyers instantly.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={onNavigateProfile}
-                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                onClick={onPlanRefresh}
+                className="rounded-full border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
               >
-                Edit profile <ArrowRight size={14} />
+                Sync plan uploads
               </button>
             </div>
-            <ul className="mt-4 space-y-2">
-              {derivedActions.length ? (
-                derivedActions.map((action) => (
-                  <li
-                    key={action.id}
-                    className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-700"
-                  >
-                    <p className="font-semibold">{action.title}</p>
-                    {action.detail ? <p className="text-xs text-indigo-600">{action.detail}</p> : null}
-                  </li>
-                ))
-              ) : meta.pendingFields.length ? (
-                meta.pendingFields.slice(0, 5).map((field) => (
-                  <li
-                    key={field}
-                    className="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700"
-                  >
-                    <Sparkles size={14} /> {field}
-                  </li>
-                ))
-              ) : (
-                <li className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                  All core fields are filled. Great job!
-                </li>
-              )}
-            </ul>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Pipeline snapshot</h3>
             {dashboardLoading ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="h-24 rounded-xl bg-slate-200/60 animate-pulse" />
+                  <div key={index} className="h-24 rounded-2xl bg-slate-200/60 animate-pulse" />
                 ))}
               </div>
             ) : (
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Leads</p>
-                  <p className="mt-2 text-xl font-semibold text-slate-900">{leadsCount || "0"}</p>
-                  <p className="text-xs text-slate-500">Matches from your skills & timezone</p>
+              <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Concepts</p>
+                    <p className="text-2xl font-semibold text-slate-900">{planStats.total || 0}</p>
+                    <p className="text-xs text-slate-500">Live in Skill Studio</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Renders</p>
+                    <p className="text-2xl font-semibold text-slate-900">{planStats.renders}</p>
+                    <p className="text-xs text-slate-500">Hero visuals ready for buyers</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Walkthroughs</p>
+                    <p className="text-2xl font-semibold text-slate-900">{planStats.walkthroughs}</p>
+                    <p className="text-xs text-slate-500">Video or interactive tours</p>
+                  </div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Applications</p>
-                  <p className="mt-2 text-xl font-semibold text-slate-900">{applicationsCount || "0"}</p>
-                  <p className="text-xs text-slate-500">Opportunities you are tracking</p>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  {planPreviewEntries.length ? (
+                    planPreviewEntries.map((plan) => (
+                      <article
+                        key={plan.id || plan.projectTitle}
+                        className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                              {plan.category || "Concept"}{plan.subtype ? ` · ${plan.subtype}` : ""}
+                            </p>
+                            <h4 className="text-base font-semibold text-slate-900">
+                              {plan.projectTitle || "Untitled plan"}
+                            </h4>
+                            <p className="text-xs text-slate-500">
+                              {plan.primaryStyle || "Add a primary style"}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                            {plan.renderImages?.length || 0} renders
+                          </span>
+                        </div>
+                        <dl className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                          <div>
+                            <dt className="uppercase tracking-[0.3em] text-slate-400">Area</dt>
+                            <dd>{plan.areaSqft ? `${number(plan.areaSqft)} sqft` : "Add sqft"}</dd>
+                          </div>
+                          <div>
+                            <dt className="uppercase tracking-[0.3em] text-slate-400">Design rate</dt>
+                            <dd>
+                              {Number.isFinite(plan.designRate)
+                                ? `$${number(plan.designRate)} / sqft`
+                                : "Share rate"}
+                            </dd>
+                          </div>
+                        </dl>
+                        {plan.description ? (
+                          <p className="mt-3 text-sm text-slate-600 line-clamp-3">{plan.description}</p>
+                        ) : null}
+                      </article>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
+                      Use the panel below to upload your first concept plan, renders, and walkthrough links.
+                    </div>
+                  )}
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Alerts</p>
-                  <p className="mt-2 text-xl font-semibold text-slate-900">{alertsCount}</p>
-                  <p className="text-xs text-slate-500">Profile + pipeline notifications</p>
-                </div>
-              </div>
+              </>
             )}
-          </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Pipeline & activity</p>
+                <h3 className="text-lg font-semibold text-slate-900">Who needs attention</h3>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Leads</p>
+                <p className="text-base font-semibold text-slate-900">{leadsCount || 0}</p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-6 lg:grid-cols-2">
+              <div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900">Opportunity board</h4>
+                  {nextOpportunity ? (
+                    <span className="text-xs text-slate-500">
+                      Next response {formatDateTime(nextOpportunity.responseBy, { dateStyle: "medium" })}
+                    </span>
+                  ) : null}
+                </div>
+                {pipelinePreview.length ? (
+                  <ul className="mt-3 space-y-3 text-sm text-slate-600">
+                    {pipelinePreview.map((opportunity) => (
+                      <li key={opportunity.id || opportunity.title} className="rounded-2xl border border-slate-200 px-4 py-3">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {opportunity.title || "Untitled opportunity"}
+                        </p>
+                        <p className="text-xs text-slate-500">{opportunity.company || "Marketplace buyer"}</p>
+                        <p className="text-xs text-slate-500">
+                          {opportunity.responseBy
+                            ? `Respond by ${formatDateTime(opportunity.responseBy, { dateStyle: "medium" })}`
+                            : "Flexible timeline"}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500">
+                    No matches yet. Keep your profile polished and publish packs to unlock routed leads.
+                  </p>
+                )}
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">Recent activity</h4>
+                {activityPreview.length ? (
+                  <ul className="mt-3 space-y-3 text-sm text-slate-600">
+                    {activityPreview.map((entry) => (
+                      <li key={entry.id} className="rounded-2xl border border-slate-200 px-4 py-3">
+                        <p className="text-sm font-semibold text-slate-900">{entry.title}</p>
+                        <p className="text-xs text-slate-500">{entry.description}</p>
+                        <p className="text-[11px] text-slate-400">{formatRelativeTime(entry.timestamp)}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500">
+                    Activity will appear here as you apply to roles or update your profile.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
         </div>
+
+        <div className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Next actions</p>
+                <h3 className="text-lg font-semibold text-slate-900">Stay visible</h3>
+              </div>
+              <span className="text-xs font-semibold text-slate-500">
+                {derivedActions.length} task{derivedActions.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            {derivedActions.length ? (
+              <ul className="mt-4 space-y-3">
+                {derivedActions.map((action) => (
+                  <li key={action.id} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-600">
+                    <p className="font-semibold text-slate-900">{action.title}</p>
+                    <p className="text-xs text-slate-500">{action.detail}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">
+                No reminders right now. Publish a bundle or refresh your profile to trigger new tasks.
+              </p>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Buyer syncs</p>
+                <h3 className="text-lg font-semibold text-slate-900">Upcoming meetings</h3>
+              </div>
+              <span className="text-xs font-semibold text-slate-500">{meetingPreviews.length} scheduled</span>
+            </div>
+            {meetingPreviews.length ? (
+              <ul className="mt-4 space-y-3">
+                {meetingPreviews.map((meeting) => (
+                  <li key={meeting.id} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-600">
+                    <p className="font-semibold text-slate-900">{meeting.title || "Buyer sync"}</p>
+                    <p className="text-xs text-slate-500">{formatDateTime(meeting.scheduledFor)}</p>
+                    <p className="text-xs text-slate-500">
+                      {meeting.meetingLink ? (
+                        <a href={meeting.meetingLink} target="_blank" rel="noreferrer" className="text-slate-900 underline">
+                          Meeting link
+                        </a>
+                      ) : (
+                        meeting.status || "Draft"
+                      )}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">No syncs logged. Schedule onboarding or review calls to keep ops looped in.</p>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Deliverables & chat</p>
+                <h3 className="text-lg font-semibold text-slate-900">Workspace drops</h3>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Downloads</p>
+                {downloadPreviews.length ? (
+                  <ul className="mt-2 space-y-2 text-sm text-slate-600">
+                    {downloadPreviews.map((entry) => (
+                      <li key={entry.id} className="rounded-2xl border border-slate-200 px-4 py-2">
+                        <p className="font-semibold text-slate-900">{entry.label || "Deliverable"}</p>
+                        <p className="text-xs text-slate-500">{entry.tag || entry.accessLevel}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">Publish WD-W3 drops to give buyers instant access.</p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Client chat</p>
+                {chatPreviews.length ? (
+                  <ul className="mt-2 space-y-2 text-sm text-slate-600">
+                    {chatPreviews.map((thread) => (
+                      <li key={thread.id} className="rounded-2xl border border-slate-200 px-4 py-2">
+                        <p className="font-semibold text-slate-900">{thread.subject || "Workspace thread"}</p>
+                        <p className="text-xs text-slate-500">{thread.status || "open"}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">Log buyer notes so ops can support conversations.</p>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <PlanUploadPanel
+          role="associate"
+          workspaceName="Skill Studio"
+          initialPlans={planUploads}
+          onPlanChange={onPlanRefresh}
+        />
 
         <ServicePackManager
           ownerType="associate"
@@ -1175,14 +1410,12 @@ function OverviewView({
           emptyMessage="Start logging context when a buyer pings you for changes."
         />
 
-        <PlanUploadPanel
-          role="associate"
-          workspaceName="Skill Studio"
-          initialPlans={planUploads}
-          onPlanChange={onPlanRefresh}
+        <MarketplacePreview
+          profile={profile}
+          meta={meta}
+          featuredPlan={featuredPlan}
+          loading={dashboardLoading}
         />
-
-        <MarketplacePreview profile={profile} meta={meta} featuredPlan={featuredPlan} loading={loading} />
       </div>
     </div>
   );
@@ -1199,8 +1432,8 @@ function MarketplacePreview({ profile, meta, loading, featuredPlan }) {
   const heroTitle = featuredPlan?.projectTitle || profile?.title || "Add a headline";
   const heroMeta = featuredPlan
     ? [featuredPlan.category, featuredPlan.primaryStyle].filter(Boolean).join(" · ") ||
-      `${profile?.location || "Location"} • ${profile?.availability || "Availability note"}`
-    : `${profile?.location || "Location"} • ${profile?.availability || "Availability note"}`;
+      `${profile?.location || "Location"} · ${profile?.availability || "Availability note"}`
+    : `${profile?.location || "Location"} · ${profile?.availability || "Availability note"}`;
   const summary =
     featuredPlan?.description ||
     profile?.summary ||
@@ -1236,7 +1469,7 @@ function MarketplacePreview({ profile, meta, loading, featuredPlan }) {
           </div>
           <div className="text-right">
             <p className="text-sm font-semibold text-amber-500">
-              {meta.stats.rating ? meta.stats.rating.toFixed(1) : "4.7"}
+              {meta.stats?.rating ? meta.stats.rating.toFixed(1) : "4.7"}
             </p>
             <p className="text-xs text-slate-500">Avg rating</p>
           </div>
@@ -1244,21 +1477,21 @@ function MarketplacePreview({ profile, meta, loading, featuredPlan }) {
         <p className="text-sm leading-relaxed text-slate-600 line-clamp-4">{summary}</p>
         <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
               Rate
             </p>
             <p className="text-sm font-semibold text-slate-900">
-              {meta.stats.hourly
+              {meta.stats?.hourly
                 ? formatCurrency(meta.stats.hourly, profile?.rates?.currency || "USD")
                 : "Set hourly rate"}
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
               Experience
             </p>
             <p className="text-sm font-semibold text-slate-900">
-              {meta.stats.years || "-"} yrs
+              {meta.stats?.years || "-"} yrs
             </p>
           </div>
         </div>
@@ -1284,13 +1517,19 @@ function MarketplacePreview({ profile, meta, loading, featuredPlan }) {
             Preview listing <ExternalLink size={14} />
           </Link>
           <span className="text-xs text-slate-400">
-            {loading ? "Loading profile." : meta.updatedAt ? `Last synced ${formatRelativeTime(meta.updatedAt)}` : "Not synced yet"}
+            {loading
+              ? "Loading profile."
+              : meta.updatedAt
+                ? `Last synced ${formatRelativeTime(meta.updatedAt)}`
+                : "Not synced yet"}
           </span>
         </div>
       </div>
     </div>
   );
-}function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
+}
+
+function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
   const lastUpdated = meta.updatedAt ? formatRelativeTime(meta.updatedAt) : "Never";
 
   return (

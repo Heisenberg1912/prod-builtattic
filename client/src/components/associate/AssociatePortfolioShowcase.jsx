@@ -1,4 +1,5 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
+import { ExternalLink, Copy } from "lucide-react";
 import { deriveProfileStats, formatCurrency } from "../../utils/associateProfile.js";
 
 const normaliseList = (value) => {
@@ -60,10 +61,42 @@ const SectionRow = ({ label, children }) => (
   </section>
 );
 
+const resolveLinkMeta = (url) => {
+  if (!url) {
+    return { url: "", host: null, label: "" };
+  }
+  try {
+    const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const friendlyMap = {
+      "behance.net": "Behance",
+      "dribbble.com": "Dribbble",
+      "linkedin.com": "LinkedIn",
+      "notion.so": "Notion",
+      "github.com": "GitHub",
+      "youtube.com": "YouTube",
+      "vimeo.com": "Vimeo",
+      "figma.com": "Figma",
+    };
+    const friendlyLabel = friendlyMap[host] || host.split(".").slice(-2, -1)[0] || host;
+    return { url: parsed.href, host, label: friendlyLabel };
+  } catch {
+    return { url, host: null, label: url };
+  }
+};
+
 export default function AssociatePortfolioShowcase({ profile, className = "" }) {
   const stats = useMemo(() => deriveProfileStats(profile || {}), [profile]);
-  const links = useMemo(() => normaliseList(profile?.portfolioLinks), [profile]);
+  const links = useMemo(() => normaliseList(profile?.portfolioLinks).map((link) => resolveLinkMeta(link)), [profile]);
   const projects = useMemo(() => normaliseProjects(profile?.keyProjects), [profile]);
+  const handleCopyLink = useCallback(async (url) => {
+    if (!url || typeof navigator === "undefined") return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // ignore copy errors
+    }
+  }, []);
 
   if (!profile) {
     return <EmptyPortfolioState />;
@@ -98,20 +131,36 @@ export default function AssociatePortfolioShowcase({ profile, className = "" }) 
 
       {links.length ? (
         <SectionRow label="Portfolio links">
-          <ul className="space-y-2 text-sm">
+          <div className="space-y-2">
             {links.slice(0, 6).map((link) => (
-              <li key={link}>
-                <a
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-slate-700 underline decoration-dotted hover:text-slate-900"
-                >
-                  {link}
-                </a>
-              </li>
+              <div
+                key={link.url}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+              >
+                <div>
+                  <p className="font-semibold text-slate-900">{link.label || "Portfolio link"}</p>
+                  <p className="text-xs text-slate-500">{link.host || link.url}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(link.url)}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-slate-300"
+                  >
+                    <Copy size={12} /> Copy
+                  </button>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    Visit <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
             ))}
-          </ul>
+          </div>
         </SectionRow>
       ) : (
         <SectionRow label="Portfolio links">
