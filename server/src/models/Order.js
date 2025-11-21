@@ -42,6 +42,18 @@ const CheckoutSchema = new mongoose.Schema(
   {
     addressId: String,
     addressLabel: String,
+    address: {
+      label: String,
+      name: String,
+      line1: String,
+      line2: String,
+      city: String,
+      state: String,
+      postalCode: String,
+      country: String,
+      phone: String,
+      gstNumber: String,
+    },
     gstInvoice: { type: Boolean, default: false },
     notes: String,
     couponCode: String,

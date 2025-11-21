@@ -56,20 +56,14 @@ const FiltersSidebar = ({
         ))}
       </div>
 
-      <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-2">
+      <div className="mt-4 flex flex-col gap-2">
+        <p className="text-xs text-neutral-500">Filters apply as you select them. You can always clear to start over.</p>
         <button
           type="button"
           onClick={onClear}
-          className="flex-1 text-sm border border-neutral-300 rounded-xl px-3 py-2 hover:bg-neutral-100"
+          className="text-sm border border-neutral-300 rounded-xl px-3 py-2 hover:bg-neutral-100"
         >
-          Clear
-        </button>
-        <button
-          type="button"
-          onClick={onApply}
-          className="flex-1 text-sm rounded-xl px-3 py-2 bg-neutral-900 text-white hover:bg-neutral-800"
-        >
-          Apply Filters
+          Clear filters
         </button>
       </div>
     </div>

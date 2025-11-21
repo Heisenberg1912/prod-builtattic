@@ -240,9 +240,9 @@ export const FIRM_DASHBOARD_FALLBACK = {
 
       id: 'studio-demo-1',
 
-      slug: 'demo-parametric-villa',
+      slug: 'tushar-studio-cafca',
 
-      title: 'Parametric Villa',
+      title: 'Cafca Residence Lab',
 
       status: 'published',
 
@@ -296,7 +296,7 @@ export const FIRM_DASHBOARD_FALLBACK = {
 
       id: 'studio-demo-3',
 
-      slug: 'cafca',
+      slug: 'tushar-studio-cafca',
 
       title: 'Cafca Residence Lab',
 

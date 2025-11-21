@@ -10,13 +10,10 @@ import { attachWeb3Proof, createWeb3Proof, summariseProofs } from '../services/w
 import { mapCatalogEntry } from '../utils/dummyCatalog.js';
 import logger from '../utils/logger.js';
 import {
-  getFallbackStudios,
-  findFallbackStudio,
   getFallbackMaterials,
   findFallbackMaterial,
   getFallbackAssociates,
   findFallbackAssociate,
-  getFallbackHosting,
 } from '../utils/marketplaceFallback.js';
 
 const router = Router();
@@ -262,19 +259,36 @@ router.get('/studios', marketplaceCache(), async (req, res) => {
     const response = await fetchCatalog('studio', req.query, { includeFirm: true, defaultLimit: 16 });
     res.json({ ok: true, ...response });
   } catch (error) {
-    logger.warn('marketplace_studios_fallback', { error: error.message });
-    const fallback = getFallbackStudios(req.query);
-    res.json({ ok: true, ...fallback });
+    logger.error('marketplace_studios_error', { error: error.message });
+    res.status(500).json({
+      ok: false,
+      error: error.message || 'Unable to load studios',
+      items: [],
+      meta: {
+        total: 0,
+        page: 1,
+        pageSize: 0,
+        facets: {},
+        web3: summariseProofs(),
+      },
+    });
   }
 });
 
 router.get('/studios/:slug', async (req, res) => {
   try {
-    const item = await Product.findOne({
-      slug: req.params.slug,
+    const { slug: idOrSlug } = req.params;
+    const query = {
       status: 'published',
       kind: 'studio',
-    })
+      $or: [{ slug: idOrSlug }],
+    };
+
+    if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
+      query.$or.push({ _id: idOrSlug });
+    }
+
+    const item = await Product.findOne(query)
       .populate('firm', 'name slug tagline coverImage rating ratingsCount category styles services contact hosting')
       .lean();
 
@@ -304,12 +318,8 @@ router.get('/studios/:slug', async (req, res) => {
     attachWeb3Proof(decoratedItem, 'studio');
     res.json({ ok: true, item: decoratedItem });
   } catch (error) {
-    logger.warn('marketplace_studio_detail_fallback', { error: error.message, slug: req.params.slug });
-    const fallback = findFallbackStudio(req.params.slug);
-    if (fallback) {
-      return res.json({ ok: true, item: fallback });
-    }
-    res.status(500).json({ ok: false, error: error.message });
+    logger.error('marketplace_studio_detail_error', { error: error.message, slug: req.params.slug });
+    res.status(500).json({ ok: false, error: error.message || 'Unable to load studio' });
   }
 });
 
@@ -340,9 +350,18 @@ router.get('/design-studio/hosting', async (req, res) => {
       meta: { updatedAt: firm.hosting?.updatedAt || firm.updatedAt },
     });
   } catch (error) {
-    logger.warn('marketplace_hosting_fallback', { error: error.message, firmId: req.query.firmId, firmSlug: req.query.firmSlug });
-    const fallback = getFallbackHosting();
-    res.json({ ok: true, ...fallback });
+    logger.error('marketplace_hosting_error', {
+      error: error.message,
+      firmId: req.query.firmId,
+      firmSlug: req.query.firmSlug,
+    });
+    res.status(500).json({
+      ok: false,
+      error: error.message || 'Unable to load design studio hosting',
+      hosting: null,
+      firm: null,
+      meta: null,
+    });
   }
 });
 router.get('/materials', marketplaceCache(), async (req, res) => {

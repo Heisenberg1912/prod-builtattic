@@ -50,6 +50,7 @@ export default function ServicePackManager({
   eyebrow = "Programs",
   description = "Bundle your offerings so ops teams know exactly what to book.",
   emptyMessage = "No service packs yet. Create one to show what buyers can activate instantly.",
+  onChange = () => {},
 }) {
   const [packs, setPacks] = useState(() => (Array.isArray(initialPacks) ? initialPacks : []));
   const [form, setForm] = useState(defaultFormState);
@@ -109,6 +110,7 @@ export default function ServicePackManager({
       });
       upsertWorkspaceServiceBundle(ownerType, updatedPack);
       toast.success(form.id ? "Service pack updated" : "Service pack published");
+      onChange();
       resetForm();
     } catch (error) {
       toast.error(error?.message || "Unable to save service pack");
@@ -140,6 +142,7 @@ export default function ServicePackManager({
       setPacks((prev) => prev.map((entry) => (entry.id === servicePack.id ? servicePack : entry)));
       upsertWorkspaceServiceBundle(ownerType, servicePack);
       toast.success(`Marked as ${nextStatus}`);
+      onChange();
     } catch (error) {
       toast.error(error?.message || "Unable to update pack");
     } finally {
@@ -158,6 +161,7 @@ export default function ServicePackManager({
       if (form.id === pack.id) {
         resetForm();
       }
+      onChange();
     } catch (error) {
       toast.error(error?.message || "Unable to delete pack");
     } finally {

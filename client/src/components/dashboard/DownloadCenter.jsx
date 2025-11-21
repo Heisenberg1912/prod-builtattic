@@ -57,6 +57,7 @@ export default function DownloadCenter({
   eyebrow = "WD W3",
   description = "Share deliverables, walkthrough files, and synced specs with buyers in a controlled channel.",
   emptyMessage = "No deliverables yet. Upload at least one WD-W3 packet to keep routing unlocked.",
+  onChange = () => {},
 }) {
   const [downloads, setDownloads] = useState(() => (Array.isArray(initialDownloads) ? initialDownloads : []));
   const [form, setForm] = useState(defaultForm);
@@ -178,6 +179,7 @@ export default function DownloadCenter({
       if (!saved) throw new Error("Download response missing");
       updateDownloadEntries(saved);
       toast.success(form.id ? "Download updated" : "Download published");
+      onChange();
       resetForm();
     } catch (error) {
       toast.error(error?.message || "Unable to save download");
@@ -209,6 +211,7 @@ export default function DownloadCenter({
       setDownloads((prev) => prev.filter((item) => item.id !== download.id));
       if (form.id === download.id) resetForm();
       toast.success("Download removed");
+      onChange();
     } catch (error) {
       toast.error(error?.message || "Unable to delete download");
     } finally {
@@ -236,6 +239,7 @@ export default function DownloadCenter({
         setProcessingFlag(download.id, false);
         toast.success(doc?.status === "released" ? "Download ready" : "Packaging updated");
       }
+      onChange();
     } catch (error) {
       setProcessingFlag(download.id, false);
       toast.error(error?.message || "Unable to process download");

@@ -1,5 +1,10 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { STUDIO_TABS } from "../../constants/studioTabs.js";
+
+const DESIGN_TAB =
+  STUDIO_TABS.find((tab) => tab.id === "design") || STUDIO_TABS[0] || { to: "/studio" };
+const DESIGN_TAB_PATH = DESIGN_TAB.to || "/studio";
 
 const HeroStat = ({ label, value, helper }) => (
   <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-slate-900 shadow-sm">
@@ -31,7 +36,7 @@ export const WorkspaceHero = ({ metaCards = [], onCreateStudio }) => (
           Launch a new studio
         </button>
         <Link
-          to="/studio"
+          to={DESIGN_TAB_PATH}
           className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-white"
         >
           View public page
@@ -78,7 +83,7 @@ const QuickActionList = ({ onCreateStudio }) => {
       type: "link",
       label: "Preview public Studio",
       helper: "Open the live experience buyers browse.",
-      to: "/studio",
+      to: DESIGN_TAB_PATH,
     },
   ];
 

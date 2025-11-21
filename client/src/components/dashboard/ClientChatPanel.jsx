@@ -33,6 +33,7 @@ export default function ClientChatPanel({
   eyebrow = "Workspace",
   description = "Log touchpoints, share updates, and keep the client thread in sync with what ops can see.",
   emptyMessage = "No chat threads yet. Start a conversation when the buyer requests WD-W3 files or scheduling changes.",
+  onChange = () => {},
 }) {
   const [chats, setChats] = useState(() => (Array.isArray(initialChats) ? initialChats : []));
   const [selectedChatId, setSelectedChatId] = useState(() => chats[0]?.id || null);
@@ -83,17 +84,18 @@ export default function ClientChatPanel({
           body: threadForm.message.trim(),
         },
       };
-      const response = await createWorkspaceChat(payload);
-      const chat = response?.chat;
-      if (!chat) throw new Error("Chat response missing");
-      setChats((prev) => [chat, ...prev]);
-      setSelectedChatId(chat.id);
-      setMessageForms((prev) => ({ ...prev, [chat.id]: defaultMessageForm }));
-      resetThreadForm();
-      toast.success("Chat created");
-    } catch (error) {
-      toast.error(error?.message || "Unable to create chat");
-    } finally {
+    const response = await createWorkspaceChat(payload);
+    const chat = response?.chat;
+    if (!chat) throw new Error("Chat response missing");
+    setChats((prev) => [chat, ...prev]);
+    setSelectedChatId(chat.id);
+    setMessageForms((prev) => ({ ...prev, [chat.id]: defaultMessageForm }));
+    resetThreadForm();
+    toast.success("Chat created");
+    onChange();
+  } catch (error) {
+    toast.error(error?.message || "Unable to create chat");
+  } finally {
       setCreating(false);
     }
   };
@@ -106,15 +108,16 @@ export default function ClientChatPanel({
     }
     setSending(true);
     try {
-      const response = await postWorkspaceChatMessage(chatId, { ownerType, body: message });
-      const chat = response?.chat;
-      if (!chat) throw new Error("Chat response missing");
-      setChats((prev) => prev.map((item) => (item.id === chat.id ? chat : item)));
-      setMessageForms((prev) => ({ ...prev, [chatId]: defaultMessageForm }));
-      toast.success("Message sent");
-    } catch (error) {
-      toast.error(error?.message || "Unable to send message");
-    } finally {
+    const response = await postWorkspaceChatMessage(chatId, { ownerType, body: message });
+    const chat = response?.chat;
+    if (!chat) throw new Error("Chat response missing");
+    setChats((prev) => prev.map((item) => (item.id === chat.id ? chat : item)));
+    setMessageForms((prev) => ({ ...prev, [chatId]: defaultMessageForm }));
+    toast.success("Message sent");
+    onChange();
+  } catch (error) {
+    toast.error(error?.message || "Unable to send message");
+  } finally {
       setSending(false);
     }
   };
@@ -129,6 +132,7 @@ export default function ClientChatPanel({
       if (!chat) throw new Error("Chat response missing");
       setChats((prev) => prev.map((item) => (item.id === chat.id ? chat : item)));
       toast.success(nextStatus === "resolved" ? "Chat resolved" : "Chat reopened");
+      onChange();
     } catch (error) {
       toast.error(error?.message || "Unable to update chat");
     } finally {

@@ -13,17 +13,7 @@ import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { associateCatalog } from "../data/services.js";
 import { placeOrder } from "../services/orders.js";
-
-const ADDRESS_STORAGE_KEY = "builtattic_profile_addresses";
-
-const readStorage = (key, fallback) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-};
+import { fetchAddresses, createAddress } from "../services/addresses.js";
 
 const COUPONS = [
   {
@@ -93,22 +83,49 @@ const Cart = () => {
     () => (Array.isArray(cartItems) ? cartItems : []),
     [cartItems],
   );
-  const demoMessage =
-    "This is a demo, we are unable to serve you right now, apologies for the inconvenience caused!";
-  const addresses = readStorage(ADDRESS_STORAGE_KEY, []);
+  const demoMessage = "Please sign in to place orders.";
+  const [addresses, setAddresses] = useState([]);
+  const [addressForm, setAddressForm] = useState({
+    label: "Home",
+    name: "",
+    line1: "",
+    line2: "",
+    city: "",
+    state: "",
+    postalCode: "",
+    country: "India",
+    phone: "",
+    gstNumber: "",
+    isDefault: true,
+  });
 
-  const [selectedIds, setSelectedIds] = useState(() =>
-    safeCartItems.map(getItemKey).filter(Boolean),
-  );
-  const [selectedAddressId, setSelectedAddressId] = useState(
-    addresses.find((addr) => addr.isDefault)?.id || addresses[0]?.id || null,
-  );
+  const [selectedIds, setSelectedIds] = useState(() => safeCartItems.map(getItemKey).filter(Boolean));
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState("");
   const [gstInvoice, setGstInvoice] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [serviceSchedules, setServiceSchedules] = useState({});
+
+  useEffect(() => {
+    if (!apiAvailable) {
+      setAddresses([]);
+      setSelectedAddressId(null);
+      return;
+    }
+    (async () => {
+      try {
+        const items = await fetchAddresses();
+        setAddresses(items);
+        const preferred = items.find((addr) => addr.isDefault) || items[0];
+        setSelectedAddressId(preferred?._id || preferred?.id || null);
+      } catch {
+        setAddresses([]);
+        setSelectedAddressId(null);
+      }
+    })();
+  }, [apiAvailable]);
 
   useEffect(() => {
     const ids = safeCartItems.map(getItemKey).filter(Boolean);
@@ -273,6 +290,11 @@ const Cart = () => {
       return;
     }
 
+    if (!selectedAddressId) {
+      toast.error("Add a delivery address before placing the order.");
+      return;
+    }
+
     const itemsPayload = selectedItems
       .map(toOrderItemPayload)
       .filter((item) => item && (item.productId || item.productSlug));
@@ -324,6 +346,23 @@ const Cart = () => {
       toast.error(message);
     } finally {
       setPlacingOrder(false);
+    }
+  };
+
+  const handleAddressSubmit = async (event) => {
+    event?.preventDefault?.();
+    if (!addressForm.line1 || !addressForm.city || !addressForm.postalCode) {
+      toast.error("Address line, city, and postal code are required.");
+      return;
+    }
+    try {
+      const items = await createAddress(addressForm);
+      setAddresses(items);
+      const preferred = items.find((addr) => addr.isDefault) || items[items.length - 1];
+      setSelectedAddressId(preferred?._id || preferred?.id || null);
+      toast.success("Address saved");
+    } catch (error) {
+      toast.error(error?.message || "Could not save address");
     }
   };
 
@@ -636,24 +675,102 @@ const Cart = () => {
             })}
           </div>
 
-          <aside className="space-y-6">
+                    <aside className="space-y-6">
             <section className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
               <h2 className="text-base font-semibold text-slate-900">Delivery & billing</h2>
-              <div className="space-y-2 text-sm text-slate-600">
-                <label className="uppercase tracking-[0.3em] text-xs text-slate-400">
-                  Deliver to
-                </label>
+              <div className="space-y-3 text-sm text-slate-600">
+                <label className="uppercase tracking-[0.3em] text-xs text-slate-400">Deliver to</label>
                 <select
                   value={selectedAddressId || ""}
                   onChange={(event) => setSelectedAddressId(event.target.value)}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2"
                 >
+                  <option value="">Select an address</option>
                   {addresses.map((address) => (
-                    <option key={address.id} value={address.id}>
-                      {address.label} Â· {address.city}
+                    <option key={address._id || address.id} value={address._id || address.id}>
+                      {(address.label || address.name || "Address").toString()} - {address.city || address.state || address.country}
                     </option>
                   ))}
                 </select>
+
+                <div className="border border-dashed border-slate-200 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-700">Add a new address</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    <input
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      placeholder="Label (Home/Office)"
+                      value={addressForm.label}
+                      onChange={(e) => setAddressForm((v) => ({ ...v, label: e.target.value }))}
+                    />
+                    <input
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      placeholder="Full name"
+                      value={addressForm.name}
+                      onChange={(e) => setAddressForm((v) => ({ ...v, name: e.target.value }))}
+                    />
+                    <input
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      placeholder="Address line 1"
+                      value={addressForm.line1}
+                      onChange={(e) => setAddressForm((v) => ({ ...v, line1: e.target.value }))}
+                    />
+                    <input
+                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      placeholder="Address line 2 (optional)"
+                      value={addressForm.line2}
+                      onChange={(e) => setAddressForm((v) => ({ ...v, line2: e.target.value }))}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="City"
+                        value={addressForm.city}
+                        onChange={(e) => setAddressForm((v) => ({ ...v, city: e.target.value }))}
+                      />
+                      <input
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="State"
+                        value={addressForm.state}
+                        onChange={(e) => setAddressForm((v) => ({ ...v, state: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Postal code"
+                        value={addressForm.postalCode}
+                        onChange={(e) => setAddressForm((v) => ({ ...v, postalCode: e.target.value }))}
+                      />
+                      <input
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Country"
+                        value={addressForm.country}
+                        onChange={(e) => setAddressForm((v) => ({ ...v, country: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Phone"
+                        value={addressForm.phone}
+                        onChange={(e) => setAddressForm((v) => ({ ...v, phone: e.target.value }))}
+                      />
+                      <input
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="GST / Tax ID (optional)"
+                        value={addressForm.gstNumber}
+                        onChange={(e) => setAddressForm((v) => ({ ...v, gstNumber: e.target.value }))}
+                      />
+                    </div>
+                    <button
+                      onClick={handleAddressSubmit}
+                      className="w-full py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold"
+                    >
+                      Save address
+                    </button>
+                  </div>
+                </div>
+
                 <label className="flex items-center gap-2 text-xs text-slate-600">
                   <input
                     type="checkbox"
@@ -731,7 +848,7 @@ const Cart = () => {
                 disabled={!hasSelection || placingOrder}
                 className="w-full mt-4 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {placingOrder ? 'Placing order…' : 'Place order'}
+                {placingOrder ? 'Placing orderï¿½' : 'Place order'}
               </button>
               {!hasSelection && (
                 <p className="text-xs text-rose-500">Select at least one item to continue.</p>
@@ -748,11 +865,3 @@ const Cart = () => {
 };
 
 export default Cart;
-
-
-
-
-
-
-
-

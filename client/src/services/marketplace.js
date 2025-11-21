@@ -1,24 +1,24 @@
 import client from "../config/axios.jsx";
-import {
-  fallbackStudios,
-  fallbackMaterials,
-  fallbackFirms,
-  fallbackAssociates,
-} from "../data/marketplace.js";
-import {
-  productCatalog,
-  productSearchRecords,
-  productBySlug,
-} from "../data/products.js";
-import { associateCatalog, associateEnhancements } from "../data/services.js";
+import { productSearchRecords } from "../data/products.js";
 
-import { fetchVendorPortalProfile, loadVendorProfileDraft } from "./portal.js";
+import { fetchVendorPortalProfile } from "./portal.js";
 
 import { decorateFirmWithProfile, decorateFirmsWithProfiles, loadFirmProfile } from "../utils/firmProfile.js";
-import { DEFAULT_STUDIO_TILES } from "../utils/studioTiles.js";
-import { getDummyCatalogSnapshot } from "./dummyCatalog.js";
 
-const slugify = (value = '') => value.toString().toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+export const buildStudioSlug = (studio = {}) => {
+  const candidate = [
+    studio.slug,
+    studio.handle,
+    studio.permalink,
+    studio.alias,
+    studio.shortcode,
+    studio.workspaceSlug,
+    studio.studioSlug,
+  ].find((value) => typeof value === 'string' && value.trim().length);
+  if (candidate) return candidate.trim();
+  if (studio._id || studio.id) return String(studio._id || studio.id);
+  return null;
+};
 const ensureArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 const nowISO = () => new Date().toISOString();
 const ADMIN_AUTH_STATUSES = new Set([401, 403]);
@@ -69,21 +69,15 @@ async function getVendorProfileForMarketplace() {
   const sessionKey = hasAuthSession() ? 'authed' : 'guest';
   if (!vendorProfilePromises[sessionKey]) {
     vendorProfilePromises[sessionKey] = (async () => {
-      if (sessionKey === 'authed') {
-        try {
-          const response = await fetchVendorPortalProfile({ preferDraft: true, fallbackToDraft: true });
-          if (response?.profile) {
-            return response.profile;
-          }
-        } catch (error) {
-          console.warn('vendor_profile_load_failed', error);
-        }
-      }
       try {
-        return loadVendorProfileDraft() || null;
-      } catch {
-        return null;
+        const response = await fetchVendorPortalProfile({ preferDraft: false, fallbackToDraft: false });
+        if (response?.profile && response?.source !== "mock" && !response?.fallback) {
+          return response.profile;
+        }
+      } catch (error) {
+        console.warn('vendor_profile_load_failed', error);
       }
+      return null;
     })();
   }
   return vendorProfilePromises[sessionKey];
@@ -173,6 +167,14 @@ const decorateStudioWithStoredProfile = (studio = {}) => {
 const decorateStudiosWithProfiles = (studios = []) =>
   studios.map((studio) => decorateStudioWithStoredProfile(studio));
 
+const normalizeHostingConfig = (hosting = {}) => ({
+  enabled: hosting.enabled !== false,
+  serviceSummary: hosting.serviceSummary || hosting.summary || "",
+  services: Array.isArray(hosting.services) ? hosting.services.filter(Boolean) : [],
+  products: Array.isArray(hosting.products) ? hosting.products.filter(Boolean) : [],
+  updatedAt: hosting.updatedAt || hosting.updated_at || hosting.syncedAt || null,
+});
+
 const normalizeStudio = (studio = {}) => {
   const galleryArray = ensureArray(studio.gallery).filter(Boolean);
   const heroCandidate =
@@ -181,15 +183,50 @@ const normalizeStudio = (studio = {}) => {
     studio.image ||
     galleryArray[0] ||
     null;
-  const slug = studio.slug || (studio.title ? slugify(studio.title) : studio._id);
+  const slug = buildStudioSlug(studio);
   const gallery = heroCandidate
     ? [heroCandidate, ...galleryArray.filter((img) => img !== heroCandidate)]
     : galleryArray;
+  const currency = studio.currency || studio.pricing?.currency || "USD";
+  const basePriceRaw = studio.pricing?.basePrice ?? studio.price ?? studio.pricing?.total ?? null;
+  const totalPriceRaw = studio.pricing?.total ?? studio.totalPrice ?? null;
+  const priceSqftRaw = studio.priceSqft ?? studio.pricing?.priceSqft ?? null;
+  const pricing = {
+    ...studio.pricing,
+    currency,
+    basePrice: Number.isFinite(Number(basePriceRaw)) ? Number(basePriceRaw) : basePriceRaw ?? null,
+    total: Number.isFinite(Number(totalPriceRaw)) ? Number(totalPriceRaw) : totalPriceRaw ?? null,
+    unit: studio.pricing?.unit || studio.pricing?.unitLabel || studio.unit || "sq ft",
+    priceSqft: Number.isFinite(Number(priceSqftRaw)) ? Number(priceSqftRaw) : priceSqftRaw ?? null,
+  };
+  const serviceBadges = Array.isArray(studio.serviceBadges)
+    ? studio.serviceBadges.filter(Boolean)
+    : Array.isArray(studio.services)
+      ? studio.services
+          .map((service) =>
+            typeof service === "string" ? service : service?.label || service?.name || null,
+          )
+          .filter(Boolean)
+      : [];
+  const hostingSource = studio.hosting || studio.firm?.hosting || null;
+  const hosting = hostingSource ? normalizeHostingConfig(hostingSource) : null;
+  const firm = studio.firm
+    ? {
+        ...studio.firm,
+        hosting: hosting || studio.firm.hosting || null,
+      }
+    : studio.firm;
   return {
     ...studio,
     slug,
     heroImage: heroCandidate,
     gallery,
+    pricing,
+    priceSqft: pricing.priceSqft,
+    currency,
+    serviceBadges,
+    hosting,
+    firm,
   };
 };
 
@@ -220,7 +257,6 @@ const normalizeMaterial = (material = {}) => {
 };
 
 const normalizeAssociate = (associate = {}) => {
-  const extras = (associateEnhancements && (associateEnhancements[associate._id] || associateEnhancements[associate.slug])) || null;
   const baseRates = associate.rates || {};
   const hourly = associate.hourlyRate ?? baseRates.hourly ?? null;
   const mergedRates = {
@@ -236,37 +272,22 @@ const normalizeAssociate = (associate = {}) => {
   const resolvedHero =
     associate.heroImage ||
     associate.coverImage ||
-    (extras && extras.heroImage) ||
     (Array.isArray(associate.portfolioMedia) && associate.portfolioMedia[0]?.mediaUrl) ||
     null;
   const resolvedAvatar =
     associate.profileImage ||
     associate.avatar ||
-    (extras && extras.avatar) ||
     "/assets/associates/default-consultant.jpg";
   const resolveMediaItems = () => {
     const direct = Array.isArray(associate.portfolioMedia) ? associate.portfolioMedia : [];
-    if (direct.length) {
-      return direct
-        .map((item) => ({
-          title: item.title || "",
-          description: item.description || "",
-          mediaUrl: item.mediaUrl || item.url || item.image || "",
-          kind: item.kind || "",
-        }))
-        .filter((item) => item.mediaUrl);
-    }
-    if (extras?.portfolioMedia?.length) {
-      return extras.portfolioMedia
-        .map((item) => ({
-          title: item.title || "",
-          description: item.description || "",
-          mediaUrl: item.mediaUrl || item.url || item.image || "",
-          kind: item.kind || "",
-        }))
-        .filter((item) => item.mediaUrl);
-    }
-    return [];
+    return direct
+      .map((item) => ({
+        title: item.title || "",
+        description: item.description || "",
+        mediaUrl: item.mediaUrl || item.url || item.image || "",
+        kind: item.kind || "",
+      }))
+      .filter((item) => item.mediaUrl);
   };
   return {
     ...associate,
@@ -276,113 +297,20 @@ const normalizeAssociate = (associate = {}) => {
     profileImage: associate.profileImage || associate.avatar || null,
     avatar: resolvedAvatar,
     contactEmail: associate.contactEmail || associate.user?.email || null,
-    serviceBadges: (extras && extras.serviceBadges) || associate.serviceBadges || [],
-    booking: (extras && extras.booking) || associate.booking || null,
-    warranty: (extras && extras.warranty) || associate.warranty || null,
-    addons: (extras && extras.addons) || associate.addons || [],
-    prepChecklist: (extras && extras.prepChecklist) || associate.prepChecklist || [],
-    deliverables: (extras && extras.deliverables) || associate.deliverables || [],
-    expertise: (extras && extras.expertise) || associate.expertise || [],
+    serviceBadges: associate.serviceBadges || [],
+    booking: associate.booking || null,
+    warranty: associate.warranty || null,
+    addons: associate.addons || [],
+    prepChecklist: associate.prepChecklist || [],
+    deliverables: associate.deliverables || [],
+    expertise: associate.expertise || [],
     portfolioMedia: resolveMediaItems(),
   };
 };
 
-const LOCAL_STUDIOS = fallbackStudios.map(normalizeStudio);
-const LOCAL_MATERIALS = fallbackMaterials.map(normalizeMaterial);
-const LOCAL_ASSOCIATES = associateCatalog.map(normalizeAssociate);
-const FALLBACK_ASSOCIATES = fallbackAssociates.map(normalizeAssociate);
-
-const toComparableId = (value) => (value ? String(value).toLowerCase() : "");
-const findLocalAssociate = (id) => {
-  const target = toComparableId(id);
-  if (!target) return null;
-  return (
-    LOCAL_ASSOCIATES.find((associate) => toComparableId(associate?._id) === target) ||
-    FALLBACK_ASSOCIATES.find((associate) => toComparableId(associate?._id) === target) ||
-    null
-  );
-};
-
-function unwrapItems(data) {
-  return {
-    items: data?.items || [],
-    meta: data?.meta || { total: data?.items?.length ?? 0 },
-  };
-}
-
 function matchesSearch(target = "", search = "") {
   if (!search) return true;
   return target.toLowerCase().includes(search.toLowerCase());
-}
-
-function filterStudios(list, params = {}) {
-  const { category, style, search } = params;
-  return list.filter((studio) => {
-    const categoryOk =
-      !category ||
-      category === "All" ||
-      (studio.categories || []).some((cat) =>
-        cat.toLowerCase().includes(category.toLowerCase())
-      );
-    const styleOk =
-      !style ||
-      style === "All" ||
-      studio.style?.toLowerCase() === style.toLowerCase() ||
-      (studio.firm?.styles || []).some(
-        (s) => s.toLowerCase() === style.toLowerCase()
-      );
-    const searchOk =
-      !search ||
-      matchesSearch(studio.title, search) ||
-      matchesSearch(studio.summary, search) ||
-      matchesSearch(studio.firm?.name, search);
-    return categoryOk && styleOk && searchOk;
-  });
-}
-
-function filterMaterials(list, params = {}) {
-  const { category, search } = params;
-  const normalizedCategory =
-    category && category !== "All" ? category.toLowerCase() : null;
-  return list.filter((item) => {
-    const categories = [
-      item.category,
-      ...(Array.isArray(item.categories) ? item.categories : []),
-    ]
-      .filter(Boolean)
-      .map((entry) => String(entry).toLowerCase());
-    const categoryOk =
-      !normalizedCategory ||
-      categories.includes(normalizedCategory);
-    const searchOk =
-      !search ||
-      matchesSearch(item.title, search) ||
-      matchesSearch(item.description, search) ||
-      matchesSearch(item.metafields?.vendor, search);
-    return categoryOk && searchOk;
-  });
-}
-
-function filterFirms(list, params = {}) {
-  const { category, style, search } = params;
-  return list.filter((firm) => {
-    const categoryOk =
-      !category ||
-      category === "All" ||
-      firm.category?.toLowerCase() === category.toLowerCase();
-    const styleOk =
-      !style ||
-      style === "All" ||
-      (firm.styles || []).some(
-        (s) => s.toLowerCase() === style.toLowerCase()
-      );
-    const searchOk =
-      !search ||
-      matchesSearch(firm.name, search) ||
-      matchesSearch(firm.tagline, search) ||
-      matchesSearch(firm.description, search);
-    return categoryOk && styleOk && searchOk;
-  });
 }
 
 function filterAssociates(list, params = {}) {
@@ -409,23 +337,19 @@ function filterAssociates(list, params = {}) {
   });
 }
 
-async function tryRequest(path, params) {
-  const { data } = await client.get(path, { params });
-  if (!Array.isArray(data?.items) && !Array.isArray(data?.firms)) {
-    throw new Error("Unexpected response");
-  }
-  return data;
-}
-
 export async function fetchCatalog(params = {}) {
   if (params.kind === "studio") {
-    return decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
+    const { items } = await fetchStudios(params);
+    return items;
   }
   if (params.kind === "material") {
-    return filterMaterials(LOCAL_MATERIALS, params);
+    const { items } = await fetchMaterials(params);
+    return items;
   }
-  const studios = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
-  const materials = filterMaterials(LOCAL_MATERIALS, params);
+  const [studios, materials] = await Promise.all([
+    fetchStudios(params).then((res) => res.items).catch(() => []),
+    fetchMaterials(params).then((res) => res.items).catch(() => []),
+  ]);
   return [...studios, ...materials];
 }
 
@@ -456,156 +380,11 @@ const buildStudioFacets = (list = []) => {
   };
 };
 
-const mapDummyDesignEntry = (entry = {}) =>
-  normalizeStudio({
-    ...entry,
-    _id: entry._id || entry.id || entry.slug || entry.title,
-    id: entry.id || entry._id || entry.slug || entry.title,
-    slug: entry.slug || slugify(entry.title || entry.id || entry._id || "studio"),
-    status: entry.status || "published",
-    price: entry.price != null ? Number(entry.price) : entry.price,
-    priceSqft: entry.priceSqft != null ? Number(entry.priceSqft) : entry.priceSqft,
-    currency: entry.currency || entry.pricing?.currency || "USD",
-    firm:
-      entry.firm && typeof entry.firm === "object"
-        ? entry.firm
-        : {
-            name: entry.firm?.name || entry.firm || "Demo Studio",
-          },
-  });
-
-const mapDummyMaterialEntry = (entry = {}) => {
-  const slug = entry.slug || slugify(entry.title || entry.id || entry._id || "material");
-  const categoryList = ensureArray(
-    entry.categories && entry.categories.length
-      ? entry.categories
-      : entry.category
-      ? [entry.category]
-      : []
-  );
-  return normalizeMaterial({
-    ...entry,
-    _id: entry._id || entry.id || slug,
-    id: entry.id || entry._id || slug,
-    slug,
-    categories: categoryList,
-    category: entry.category || categoryList[0] || null,
-    tags: ensureArray(entry.tags),
-    description: entry.description || entry.summary || "",
-    status: entry.status || "published",
-    price: entry.price != null ? Number(entry.price) : entry.price,
-    currency: entry.currency || "USD",
-    metafields: {
-      ...(entry.metafields || {}),
-      vendor: entry.metafields?.vendor || entry.vendor || entry.firm?.name || "Demo Vendor",
-    },
-  });
-};
-
-const mapDummyAssociateEntry = (entry = {}) => {
-  const slug = entry.slug || slugify(entry.name || entry.id || entry._id || "associate");
-  const hourly = entry.hourlyRate ?? entry.hourly ?? entry.rates?.hourly;
-  const numericHourly = hourly != null ? Number(hourly) : null;
-  const currency = entry.rates?.currency || entry.currency || "USD";
-  const rates = {
-    currency,
-    ...entry.rates,
-  };
-  if (numericHourly != null && Number.isFinite(numericHourly)) {
-    rates.hourly = numericHourly;
-  }
-  return normalizeAssociate({
-    ...entry,
-    _id: entry._id || entry.id || slug,
-    id: entry.id || entry._id || slug,
-    slug,
-    title: entry.title || entry.role || "Associate",
-    summary: entry.summary || entry.description || "",
-    rates,
-    hourlyRate: numericHourly != null && Number.isFinite(numericHourly) ? numericHourly : rates.hourly ?? null,
-    skills: ensureArray(entry.skills),
-    languages: ensureArray(entry.languages),
-    tools: ensureArray(entry.tools),
-    tags: ensureArray(entry.tags),
-    status: entry.status || "active",
-  });
-};
-
-async function pickDummyEntries(type) {
-  try {
-    const catalog = await getDummyCatalogSnapshot();
-    const list = catalog?.[type];
-    return Array.isArray(list) ? list : [];
-  } catch (error) {
-    console.warn("dummy_catalog_snapshot_failed", error);
-    return [];
-  }
-}
-
-async function buildDummyStudiosResponse(params = {}) {
-  const entries = await pickDummyEntries("design");
-  if (!entries.length) return null;
-  const normalized = entries.map(mapDummyDesignEntry);
-  const filtered = decorateStudiosWithProfiles(filterStudios(normalized, params));
-  if (!filtered.length) return null;
-  return {
-    items: filtered,
-    meta: {
-      total: filtered.length,
-      facets: buildStudioFacets(filtered),
-      web3: null,
-      fallback: true,
-    },
-  };
-}
-
-async function buildDummyMaterialsResponse(params = {}, vendorProfile) {
-  const entries = await pickDummyEntries("material");
-  if (!entries.length) return null;
-  const normalized = entries.map(mapDummyMaterialEntry);
-  const filtered = filterMaterials(normalized, params);
-  if (!filtered.length) return null;
-  const decorated = decorateMaterialsWithVendorProfile(filtered, vendorProfile);
-  return {
-    items: decorated,
-    meta: { total: decorated.length, web3: null, fallback: true },
-  };
-}
-
-async function buildDummyAssociatesResponse(params = {}) {
-  const entries = await pickDummyEntries("skill");
-  if (!entries.length) return null;
-  const normalized = entries.map(mapDummyAssociateEntry);
-  const filtered = filterAssociates(normalized, params);
-  if (!filtered.length) return null;
-  return {
-    items: filtered,
-    meta: { total: filtered.length, web3: null, fallback: true },
-  };
-}
-
 export async function fetchStudios(params = {}) {
   try {
     const { data } = await client.get("/marketplace/studios", { params });
     const items = decorateStudiosWithProfiles((data?.items || []).map(normalizeStudio));
     const meta = data?.meta || {};
-
-    if (items.length === 0) {
-      const dummyResponse = await buildDummyStudiosResponse(params);
-      if (dummyResponse) return dummyResponse;
-
-      const fallbackItems = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
-      return {
-        items: fallbackItems,
-        meta: {
-          total: fallbackItems.length,
-          facets: meta.facets || buildStudioFacets(fallbackItems),
-          web3: meta.web3 || null,
-          fallback: true,
-        },
-      };
-    }
-
     return {
       items,
       meta: {
@@ -615,18 +394,8 @@ export async function fetchStudios(params = {}) {
       },
     };
   } catch (error) {
-    const dummyResponse = await buildDummyStudiosResponse(params);
-    if (dummyResponse) return dummyResponse;
-
-    const filtered = decorateStudiosWithProfiles(filterStudios(LOCAL_STUDIOS, params));
-    return {
-      items: filtered,
-      meta: {
-        total: filtered.length,
-        facets: buildStudioFacets(filtered),
-        web3: null,
-      },
-    };
+    const message = error?.response?.data?.error || error?.message || "Unable to load studios";
+    throw new Error(message);
   }
 }
 
@@ -639,10 +408,6 @@ export async function fetchMaterials(params = {}) {
     const { data } = await client.get("/marketplace/materials", { params });
     const items = decorateMaterialsWithVendorProfile((data?.items || []).map(normalizeMaterial), vendorProfile);
     const meta = data?.meta || { total: items.length };
-    if (items.length === 0) {
-      const dummyResponse = await buildDummyMaterialsResponse(params, vendorProfile);
-      if (dummyResponse) return dummyResponse;
-    }
     return {
       items,
       meta: {
@@ -652,14 +417,8 @@ export async function fetchMaterials(params = {}) {
       },
     };
   } catch (error) {
-    const dummyResponse = await buildDummyMaterialsResponse(params, vendorProfile);
-    if (dummyResponse) return dummyResponse;
-
-    const fallback = decorateMaterialsWithVendorProfile(filterMaterials(LOCAL_MATERIALS, params), vendorProfile);
-    return {
-      items: fallback,
-      meta: { total: fallback.length, web3: null },
-    };
+    const message = error?.response?.data?.error || error?.message || "Unable to load materials";
+    throw new Error(message);
   }
 }
 
@@ -667,21 +426,6 @@ export async function fetchMarketplaceAssociates(params = {}) {
   try {
     const { data } = await client.get("/marketplace/associates", { params });
     const items = (data?.items || []).map(normalizeAssociate);
-
-    if (items.length === 0) {
-      const dummyResponse = await buildDummyAssociatesResponse(params);
-      if (dummyResponse) return dummyResponse;
-
-      const fallbackItems = filterAssociates(LOCAL_ASSOCIATES, params);
-      return {
-        items: fallbackItems,
-        meta: {
-          total: fallbackItems.length,
-          web3: data?.meta?.web3 || null,
-          fallback: true,
-        },
-      };
-    }
 
     return {
       items: filterAssociates(items, params),
@@ -691,43 +435,31 @@ export async function fetchMarketplaceAssociates(params = {}) {
       },
     };
   } catch (error) {
-    const dummyResponse = await buildDummyAssociatesResponse(params);
-    if (dummyResponse) return dummyResponse;
-
-    const filtered = filterAssociates(LOCAL_ASSOCIATES, params);
-    return { items: filtered, meta: { total: filtered.length, web3: null } };
+    const message = error?.response?.data?.error || error?.message || "Unable to load associates";
+    throw new Error(message);
   }
 }
 
 
 
 
-const buildDesignStudioHostingFallback = () => ({
-  ok: true,
-  hosting: {
-    enabled: true,
-    serviceSummary: DEFAULT_STUDIO_TILES.summary,
-    services: DEFAULT_STUDIO_TILES.services,
-    products: DEFAULT_STUDIO_TILES.products,
-    updatedAt: nowISO(),
-  },
-  fallback: true,
-});
-
 export async function fetchDesignStudioHosting(params = {}) {
-  try {
-    const { data } = await client.get('/marketplace/design-studio/hosting', { params });
-    if (data?.hosting) {
-      return data;
-    }
-    return buildDesignStudioHostingFallback();
-  } catch (error) {
-    const fallback = buildDesignStudioHostingFallback();
-    if (error?.message) {
-      fallback.error = error.message;
-    }
-    return fallback;
+  const { data } = await client.get('/marketplace/design-studio/hosting', { params });
+  if (!data?.hosting) {
+    throw new Error("Hosting config not available");
   }
+  const hosting = data.hosting || {};
+  return {
+    ...data,
+    fallback: false,
+    hosting: {
+      enabled: Boolean(hosting.enabled),
+      serviceSummary: hosting.serviceSummary || "",
+      services: Array.isArray(hosting.services) ? hosting.services : [],
+      products: Array.isArray(hosting.products) ? hosting.products : [],
+      updatedAt: hosting.updatedAt || hosting.updated_at || nowISO(),
+    },
+  };
 }
 
 
@@ -742,9 +474,9 @@ export async function fetchMarketplaceFirms(params = {}) {
         web3: data?.meta?.web3 || null,
       },
     };
-  } catch {
-    const filtered = decorateFirmsWithProfiles(filterFirms(fallbackFirms, params));
-    return { items: filtered, meta: { total: filtered.length, web3: null } };
+  } catch (error) {
+    const message = error?.response?.data?.error || error?.message || "Unable to load firms";
+    throw new Error(message);
   }
 }
 
@@ -755,9 +487,12 @@ export async function fetchStudioBySlug(slug, params = {}) {
     const item = data?.item;
     if (!item) throw new Error('Not found');
     return decorateStudioWithStoredProfile(normalizeStudio(item));
-  } catch {
-    const local = LOCAL_STUDIOS.find((studio) => studio.slug === slug) || null;
-    return local ? decorateStudioWithStoredProfile(local) : null;
+  } catch (error) {
+    if (error?.response?.status === 404) {
+      return null;
+    }
+    const message = error?.response?.data?.error || error?.message || "Unable to load studio";
+    throw new Error(message);
   }
 }
 
@@ -816,12 +551,6 @@ export async function fetchMarketplaceAssociateProfile(id) {
   } catch (error) {
     if (error?.response?.status === 404) {
       return null;
-    }
-    if (!error?.response) {
-      const fallback = findLocalAssociate(id);
-      if (fallback) {
-        return fallback;
-      }
     }
     throw error;
   }
@@ -956,29 +685,18 @@ export async function fetchFirmById(firmId) {
 }
 
 export async function fetchProductCatalog(params = {}) {
-  try {
-    const { data } = await client.get("/marketplace/materials", { params });
-    if (!Array.isArray(data?.items)) throw new Error("Unexpected response");
-    const enriched = data.items.map(
-      (item) => productBySlug(item.slug) || { ...item, kind: "product" },
-    );
-    return {
-      items: enriched,
-      meta: {
-        total: data.meta?.total ?? enriched.length,
-        facets: buildProductFacets(enriched),
-      },
-    };
-  } catch {
-    const filtered = filterProducts(productCatalog, params);
-    return {
-      items: filtered,
-      meta: {
-        total: filtered.length,
-        facets: buildProductFacets(filtered),
-      },
-    };
+  const { data } = await client.get("/marketplace/materials", { params });
+  if (!Array.isArray(data?.items)) {
+    throw new Error("Unexpected response");
   }
+  const enriched = data.items.map((item) => ({ ...item, kind: "product" }));
+  return {
+    items: enriched,
+    meta: {
+      total: data.meta?.total ?? enriched.length,
+      facets: buildProductFacets(enriched),
+    },
+  };
 }
 
 export async function fetchProductBySlug(slug) {
@@ -987,113 +705,15 @@ export async function fetchProductBySlug(slug) {
     const { data } = await client.get(`/marketplace/materials/${slug}`);
     const item = data?.item;
     if (!item) throw new Error("Not found");
-    const normalised = normalizeMaterial(item);
-    return productBySlug(item.slug) || normalised;
-  } catch {
-    return productBySlug(slug);
+    return normalizeMaterial(item);
+  } catch (error) {
+    if (error?.response?.status === 404) {
+      return null;
+    }
+    throw error;
   }
 }
 export const getProductSearchRecords = () => productSearchRecords;
-
-export const getAssociateCatalog = () => associateCatalog;
-
-function normalize(value) {
-  return String(value || "").toLowerCase();
-}
-
-function getProductPriceBounds(product) {
-  const values = [];
-  const pushPrice = (price) => {
-    if (Number.isFinite(price)) values.push(price);
-  };
-  (product.variations || []).forEach((variation) =>
-    pushPrice(Number(variation?.price)),
-  );
-  (product.offers || []).forEach((offer) => {
-    Object.values(offer?.pricingByVariation || {}).forEach((pricing) =>
-      pushPrice(Number(pricing?.price)),
-    );
-  });
-  pushPrice(Number(product?.pricing?.basePrice));
-  if (!values.length) return { min: 0, max: 0 };
-  return { min: Math.min(...values), max: Math.max(...values) };
-}
-
-function filterProducts(list, params = {}) {
-  const {
-    category,
-    search,
-    seller,
-    priceMin,
-    priceMax,
-    tags = [],
-    attributes = {},
-  } = params;
-  const sellerLc = seller ? normalize(seller) : null;
-  const tagFilters = Array.isArray(tags)
-    ? tags.filter(Boolean).map(normalize)
-    : [];
-  const attributeFilters = attributes || {};
-  const minPrice = Number(priceMin);
-  const maxPrice = Number(priceMax);
-
-  return list.filter((product) => {
-    const categoryOk =
-      !category ||
-      category === "All" ||
-      (product.categories || []).some(
-        (cat) => normalize(cat) === normalize(category),
-      );
-
-    const searchOk =
-      !search ||
-      matchesSearch(product.title, search) ||
-      matchesSearch(product.description, search) ||
-      matchesSearch(product.metafields?.vendor, search) ||
-      (product.searchKeywords || []).some((keyword) =>
-        matchesSearch(keyword, search),
-      );
-
-    const sellerOk =
-      !sellerLc ||
-      (product.offers || []).some(
-        (offer) =>
-          normalize(offer?.sellerName) === sellerLc ||
-          normalize(offer?.sellerId) === sellerLc,
-      );
-
-    const tagOk =
-      !tagFilters.length ||
-      tagFilters.every((tag) =>
-        (product.tags || []).some((productTag) => normalize(productTag) === tag),
-      );
-
-    const priceBounds = getProductPriceBounds(product);
-    const priceOk =
-      (!Number.isFinite(minPrice) || priceBounds.max >= minPrice) &&
-      (!Number.isFinite(maxPrice) || priceBounds.min <= maxPrice);
-
-    const attributesOk = Object.entries(attributeFilters).every(
-      ([code, values]) => {
-        if (!values || !values.length) return true;
-        const dimension = (product.variationDimensions || []).find(
-          (entry) => entry.code === code,
-        );
-        if (!dimension) return false;
-        const optionSet = new Set(
-          (dimension.values || []).map((option) =>
-            normalize(option?.value || option),
-          ),
-        );
-        return values
-          .map(normalize)
-          .every((value) => optionSet.has(value));
-      },
-    );
-
-    return categoryOk && searchOk && sellerOk && tagOk && priceOk && attributesOk;
-  });
-}
 
 function buildProductFacets(items = []) {
   const categories = new Map();

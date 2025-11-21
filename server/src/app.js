@@ -90,6 +90,7 @@ import meetingsRouter from './routes/meetings.js';
 import planUploadsRouter from './routes/planUploads.js';
 import workspaceDownloadsRouter from './routes/workspaceDownloads.js';
 import workspaceChatsRouter from './routes/workspaceChats.js';
+import addressesRouter from './routes/addresses.js';
 
 
 const app = express();
@@ -294,6 +295,8 @@ app.use(['/studio/requests', '/api/studio/requests'], studioRequestsRouter);
 app.use(['/portal/associate', '/api/portal/associate'], associatePortalRouter);
 
 app.use(['/portal/studio', '/api/portal/studio'], studioPortalRouter);
+
+app.use(['/addresses', '/api/addresses'], addressesRouter);
 
 app.use(
 

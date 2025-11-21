@@ -290,6 +290,7 @@ export default function FirmDashboard() {
   const [state, setState] = useState({ loading: true, data: null, error: null });
   const [sectionStatus, setSectionStatus] = useState({});
   const mountedRef = useRef(true);
+  const initialLoadRef = useRef(false);
 
   const refreshDashboard = useCallback(
     async (sectionId = null, options = {}) => {
@@ -341,7 +342,10 @@ export default function FirmDashboard() {
 
   useEffect(() => {
     mountedRef.current = true;
-    refreshDashboard();
+    if (!initialLoadRef.current) {
+      initialLoadRef.current = true;
+      refreshDashboard();
+    }
     return () => {
       mountedRef.current = false;
     };
@@ -974,6 +978,7 @@ export default function FirmDashboard() {
             eyebrow="Client-ready bundles"
             description="Publish curated packs that explain how to buy your studio without a long back-and-forth."
             emptyMessage="No packs yet. Capture your offer structure so the marketplace team can route qualified demand."
+            onChange={() => refreshDashboard(null, { silent: true })}
           />
 
           <MeetingScheduler
@@ -983,6 +988,7 @@ export default function FirmDashboard() {
             eyebrow="Buyer syncs"
             description="Plan onboarding calls, design reviews, and procurement walkthroughs tied to each pack."
             emptyMessage="Log upcoming syncs to keep internal ops aligned with the marketplace queue."
+            onChange={() => refreshDashboard(null, { silent: true })}
           />
 
           <DownloadCenter
@@ -992,6 +998,7 @@ export default function FirmDashboard() {
             eyebrow="WD W3"
             description="Publish WD-W3 packets, walkthroughs, and encrypted drops with explicit access control."
             emptyMessage="No WD-W3 drops yet. Upload at least one deliverable set to unlock routing."
+            onChange={() => refreshDashboard(null, { silent: true })}
           />
 
           <ClientChatPanel
@@ -1001,6 +1008,7 @@ export default function FirmDashboard() {
             eyebrow="Workspace thread"
             description="Track every buyer request and keep operations looped in with a visible log."
             emptyMessage="Start a conversational log the next time a buyer asks for files or scheduling help."
+            onChange={() => refreshDashboard(null, { silent: true })}
           />
 
           <div id="feedback">

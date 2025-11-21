@@ -99,7 +99,7 @@ const demoStudios = [
   },
   {
     _id: 'studio-demo-3',
-    slug: 'cafca',
+    slug: 'tushar-studio-cafca',
     title: 'Cafca Residence Lab',
     summary: 'Published sample listing so the /studio/cafca route renders even when the API is offline.',
     description:
@@ -145,7 +145,7 @@ const demoStudios = [
 ];
 
 export const marketplaceFeatures = [];
-export const fallbackStudios = demoStudios;
+export const fallbackStudios = demoStudios;
 export const fallbackMaterials = [];
 export const fallbackFirms = [];
 export const fallbackAssociates = [];

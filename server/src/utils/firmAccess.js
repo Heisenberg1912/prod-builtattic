@@ -21,7 +21,11 @@ export const resolveFirmId = (req, explicitFirmId) => {
   const global = isGlobalAdmin(req.user);
 
   let firmId = explicitFirmId || req.params.firmId || req.query.firmId;
+
+  // Prefer an existing membership when no firmId is passed (helps admins running portal routes)
   if (!firmId && memberships.length === 1) {
+    firmId = memberships[0].firm;
+  } else if (!firmId && global && memberships.length > 0) {
     firmId = memberships[0].firm;
   }
 
@@ -48,4 +52,3 @@ export default {
   resolveFirmId,
   isGlobalAdmin,
 };
-

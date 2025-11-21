@@ -25,6 +25,21 @@ const UserSchema = new mongoose.Schema({
     security: { type: Map, of: Boolean, default: {} },
     profile: { type: Map, of: String, default: {} },
   },
+  addresses: [
+    {
+      label: { type: String, trim: true },
+      name: { type: String, trim: true },
+      line1: { type: String, trim: true },
+      line2: { type: String, trim: true },
+      city: { type: String, trim: true },
+      state: { type: String, trim: true },
+      postalCode: { type: String, trim: true },
+      country: { type: String, trim: true, default: 'India' },
+      phone: { type: String, trim: true },
+      gstNumber: { type: String, trim: true },
+      isDefault: { type: Boolean, default: false },
+    },
+  ],
   passwordReset: {
     tokenHash: { type:String, select:false },
     expiresAt: { type:Date },

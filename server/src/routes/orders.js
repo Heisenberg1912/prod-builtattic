@@ -38,6 +38,7 @@ const sanitizeCheckout = (input = {}) => {
   return {
     addressId: input.addressId || null,
     addressLabel: input.addressLabel || null,
+    address: input.address || null,
     gstInvoice: Boolean(input.gstInvoice),
     notes: input.notes || '',
     couponCode: input.couponCode || null,
@@ -113,6 +114,26 @@ async function ensureActor(req) {
   }
   req.user = user;
   return user;
+}
+
+async function resolveCheckoutAddress(actorId, checkout) {
+  if (!checkout?.addressId && !checkout?.address) return null;
+  if (checkout.address) return checkout.address;
+  const user = await User.findById(actorId).select('addresses').lean();
+  const match = user?.addresses?.find((entry) => String(entry._id) === String(checkout.addressId));
+  if (!match) return null;
+  return {
+    label: match.label,
+    name: match.name,
+    line1: match.line1,
+    line2: match.line2,
+    city: match.city,
+    state: match.state,
+    postalCode: match.postalCode,
+    country: match.country,
+    phone: match.phone,
+    gstNumber: match.gstNumber,
+  };
 }
 
 async function fetchProductMaps(items) {
@@ -258,6 +279,9 @@ async function createOrder(actor, items, options = {}) {
   }
   const grand = Number(Math.max(0, subtotal - discount + tax).toFixed(2));
 
+  const checkout = sanitizeCheckout(options.checkout);
+  checkout.address = await resolveCheckoutAddress(actor._id, checkout);
+
   const orderPayload = {
     user: actor._id,
     items: orderItems.map(({ resolvedProductId, ...rest }) => rest),
@@ -268,7 +292,7 @@ async function createOrder(actor, items, options = {}) {
       grand,
     },
     status: 'created',
-    checkout: sanitizeCheckout(options.checkout),
+    checkout,
     metadata: sanitizeMetadata(options.metadata),
   };
 

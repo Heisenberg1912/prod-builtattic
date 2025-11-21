@@ -20,7 +20,8 @@ import Footer from "../components/Footer";
 import RatingModal from "../components/RatingModal.jsx";
 import { createEmptyFilterState } from "../constants/designFilters.js";
 import { marketplaceFeatures } from "../data/marketplace.js";
-import { fetchStudios, fetchDesignStudioHosting } from "../services/marketplace.js";
+import { fetchStudios, fetchDesignStudioHosting, buildStudioSlug } from "../services/marketplace.js";
+import { fetchFirmDashboard } from "../services/dashboard.js";
 import { submitRating, fetchRatingSnapshot } from "../services/ratings.js";
 import { analyzeImage } from "../utils/imageSearch.js";
 import {
@@ -28,7 +29,6 @@ import {
   getStudioFallback,
   getStudioImageUrl,
 } from "../utils/imageFallbacks.js";
-import { DEFAULT_STUDIO_TILES } from "../utils/studioTiles.js";
 
 // ---- Inject Montserrat once (no other file changes required)
 const ensureMontserrat = () => {
@@ -117,8 +117,29 @@ const CATEGORY_IMAGE_MAP = {
 };
 
 const DEFAULT_CATEGORY_IMG = CATEGORY_IMAGE_MAP.All || null;
+const EMPTY_HOSTING_TILES = { summary: "", services: [], products: [] };
 const motionCreate = typeof motion.create === "function" ? motion.create : motion;
 const MotionArticle = motionCreate("article");
+
+const normalizeWorkspaceStudio = (studio = {}, firm = null) => {
+  const galleryArray = Array.isArray(studio.gallery) ? studio.gallery.filter(Boolean) : [];
+  const heroCandidate =
+    studio.heroImage ||
+    studio.hero_image ||
+    studio.image ||
+    galleryArray[0] ||
+    null;
+  const gallery = heroCandidate
+    ? [heroCandidate, ...galleryArray.filter((img) => img !== heroCandidate)]
+    : galleryArray;
+  return {
+    ...studio,
+    firm: studio.firm || firm || null,
+    slug: buildStudioSlug({ ...studio, firm: studio.firm || firm }),
+    heroImage: heroCandidate,
+    gallery,
+  };
+};
 
 const CATEGORY_DISPLAY_ORDER = [
   "All",
@@ -404,9 +425,8 @@ const Studio = () => {
   const [query, setQuery] = useState(() => location.state?.search || "");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [studios, setStudios] = useState([]);
-  const [web3Meta, setWeb3Meta] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [workspaceState, setWorkspaceState] = useState({ loading: true, error: null, items: [], meta: null, fallback: false, lastUpdated: null });
+  const [marketplaceState, setMarketplaceState] = useState({ loading: true, error: null, items: [], meta: null, web3: null, fallback: false });
 
   // Reverse image search
   const [imageKeywords, setImageKeywords] = useState([]);
@@ -420,17 +440,6 @@ const Studio = () => {
   const [serviceFocus, setServiceFocus] = useState('all');
   const [sortOrder, setSortOrder] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(true); // desktop sidebar
-  const [mobileSheetOpen, setMobileSheetOpen] = useState(false); // mobile drawer
-
-  // Drawer: lock body scroll when open
-  useEffect(() => {
-    if (mobileSheetOpen) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => (document.body.style.overflow = prev);
-    }
-  }, [mobileSheetOpen]);
-
   // collapsed sections
   const initialCollapsedSections = useMemo(() => {
     const obj = { Typology: true, price: true, sqft: true, floors: true, programs: true };
@@ -450,7 +459,11 @@ const Studio = () => {
   const [sqftSel, setSqftSel] = useState([0, 0]);
   const [floorsSel, setFloorsSel] = useState([0, 0]);
   const [programsSel, setProgramsSel] = useState([0, 0]);
-  const [hostingTiles, setHostingTiles] = useState(DEFAULT_STUDIO_TILES);
+  const [hostingTiles, setHostingTiles] = useState(EMPTY_HOSTING_TILES);
+  const [activeSource, setActiveSource] = useState("workspace");
+  const loading = activeSource === "workspace" ? workspaceState.loading : marketplaceState.loading;
+  const error = activeSource === "workspace" ? workspaceState.error : marketplaceState.error;
+  const web3Meta = activeSource === "workspace" ? null : marketplaceState.web3;
 
   // Client-side pagination (no backend change)
   const PAGE_SIZE = 9;
@@ -474,20 +487,31 @@ const Studio = () => {
   useEffect(() => {
     let cancelled = false;
     async function loadStudios() {
-      setLoading(true); setError(null);
+      setMarketplaceState((prev) => ({ ...prev, loading: true, error: null }));
       try {
         const params = {};
         if (selectedCategory !== "All") params.category = selectedCategory;
         if (debouncedQuery) params.search = debouncedQuery;
         const { items, meta } = await fetchStudios(params);
         if (!cancelled) {
-          setStudios(items);
-          setWeb3Meta(meta?.web3 || null);
+          setMarketplaceState({
+            loading: false,
+            error: null,
+            items,
+            meta,
+            web3: meta?.web3 || null,
+            fallback: false,
+          });
         }
       } catch (err) {
-        if (!cancelled) setError(err?.message || "Unable to load studios right now.");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setMarketplaceState((prev) => ({
+            ...prev,
+            loading: false,
+            error: err?.message || "Unable to load studios right now.",
+            fallback: false,
+          }));
+        }
       }
     }
     loadStudios();
@@ -496,22 +520,59 @@ const Studio = () => {
 
   useEffect(() => {
     let cancelled = false;
+    async function loadWorkspaceStudios() {
+      setWorkspaceState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        const response = await fetchFirmDashboard();
+        if (cancelled) return;
+        const firm = response?.firm || {};
+        const isFallback = Boolean(response?.fallback);
+        const items = Array.isArray(response?.studios)
+          ? response.studios.map((entry) => normalizeWorkspaceStudio(entry, firm))
+          : [];
+        const publishedCount = items.filter((item) => item.status === "published").length;
+        const draftCount = items.length - publishedCount;
+        setWorkspaceState({
+          loading: false,
+          error: null,
+          items,
+          meta: { total: items.length, publishedCount, draftCount },
+          fallback: isFallback,
+          lastUpdated: response?.metrics?.lastUpdated || response?.firm?.updatedAt || null,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        setWorkspaceState({
+          loading: false,
+          error: err?.message || "Unable to sync workspace",
+          items: [],
+          meta: { total: 0, publishedCount: 0, draftCount: 0 },
+          fallback: true,
+          lastUpdated: null,
+        });
+      }
+    }
+    loadWorkspaceStudios();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     async function loadHostingConfig() {
       try {
         const response = await fetchDesignStudioHosting();
         if (cancelled) return;
         const hosting = response?.hosting || {};
-        const services = Array.isArray(hosting.services) && hosting.services.length
-          ? hosting.services
-          : DEFAULT_STUDIO_TILES.services;
-        const products = Array.isArray(hosting.products) && hosting.products.length
-          ? hosting.products
-          : DEFAULT_STUDIO_TILES.products;
-        const summary = hosting.serviceSummary?.trim() || DEFAULT_STUDIO_TILES.summary;
-        setHostingTiles({ summary, services, products });
+        setHostingTiles({
+          summary: hosting.serviceSummary?.trim() || "",
+          services: Array.isArray(hosting.services) ? hosting.services : [],
+          products: Array.isArray(hosting.products) ? hosting.products : [],
+        });
       } catch (_error) {
         if (cancelled) return;
-        setHostingTiles(DEFAULT_STUDIO_TILES);
+        setHostingTiles(EMPTY_HOSTING_TILES);
       }
     }
 
@@ -520,6 +581,25 @@ const Studio = () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const sourceItems = activeSource === "workspace" ? workspaceState.items : marketplaceState.items;
+    setStudios(sourceItems);
+  }, [activeSource, marketplaceState.items, workspaceState.items]);
+
+  useEffect(() => {
+    if (!workspaceState.loading && workspaceState.items.length) {
+      setActiveSource("workspace");
+      return;
+    }
+    if (!marketplaceState.loading && marketplaceState.items.length) {
+      setActiveSource("marketplace");
+      return;
+    }
+    if (!workspaceState.loading && !workspaceState.items.length && !marketplaceState.loading) {
+      setActiveSource("marketplace");
+    }
+  }, [workspaceState.loading, workspaceState.items.length, marketplaceState.loading, marketplaceState.items.length]);
 
   // helpers
   const resolvePrice = (studio) => {
@@ -1337,7 +1417,7 @@ const Studio = () => {
               </section>
             )}
 
-            {!loading && web3Meta && (
+            {!loading && activeSource === "marketplace" && web3Meta && !marketplaceState.fallback && (
               <div className={`${listingsContainerClass} rounded-2xl border border-indigo-200 bg-indigo-900/95 px-6 py-5 text-indigo-100 shadow-sm`}>
                 <p className="text-[11px] uppercase tracking-[0.35em] text-indigo-300">
                   On-chain studio proofs
@@ -1540,6 +1620,19 @@ const Studio = () => {
                               {firmCountry && (
                                 <p className="text-xs text-slate-500">{firmCountry}</p>
                               )}
+                              {studio.status ? (
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                  <span
+                                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                      studio.status === "published"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                        : "border-amber-200 bg-amber-50 text-amber-800"
+                                    }`}
+                                  >
+                                    {studio.status === "published" ? "Published" : "Draft"}
+                                  </span>
+                                </div>
+                              ) : null}
                               {studio.firm?.tagline && (
                                 <p className="text-xs text-slate-500">{studio.firm.tagline}</p>
                               )}
@@ -1795,173 +1888,6 @@ const Studio = () => {
           </div>
         </div>
       </main>
-
-      {/* Mobile filter drawer + overlay */}
-      <div
-        className={`sheet-overlay ${mobileSheetOpen ? "open" : ""}`}
-        onClick={() => setMobileSheetOpen(false)}
-        aria-hidden={!mobileSheetOpen}
-      />
-      <div className={`sheet ${mobileSheetOpen ? "open" : ""}`} role="dialog" aria-modal="true" aria-label="Filters">
-        <div className="sheet-handle" />
-        <div className="px-4 pt-2 pb-3 border-b border-slate-200 flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">Filters</div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setFilters(createEmptyFilterState());
-                setSortOrder("");
-                setPriceSel(priceRange);
-                setSqftSel(sqftRange);
-                setFloorsSel(floorsRange);
-                setProgramsSel(programsRange);
-                setServiceFocus('all');
-              }}
-              className="text-xs text-slate-600"
-            >
-              Clear all
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileSheetOpen(false)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-
-        {/* Lightweight mobile list of controls */}
-        <div className="overflow-y-auto max-h-[65vh] px-4 py-3">
-          {/* Category chips (scrollable) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            {orderedCategoryOptions.map(({ value, label }) => {
-              const isActive = selectedCategory === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setSelectedCategory(value)}
-                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs border ${
-                    isActive ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-300"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Typology */}
-          <div className="py-3 border-b border-slate-100">
-            <button
-              type="button"
-              onClick={() => toggleSection("Typology")}
-              className="w-full text-left text-sm font-semibold text-slate-700 flex items-center gap-2"
-            >
-              <span className={`inline-block transition-transform ${collapsed["Typology"] ? "rotate-0" : "rotate-90"}`}>{"\u203A"}</span>
-              Typology {selectedCategory !== "All" && <span className="text-slate-400">(for {selectedCategory})</span>}
-            </button>
-            <div className={`${collapsed["Typology"] ? "hidden" : "mt-2 grid grid-cols-2 gap-2"}`}>
-              {(selectedCategory === "All"
-                ? Object.entries(TYPOLOGIES_BY_CATEGORY).flatMap(([category, entries]) =>
-                    entries.map((option) => ({ category, option }))
-                  )
-                : (TYPOLOGIES_BY_CATEGORY[selectedCategory] || []).map((option) => ({
-                    category: selectedCategory,
-                    option,
-                  }))
-              ).map(({ category, option }, index) => (
-                <label
-                  key={`${category}-${option}-${index}`}
-                  className="flex items-center gap-2 text-xs text-slate-700"
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-slate-800"
-                    checked={!!filters["Typology"]?.has(option)}
-                    onChange={() => handleFilterToggle("Typology", option)}
-                  />
-                  <span className="truncate">{option}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Sliders */}
-          <div className="py-3 border-b border-slate-100">
-            <DualRange id="price" label="Price" domain={priceRange} value={priceSel} onChange={setPriceSel} step={1} />
-          </div>
-          <div className="py-3 border-b border-slate-100">
-            <DualRange id="sqft" label="Area (sq ft)" domain={sqftRange} value={sqftSel} onChange={setSqftSel} step={10} />
-          </div>
-          <div className="py-3 border-b border-slate-100">
-            <DualRange id="floors" label="Number of Floors" domain={floorsRange} value={floorsSel} onChange={setFloorsSel} step={1} />
-          </div>
-          <div className="py-3 border-b border-slate-100">
-            <DualRange id="programs" label="Number of Programs" domain={programsRange} value={programsSel} onChange={setProgramsSel} step={1} />
-          </div>
-
-          {/* Checkbox sections */}
-          {AMAZON_FILTER_SECTIONS.filter((s) => s !== "Typology").map((section) => (
-            <div key={section} className="py-3 border-b border-slate-100">
-              <button
-                type="button"
-                onClick={() => toggleSection(section)}
-                className="w-full text-left text-sm font-semibold text-slate-700 flex items-center gap-2"
-              >
-                <span className={`inline-block transition-transform ${collapsed[section] ? "rotate-0" : "rotate-90"}`}>{"\u203A"}</span>
-                {section}
-              </button>
-              <div className={`${collapsed[section] ? "hidden" : "mt-2 grid grid-cols-2 gap-2"}`}>
-                {(AMAZON_OPTIONS[section] || []).map((opt) => (
-                  <label key={opt} className="flex items-center gap-2 text-xs text-slate-700">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-slate-800"
-                      checked={!!filters[section]?.has(opt)}
-                      onChange={() => handleFilterToggle(section, opt)}
-                    />
-                    <span className="truncate">{opt}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {/* Reverse image on mobile */}
-          <div className="py-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-700">Reverse image search</div>
-              <button
-                type="button"
-                onClick={() => imageInputRef.current?.click()}
-                disabled={imageSearching}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
-              >
-                {imageSearching ? "Scanning..." : "Upload"}
-              </button>
-              <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
-            </div>
-            {imagePreview && (
-              <div className="mt-2 flex items-center gap-3">
-                <img src={imagePreview} alt="Reverse search preview" className="w-14 h-14 rounded-md border border-slate-200 object-cover" />
-                <div className="text-xs text-slate-600 flex-1">{imageStatus}</div>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-3 safe-bottom">
-          <button
-            type="button"
-            onClick={() => setMobileSheetOpen(false)}
-            className="rounded-xl border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-medium text-white"
-          >
-            Apply filters
-          </button>
-        </div>
-      </div>
 
       <Footer />
     </div>

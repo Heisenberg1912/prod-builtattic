@@ -97,6 +97,51 @@ const registrationLayouts = {
       ]),
     },
   ],
+  vendor: [
+    {
+      key: "essentials",
+      title: "Vendor essentials",
+      description: "We only need contact + login details to create your workspace.",
+      fields: withPasswords([
+        { key: "companyName", label: "Company name", type: "text" },
+        { key: "contactPerson", label: "Contact person", type: "text" },
+        { key: "officialEmail", label: "Work email", type: "email" },
+        { key: "phone", label: "Phone (E.164)", type: "tel", placeholder: "+91 98765 43210" },
+        { key: "country", label: "Country", type: "text" },
+        { key: "city", label: "City", type: "text" },
+      ]),
+    },
+    {
+      key: "profile",
+      title: "Business details",
+      description: "Optional right now. Finish these from your dashboard once you land.",
+      optional: true,
+      fields: makeOptional([
+        { key: "registrationId", label: "Business Registration ID / GSTIN", type: "text" },
+        {
+          key: "verificationDocument",
+          label: "Verification document",
+          type: "file",
+          accept: documentUploadAccept,
+        },
+        {
+          key: "materialCategories",
+          label: "Material categories supplied",
+          type: "textarea",
+          placeholder: "Lighting, Flooring, Furniture",
+        },
+        { key: "yearsActive", label: "Years active", type: "number", placeholder: "10" },
+        { key: "websiteUrl", label: "Company Website", type: "url", optional: true },
+        {
+          key: "catalogUpload",
+          label: "Product catalog",
+          type: "file",
+          optional: true,
+          accept: documentUploadAccept,
+        },
+      ]),
+    },
+  ],
   associate: [
     {
       key: "essentials",
@@ -228,6 +273,7 @@ const registrationLayouts = {
 const roleOptions = [
   { value: "firm", label: "Studio / firm" },
   { value: "associate", label: "Associate" },
+  { value: "vendor", label: "Vendor" },
   { value: "user", label: "Client / end user" },
 ];
 
@@ -243,6 +289,12 @@ const roleShortcuts = [
     label: "Associates",
     detail: "Plug into projects as a specialist or fractional teammate.",
     stat: "Best for freelancers",
+  },
+  {
+    value: "vendor",
+    label: "Vendors",
+    detail: "List materials, manage inventory, and receive direct purchase orders.",
+    stat: "For suppliers",
   },
   {
     value: "user",
@@ -277,6 +329,11 @@ const roleCopy = {
     badge: "Associates",
     heading: "Create your specialist profile",
     description: "Lock in access with basic details; complete your skill matrix once inside.",
+  },
+  vendor: {
+    badge: "Vendors",
+    heading: "Become a marketplace supplier",
+    description: "Register your business and upload your material catalog after onboarding.",
   },
   user: {
     badge: "Clients",

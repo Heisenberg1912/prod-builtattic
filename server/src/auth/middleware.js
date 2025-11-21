@@ -23,6 +23,7 @@ export async function attachUser(req, _res, next) {
       req.user = payload;
     }
   } catch {}
+
   next();
 }
 

@@ -63,6 +63,7 @@ export default function MeetingScheduler({
   eyebrow = "Scheduling",
   description = "Plan onboarding calls, walkthroughs, and review sessions linked to your packs.",
   emptyMessage = "No meetings scheduled yet. Log touchpoints so ops knows your availability.",
+  onChange = () => {},
 }) {
   const [meetings, setMeetings] = useState(() => (Array.isArray(initialMeetings) ? initialMeetings : []));
   const [form, setForm] = useState(defaultMeetingForm);
@@ -127,6 +128,7 @@ export default function MeetingScheduler({
         return [saved, ...filtered];
       });
       toast.success(form.id ? "Meeting updated" : "Meeting scheduled");
+      onChange();
       resetForm();
     } catch (error) {
       toast.error(error?.message || "Unable to save meeting");
@@ -160,6 +162,7 @@ export default function MeetingScheduler({
       const { meeting: updated } = await updateMeeting(meeting.id, { ownerType, status });
       setMeetings((prev) => prev.map((entry) => (entry.id === updated.id ? updated : entry)));
       toast.success(`Marked as ${status}`);
+      onChange();
     } catch (error) {
       toast.error(error?.message || "Unable to update meeting");
     } finally {
@@ -177,6 +180,7 @@ export default function MeetingScheduler({
       if (form.id === meeting.id) {
         resetForm();
       }
+      onChange();
     } catch (error) {
       toast.error(error?.message || "Unable to delete meeting");
     } finally {

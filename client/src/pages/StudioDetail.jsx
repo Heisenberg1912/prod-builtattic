@@ -705,12 +705,28 @@ const StudioDetail = () => {
       return studio.updatedAt;
     }
   }, [studio?.updatedAt]);
+  const firmName = studio?.firm?.name || studio?.studio || "Studio";
   const contactEmail =
     studio?.firm?.contact?.email ||
     studio?.contactEmail ||
     studio?.inquiriesEmail ||
     studio?.pointOfContact?.email ||
     null;
+  const bookingLink = useMemo(() => {
+    const directMeeting =
+      (Array.isArray(studio?.meetings) && studio.meetings[0]?.meetingLink) ||
+      (Array.isArray(studio?.firm?.meetings) && studio.firm.meetings[0]?.meetingLink) ||
+      null;
+    if (directMeeting) return directMeeting;
+    if (contactEmail) {
+      const subject = encodeURIComponent(`Book a Design Studio intro for ${studio?.title || "my project"}`);
+      const body = encodeURIComponent(
+        `Hi ${firmName || "team"},\n\nI'd like to schedule a walkthrough of ${studio?.title || "your studio"} and discuss scope/fit.\n\nThanks!`
+      );
+      return `mailto:${contactEmail}?subject=${subject}&body=${body}`;
+    }
+    return null;
+  }, [contactEmail, firmName, studio?.title, studio?.meetings, studio?.firm?.meetings]);
 
 
   const handleRequestFieldChange = (field) => (event) => {
@@ -780,7 +796,7 @@ const StudioDetail = () => {
     const troubleshooting = [
       {
         title: "The link is stale",
-        detail: "Studios evolve quickly. A partner may have archived or renamed this slug.",
+        detail: "Studios evolve quickly. A partner may have archived or renamed this listing.",
       },
       {
         title: "Private catalog item",
@@ -788,7 +804,7 @@ const StudioDetail = () => {
       },
       {
         title: "Typo in the URL",
-        detail: "Double-check the slug or jump into the marketplace search to pick a live listing.",
+        detail: "Double-check the URL or jump into the marketplace search to pick a live listing.",
       },
     ];
     const supportEmail = "studios@builtattic.com";
@@ -869,7 +885,7 @@ const StudioDetail = () => {
                     ))}
                   </ul>
                   <div className="rounded-2xl bg-white/10 px-4 py-3 text-xs text-white/80">
-                    Need personalised help? Share the slug or screenshot with <a href={`mailto:${supportEmail}`} className="font-semibold text-white">{supportEmail}</a> and we'll surface the closest catalogue-ready pairings.
+                  Need personalised help? Share a screenshot with <a href={`mailto:${supportEmail}`} className="font-semibold text-white">{supportEmail}</a> and we'll surface the closest catalogue-ready pairings.
                   </div>
                 </div>
               </div>
@@ -976,7 +992,6 @@ const StudioDetail = () => {
     );
   }
 
-  const firmName = studio?.firm?.name || studio?.studio || "Studio";
   const firmCountry =
     studio?.firm?.location?.country || studio?.location?.country || "";
   const createdStamp = (() => {
@@ -1051,9 +1066,6 @@ const StudioDetail = () => {
                   Studio ID:{" "}
                   <span className="font-semibold text-slate-800">{studio?._id || studio?.id || "?"}</span>
                 </p>
-                {studio?.slug ? (
-                  <p>Slug: <span className="font-semibold text-slate-800">/studio/{studio.slug}</span></p>
-                ) : null}
                 {ownerUpdatedStamp ? <p>Updated {ownerUpdatedStamp}</p> : null}
               </div>
             </div>
@@ -1211,12 +1223,22 @@ const StudioDetail = () => {
               </div>
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {bookingLink ? (
+                  <a
+                    href={bookingLink}
+                    target={bookingLink.startsWith("mailto:") ? "_self" : "_blank"}
+                    rel="noreferrer"
+                    className="inline-flex flex-1 items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+                  >
+                    Schedule intro
+                  </a>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleBuyNow}
                   className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:flex-1"
                 >
-                  Buy now
+                  Start purchase
                 </button>
                 <button
                   type="button"
@@ -1224,13 +1246,6 @@ const StudioDetail = () => {
                   className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 sm:flex-1"
                 >
                   Add to cart
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddStudioToWishlist}
-                  className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-300 sm:flex-1"
-                >
-                  Add to wishlist
                 </button>
               </div>
 

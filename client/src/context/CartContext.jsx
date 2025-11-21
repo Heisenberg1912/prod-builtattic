@@ -319,7 +319,18 @@ export const CartProvider = ({ children }) => {
   }, []);
 
   return (
-    <CartContext.Provider value={{ cartItems, addToCart, updateQuantity, removeFromCart, fetchCart, apiAvailable }}>
+    <CartContext.Provider
+      value={{
+        cartItems,
+        // keep a legacy alias so older components using `items` still work
+        items: cartItems,
+        addToCart,
+        updateQuantity,
+        removeFromCart,
+        fetchCart,
+        apiAvailable,
+      }}
+    >
       {children}
     </CartContext.Provider>
   );

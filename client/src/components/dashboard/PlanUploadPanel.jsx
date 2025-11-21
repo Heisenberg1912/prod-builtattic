@@ -115,8 +115,8 @@ export default function PlanUploadPanel({
   role = "associate",
   workspaceName = "Skill Studio",
   initialPlans = [],
-  onPlanChange,
-}) {
+  onPlanChange = () => {},
+}) {
   const ownerType = role === "firm" ? "firm" : "associate";
   const [planUploads, setPlanUploads] = useState(initialPlans || []);
   const [form, setForm] = useState(() => defaultPlanForm());

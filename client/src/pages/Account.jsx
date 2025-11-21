@@ -274,11 +274,46 @@ const Account = () => {
       subLabel: cartCount ? "Ready for checkout" : "No items in cart",
     },
   ];
-
+  const quickShortcuts = useMemo(
+    () => [
+      {
+        label: cartCount ? "Checkout now" : "Start shopping",
+        helper: cartCount ? `${cartCount} item${cartCount === 1 ? "" : "s"} to review` : "Browse materials and studios",
+        to: cartCount ? "/cart" : "/products",
+        icon: ShoppingBag,
+        badge: cartCount || null,
+      },
+      {
+        label: "Account settings",
+        helper: "Security, privacy, notifications",
+        to: "/settings",
+        icon: Settings2,
+      },
+      {
+        label: "Wishlist",
+        helper: wishlistCount ? `${wishlistCount} saved ideas` : "Save your favorites",
+        to: "/wishlist",
+        icon: Heart,
+        badge: wishlistCount || null,
+      },
+      {
+        label: "Help desk",
+        helper: "FAQs and concierge support",
+        to: "/faqs",
+        icon: Headphones,
+      },
+    ],
+    [cartCount, wishlistCount],
+  );
   const fullName = profile?.name || "Guest";
   const email = profile?.email || "guest@builtattic.com";
   const membership = profile?.membership || "Prime Access";
   const initials = initialsFrom(fullName || email);
+  const healthPills = [
+    { label: membership, helper: "Membership status" },
+    { label: orders.length ? `${orders.length} order${orders.length === 1 ? "" : "s"}` : "No orders yet", helper: "Tracked across builds" },
+    { label: wishlistCount ? `${wishlistCount} saved` : "Wishlist empty", helper: "Ideas to revisit" },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-100 py-10 px-4">
@@ -303,6 +338,18 @@ const Account = () => {
               <p className="text-xs text-slate-500">Enjoy priority support.</p>
             </div>
           </div>
+          <div className="flex flex-wrap gap-2 border-b border-slate-200 px-8 py-4">
+            {healthPills.map((pill) => (
+              <span
+                key={pill.label}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span>{pill.label}</span>
+                <span className="text-[11px] font-medium text-slate-500">{pill.helper}</span>
+              </span>
+            ))}
+          </div>
           <div className="grid gap-4 px-8 py-6 sm:grid-cols-2 lg:grid-cols-4">
             {stats.map((stat) => {
               const Icon = stat.icon;
@@ -319,6 +366,45 @@ const Account = () => {
                   </p>
                   <p className="text-xs text-slate-500">{stat.subLabel}</p>
                 </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white shadow-lg px-8 py-6 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Action shelf</h2>
+              <p className="text-sm text-slate-500">One-tap shortcuts for the most common account tasks.</p>
+            </div>
+            {ordersError && <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">Orders temporarily unavailable</span>}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {quickShortcuts.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.label}
+                  to={item.to}
+                  className="flex h-full flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 shadow-sm transition hover:-translate-y-[1px] hover:shadow-md"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700">
+                      <Icon size={18} />
+                    </span>
+                    {item.badge ? (
+                      <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white">
+                        {item.badge}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Open</span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                    <p className="text-xs text-slate-600 leading-relaxed">{item.helper}</p>
+                  </div>
+                </Link>
               );
             })}
           </div>
@@ -368,7 +454,7 @@ const Account = () => {
                   <p className="text-sm text-slate-600">Status: {order.status}</p>
                   <p className="mt-3 text-lg font-semibold text-slate-900">{order.amount}</p>
                   <Link to="/orders" className="mt-4 inline-flex items-center text-xs font-semibold text-slate-600 hover:text-slate-900">
-                    Track order →
+                    Track order >
                   </Link>
                 </div>
               ))

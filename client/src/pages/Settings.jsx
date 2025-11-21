@@ -28,6 +28,7 @@ import {
   Globe,
   CheckCircle2,
   AlertTriangle,
+  RefreshCcw,
 } from "lucide-react";
 
 const SETTINGS_DEFAULTS = {
@@ -847,6 +848,14 @@ const Settings = () => {
   const showAuthNotice = !isAuthenticated || authError;
 
   const otherSessions = sessions.filter((session) => !session.current);
+  const emailDisplay = settings?.profile?.email || userProfile?.email || 'Not provided';
+  const autoSaveMessageMap = {
+    queued: 'Auto-save queued',
+    saving: 'Saving changes...',
+    saved: 'All changes synced',
+    error: 'Auto-save unavailable',
+  };
+  const autoSaveMessage = autoSaveMessageMap[autoSaveStatus] || 'Auto-save idle';
 
   const handleSectionNav = useCallback((sectionId) => {
     if (typeof document === 'undefined') return;
@@ -855,47 +864,85 @@ const Settings = () => {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, []);
-  const pipelineStages = useMemo(
+  const insightCards = useMemo(
     () => [
       {
         id: 'profile',
-        label: 'Profile completeness',
-        helper: `${profileCompletion}% filled`,
-        status: profileCompletion >= 80 ? 'done' : profileCompletion >= 40 ? 'progress' : 'todo',
+        title: 'Profile quality',
+        value: `${profileCompletion}%`,
+        helper: emailDisplay,
+        tone: profileCompletion >= 80 ? 'good' : profileCompletion >= 40 ? 'warn' : 'neutral',
+        target: 'profile',
       },
       {
         id: 'security',
-        label: 'Two-step verification',
-        helper: settings?.security?.twoStep ? 'Protected' : 'Enable 2-step for more safety',
-        status: settings?.security?.twoStep ? 'done' : 'todo',
+        title: 'Security posture',
+        value: settings?.security?.twoStep ? '2-step on' : '2-step off',
+        helper: isAuthenticated ? 'Protect your sign-ins' : 'Sign in to secure',
+        tone: settings?.security?.twoStep ? 'good' : 'warn',
+        target: 'security',
       },
       {
-        id: 'notifications',
-        label: 'Digest cadence',
-        helper: `Digest: ${settings?.notifications?.digestFrequency || 'set a cadence'}`,
-        status: settings?.notifications?.digestFrequency ? 'progress' : 'todo',
+        id: 'sync',
+        title: 'Sync & backup',
+        value: autoSaveMessage,
+        helper: settings?.hasChanges ? 'Unsaved edits present' : 'Everything is synced',
+        tone: settings?.hasChanges ? 'warn' : 'good',
+        target: 'notifications',
+      },
+    ],
+    [autoSaveMessage, emailDisplay, isAuthenticated, profileCompletion, settings?.hasChanges, settings?.profile?.email, settings?.security?.twoStep],
+  );
+  const quickActionChips = useMemo(
+    () => [
+      {
+        id: 'save',
+        label: 'Save changes',
+        helper: settings?.hasChanges ? 'Apply updates now' : 'Everything is synced',
+        icon: Settings2,
+        onClick: () => handleSave(),
+        disabled: saving || !settings?.hasChanges || !isAuthenticated,
+        tone: 'primary',
       },
       {
-        id: 'sessions',
-        label: 'Device hygiene',
-        helper: `${sessions.length} active device${sessions.length === 1 ? '' : 's'}`,
-        status: otherSessions.length ? 'progress' : 'done',
+        id: 'sync',
+        label: 'Sync profile',
+        helper: 'Pull latest account data',
+        icon: RefreshCcw,
+        onClick: handleProfileSync,
+        disabled: saving,
+      },
+      {
+        id: 'download',
+        label: 'Download archive',
+        helper: 'Export your preferences',
+        icon: Database,
+        onClick: handleDownloadArchive,
       },
       {
         id: 'privacy',
-        label: 'Privacy controls',
-        helper: settings?.privacy?.searchVisibility ? 'Search visibility on' : 'Hidden from search',
-        status: settings?.privacy?.searchVisibility ? 'done' : 'progress',
+        label: 'Privacy review',
+        helper: 'Jump to privacy controls',
+        icon: Shield,
+        onClick: () => handleSectionNav('privacy'),
       },
+      isAuthenticated
+        ? {
+            id: 'signout',
+            label: 'Sign out',
+            helper: 'End this session',
+            icon: LogOut,
+            onClick: handleSignOut,
+          }
+        : {
+            id: 'signin',
+            label: 'Sign in',
+            helper: 'Sync changes across devices',
+            icon: LogIn,
+            onClick: handleSignIn,
+          },
     ],
-    [
-      profileCompletion,
-      settings?.security?.twoStep,
-      settings?.notifications?.digestFrequency,
-      settings?.privacy?.searchVisibility,
-      sessions.length,
-      otherSessions.length,
-    ]
+    [handleProfileSync, handleSectionNav, handleSignIn, handleSignOut, handleSave, isAuthenticated, saving, settings?.hasChanges],
   );
 
   if (loading) {
@@ -925,22 +972,15 @@ const Settings = () => {
     );
   }
 
-  const displayEmail = settings?.profile?.email || userProfile?.email || 'Not provided';
+  const displayEmail = emailDisplay;
   const sessionStatus = isAuthenticated ? 'Active session' : 'Signed out';
   const sessionBadgeClass = isAuthenticated
     ? 'inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700'
     : 'inline-flex items-center gap-2 rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-600';
-  const autoSaveMessageMap = {
-    queued: 'Auto-save queued',
-    saving: 'Saving changes…',
-    saved: 'All changes synced',
-    error: 'Auto-save unavailable',
-  };
-  const autoSaveMessage = autoSaveMessageMap[autoSaveStatus] || 'Auto-save idle';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900">
-      <div className="mx-auto max-w-6xl px-4 py-10 md:px-8 space-y-8">
+      <div className="mx-auto max-w-7xl px-4 py-10 md:px-10 lg:px-12 space-y-8">
         <section className="rounded-3xl bg-white/90 p-6 shadow-xl ring-1 ring-slate-100 space-y-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1007,6 +1047,78 @@ const Settings = () => {
               </p>
             </div>
           </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {quickActionChips.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  className={`group flex h-full flex-col gap-2 rounded-2xl border px-4 py-3 text-left shadow-sm transition ${
+                    action.tone === 'primary'
+                      ? 'border-slate-900/80 bg-slate-900 text-white hover:bg-slate-800'
+                      : 'border-slate-100 bg-slate-50/70 hover:border-slate-200'
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span
+                      className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                        action.tone === 'primary' ? 'bg-white/10 text-white' : 'bg-slate-900 text-white'
+                      }`}
+                    >
+                      <Icon size={18} />
+                    </span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 group-disabled:opacity-70">
+                      {action.disabled ? 'Waiting' : 'Ready'}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <p
+                      className={`text-sm font-semibold ${
+                        action.tone === 'primary' ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      {action.label}
+                    </p>
+                    <p
+                      className={`text-xs leading-relaxed ${
+                        action.tone === 'primary' ? 'text-white/80' : 'text-slate-600'
+                      }`}
+                    >
+                      {action.helper}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {insightCards.map((card) => {
+              const tone =
+                card.tone === 'good'
+                  ? { badge: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' }
+                  : card.tone === 'warn'
+                  ? { badge: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' }
+                  : { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-300' };
+              return (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => handleSectionNav(card.target)}
+                  className="flex flex-col items-start gap-2 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-left shadow-sm transition hover:-translate-y-[1px] hover:shadow-md"
+                >
+                  <span className={`h-2.5 w-2.5 rounded-full ${tone.dot}`} />
+                  <div className="flex w-full items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-900">{card.title}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.badge}`}>{card.value}</span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">{card.helper}</p>
+                </button>
+              );
+            })}
+          </div>
         </section>
         <div className="flex flex-col gap-8 lg:flex-row">
         <aside className="lg:w-72 lg:flex-none">
@@ -1014,7 +1126,7 @@ const Settings = () => {
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Control center</p>
               <p className="mt-1 text-sm text-slate-500">
-                Jump between sections or finish the pipeline to keep your account healthy.
+                Jump between sections or use the shortcuts to keep your account healthy.
               </p>
             </div>
             <nav className="space-y-1">
@@ -1029,49 +1141,6 @@ const Settings = () => {
                 </button>
               ))}
             </nav>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">Account pipeline</p>
-              <ul className="mt-3 space-y-2">
-                {pipelineStages.map((stage) => (
-                  <li key={stage.id}>
-                    <button
-                      type="button"
-                      onClick={() => handleSectionNav(stage.id)}
-                      className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 px-3 py-2 text-left text-sm text-slate-700 transition hover:border-slate-300"
-                    >
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          stage.status === 'done'
-                            ? 'bg-emerald-500'
-                            : stage.status === 'progress'
-                            ? 'bg-amber-500'
-                            : 'bg-slate-300'
-                        }`}
-                      />
-                      <span className="flex-1">
-                        <span className="block font-semibold text-slate-900">{stage.label}</span>
-                        <span className="text-xs text-slate-500">{stage.helper}</span>
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          stage.status === 'done'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : stage.status === 'progress'
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {stage.status === 'done'
-                          ? 'Done'
-                          : stage.status === 'progress'
-                          ? 'In progress'
-                          : 'To do'}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
             <div className="space-y-2">
               <button
                 type="button"
@@ -1080,7 +1149,7 @@ const Settings = () => {
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Settings2 size={16} />
-                {saving ? 'Saving…' : 'Save changes'}
+                {saving ? 'Saving...' : 'Save changes'}
               </button>
               {autoSaveStatus !== 'idle' && (
                 <p className="text-center text-[11px] font-medium text-slate-500">{autoSaveMessage}</p>
@@ -1088,6 +1157,24 @@ const Settings = () => {
               {!isAuthenticated && (
                 <p className="text-center text-[11px] font-medium text-amber-600">Sign in to sync updates</p>
               )}
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-2">
+              <p className="text-sm font-semibold text-slate-900">Need help?</p>
+              <p className="text-xs text-slate-600">Review FAQs or drop a note to the concierge team.</p>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  to="/faqs"
+                  className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  View FAQs
+                </Link>
+                <a
+                  href="mailto:support@builtattic.com"
+                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
+                >
+                  Email support
+                </a>
+              </div>
             </div>
           </div>
         </aside>
