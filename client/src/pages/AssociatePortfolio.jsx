@@ -3,6 +3,8 @@ import { useLocation, useParams } from "react-router-dom";
 import Footer from "../components/Footer.jsx";
 import PortfolioMediaPlayer from "../components/associate/PortfolioMediaPlayer.jsx";
 import { fetchMarketplaceAssociateProfile } from "../services/marketplace.js";
+import { fetchAssociateDashboard } from "../services/dashboard.js";
+import { fetchAssociatePortalProfile } from "../services/portal.js";
 
 const formatCurrency = (value, currency) => {
   if (!Number.isFinite(Number(value))) return null;
@@ -66,10 +68,12 @@ const AssociatePortfolio = () => {
   const routerLocation = useLocation();
   const { id } = useParams();
   const state = routerLocation.state;
-  const initialAssociate = useMemo(() => state?.associate ?? state ?? null, [state]);
+  const initialAssociate = useMemo(() => state?.associate ?? state?.profile ?? state ?? null, [state]);
+  const initialDashboard = useMemo(() => state?.dashboard ?? null, [state]);
   const [associate, setAssociate] = useState(initialAssociate);
+  const [dashboardData, setDashboardData] = useState(initialDashboard);
   const [status, setStatus] = useState(() => ({
-    loading: Boolean(id && !initialAssociate),
+    loading: !initialAssociate,
     error: null,
   }));
 
@@ -110,6 +114,59 @@ const AssociatePortfolio = () => {
       cancelled = true;
     };
   }, [id, initialAssociate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (id || associate) return undefined;
+    setStatus((prev) => ({ ...prev, loading: true, error: null }));
+    (async () => {
+      try {
+        const response = await fetchAssociatePortalProfile({ preferDraft: true });
+        if (cancelled) return;
+        if (response?.profile) {
+          setAssociate(response.profile);
+          setStatus({ loading: false, error: null });
+        } else {
+          setStatus({ loading: false, error: response?.error?.message || response?.error || null });
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setStatus({
+          loading: false,
+          error: error?.message || "Unable to load profile",
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, associate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (dashboardData || id) return undefined;
+    (async () => {
+      try {
+        const payload = await fetchAssociateDashboard();
+        if (cancelled) return;
+        setDashboardData(payload);
+        if (!associate && payload?.profile) {
+          setAssociate(payload.profile);
+          setStatus({ loading: false, error: null });
+        } else if (!associate) {
+          setStatus((prev) => (prev.loading ? { loading: false, error: prev.error } : prev));
+        }
+      } catch (error) {
+        if (cancelled) return;
+        if (!associate) {
+          setStatus((prev) => (prev.loading ? { loading: false, error: error?.message || prev.error } : prev));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardData, id, associate]);
 
   const { loading, error } = status;
 
@@ -311,6 +368,17 @@ const AssociatePortfolio = () => {
   ].filter(Boolean);
   const projectSpotlights = Array.isArray(keyProjects) ? keyProjects.slice(0, 3) : [];
   const resourceLinks = Array.isArray(portfolioLinks) ? portfolioLinks.filter(Boolean) : [];
+  const dashboardPlans = Array.isArray(dashboardData?.planUploads) ? dashboardData.planUploads.slice(0, 3) : [];
+  const dashboardPacks = Array.isArray(dashboardData?.servicePacks) ? dashboardData.servicePacks.slice(0, 3) : [];
+  const dashboardMeetings = Array.isArray(dashboardData?.meetings) ? dashboardData.meetings.slice(0, 3) : [];
+  const dashboardDownloads = Array.isArray(dashboardData?.downloads) ? dashboardData.downloads.slice(0, 3) : [];
+  const dashboardChats = Array.isArray(dashboardData?.chats) ? dashboardData.chats.slice(0, 3) : [];
+  const hasWorkspaceExtras =
+    dashboardPlans.length ||
+    dashboardPacks.length ||
+    dashboardMeetings.length ||
+    dashboardDownloads.length ||
+    dashboardChats.length;
 
   return (
     <div className="bg-gradient-to-b from-white via-slate-50 to-white min-h-screen flex flex-col text-slate-900">
@@ -755,6 +823,86 @@ const AssociatePortfolio = () => {
                       </div>
                     </div>
                   )}
+                </section>
+              )}
+
+              {hasWorkspaceExtras && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-slate-900">Workspace highlights</h3>
+                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Dashboard</span>
+                  </div>
+                  {dashboardPlans.length ? (
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Plan uploads</p>
+                      <ul className="space-y-2">
+                        {dashboardPlans.map((plan) => (
+                          <li key={plan.id || plan.projectTitle} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold text-slate-900">{plan.projectTitle || "Concept"}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {plan.category || "Concept"}{plan.primaryStyle ? ` · ${plan.primaryStyle}` : ""}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {dashboardPacks.length ? (
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Service packs</p>
+                      <ul className="space-y-2">
+                        {dashboardPacks.map((pack) => (
+                          <li key={pack.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold text-slate-900">{pack.title || "Service pack"}</p>
+                            <p className="text-[11px] text-slate-500">{(pack.status || "draft").toUpperCase()}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {dashboardMeetings.length ? (
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Meetings</p>
+                      <ul className="space-y-2">
+                        {dashboardMeetings.map((meeting) => (
+                          <li key={meeting.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold text-slate-900">{meeting.title || "Buyer sync"}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {meeting.scheduledFor
+                                ? new Date(meeting.scheduledFor).toLocaleString()
+                                : meeting.status || "Draft"}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {dashboardDownloads.length ? (
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Downloads</p>
+                      <ul className="space-y-2">
+                        {dashboardDownloads.map((entry) => (
+                          <li key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold text-slate-900">{entry.label || "Deliverable"}</p>
+                            <p className="text-[11px] text-slate-500">{entry.tag || entry.accessLevel || "WD-W3"}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {dashboardChats.length ? (
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Client chat</p>
+                      <ul className="space-y-2">
+                        {dashboardChats.map((thread) => (
+                          <li key={thread.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="font-semibold text-slate-900">{thread.subject || "Workspace thread"}</p>
+                            <p className="text-[11px] text-slate-500">{thread.status || "open"}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </section>
               )}
 

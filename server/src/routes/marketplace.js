@@ -9,12 +9,6 @@ import DummyCatalogEntry from '../models/DummyCatalogEntry.js';
 import { attachWeb3Proof, createWeb3Proof, summariseProofs } from '../services/web3ProofService.js';
 import { mapCatalogEntry } from '../utils/dummyCatalog.js';
 import logger from '../utils/logger.js';
-import {
-  getFallbackMaterials,
-  findFallbackMaterial,
-  getFallbackAssociates,
-  findFallbackAssociate,
-} from '../utils/marketplaceFallback.js';
 
 const router = Router();
 
@@ -374,9 +368,8 @@ router.get('/materials', marketplaceCache(), async (req, res) => {
     const response = await fetchCatalog('material', req.query, { includeFirm: true, defaultLimit: 24 });
     res.json({ ok: true, ...response });
   } catch (error) {
-    logger.warn('marketplace_materials_fallback', { error: error.message });
-    const fallback = getFallbackMaterials(req.query);
-    res.json({ ok: true, ...fallback });
+    logger.error('marketplace_materials_error', { error: error.message });
+    res.status(500).json({ ok: false, error: 'Unable to load materials', items: [], meta: { total: 0 } });
   }
 });
 
@@ -397,12 +390,8 @@ router.get('/materials/:slug', async (req, res) => {
     attachWeb3Proof(item, 'material');
     res.json({ ok: true, item });
   } catch (error) {
-    logger.warn('marketplace_material_detail_fallback', { error: error.message, slug: req.params.slug });
-    const fallback = findFallbackMaterial(req.params.slug);
-    if (fallback) {
-      return res.json({ ok: true, item: fallback });
-    }
-    res.status(500).json({ ok: false, error: error.message });
+    logger.error('marketplace_material_detail_error', { error: error.message, slug: req.params.slug });
+    res.status(500).json({ ok: false, error: 'Unable to load material detail' });
   }
 });
 
@@ -459,9 +448,8 @@ router.get('/associates', marketplaceCache(), async (req, res) => {
 
     res.json({ ok: true, items: decoratedAssociates, meta: { total: decoratedAssociates.length, web3: web3Summary } });
   } catch (error) {
-    logger.warn('marketplace_associates_fallback', { error: error.message });
-    const fallback = getFallbackAssociates(req.query);
-    res.json({ ok: true, ...fallback });
+    logger.error('marketplace_associates_error', { error: error.message });
+    res.status(500).json({ ok: false, error: 'Unable to load associates', items: [], meta: { total: 0, web3: summariseProofs() } });
   }
 });
 
@@ -503,12 +491,8 @@ router.get('/associates/:id', async (req, res) => {
     const decorated = attachWeb3Proof(associate, 'associate');
     res.json({ ok: true, item: decorated });
   } catch (error) {
-    logger.warn('marketplace_associate_detail_fallback', { error: error.message, id: req.params.id });
-    const fallback = findFallbackAssociate(req.params.id);
-    if (fallback) {
-      return res.json({ ok: true, item: fallback });
-    }
-    res.status(500).json({ ok: false, error: error.message });
+    logger.error('marketplace_associate_detail_error', { error: error.message, id: req.params.id });
+    res.status(500).json({ ok: false, error: 'Unable to load associate detail' });
   }
 });
 

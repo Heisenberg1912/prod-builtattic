@@ -441,7 +441,10 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
                   <span className="text-sm font-medium text-slate-700">Short bio</span>
                   <TextArea value={form.summary} onChange={handleInput("summary")} rows={4} placeholder="Led FF&E and procurement for boutique hospitality across APAC." />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div
+                  className="grid gap-4 md:grid-cols-2"
+                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
+                >
                   <div className="flex flex-col gap-2">
                     <span className="text-sm font-medium text-slate-700">Location</span>
                     <Input value={form.location} onChange={handleInput("location")} placeholder="Bengaluru, India" />
@@ -477,11 +480,12 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
                         event.currentTarget.src = HERO_PLACEHOLDER;
                       }}
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <Input
                         value={form.heroImage}
                         onChange={handleHeroInputChange}
                         placeholder="Paste a hosted image URL"
+                        className="w-full min-w-0"
                       />
                       <button
                         type="button"
@@ -521,8 +525,9 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
                           value={form.profileImage}
                           onChange={handleProfileInputChange}
                           placeholder="Paste a hosted avatar link"
+                          className="w-full min-w-0"
                         />
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                           <button
                             type="button"
                             onClick={() => profileFileInputRef.current?.click()}
@@ -759,7 +764,7 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
                       placeholder="https://example.com/working-drawings-sample.pdf"
                       className="flex-1"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <button
                         type="button"
                         onClick={() => triggerServiceFileDialog("workingDrawings")}

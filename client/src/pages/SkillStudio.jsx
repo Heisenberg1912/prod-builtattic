@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
@@ -6,12 +6,7 @@ import AssociateProfileEditor from "../components/associate/AssociateProfileEdit
 import AssociatePortfolioShowcase from "../components/associate/AssociatePortfolioShowcase.jsx";
 import PortfolioMediaPlayer from "../components/associate/PortfolioMediaPlayer.jsx";
 import { deriveProfileStats, formatCurrency } from "../utils/associateProfile.js";
-
-const heroStats = [
-  { label: "Profiles live", value: "280+" },
-  { label: "Avg. sync time", value: "< 2s" },
-  { label: "Supported cities", value: "35" },
-];
+import { fetchAssociatePortalProfile } from "../services/portal.js";
 
 const ResourceCard = ({ title, description, action }) => (
   <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -23,8 +18,38 @@ const ResourceCard = ({ title, description, action }) => (
 
 const SkillStudio = () => {
   const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(false);
   const stats = useMemo(() => deriveProfileStats(profile || {}), [profile]);
   const hourlyLabel = stats.hourly ? formatCurrency(stats.hourly, profile?.rates?.currency || "USD") : null;
+  const experienceLabel = stats.years ? `${stats.years} yrs` : null;
+  const completeness = profile?.completeness || stats.completeness || 0;
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const response = await fetchAssociatePortalProfile({ preferDraft: true });
+        if (mounted) {
+          setProfile(response.profile || null);
+        }
+      } catch {
+        if (mounted) setProfile(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const heroStats = [
+    { label: "Profile completeness", value: `${Math.min(Math.max(Number(completeness) || 0, 0), 100)}%` },
+    { label: "Hourly rate", value: hourlyLabel || "Set rate" },
+    { label: "Experience", value: experienceLabel || "Add years" },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
@@ -49,6 +74,27 @@ const SkillStudio = () => {
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{item.label}</p>
                 </div>
               ))}
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Link
+                to="/dashboard/associate/edit"
+                className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Edit marketplace profile
+              </Link>
+              <Link
+                to="/dashboard/associate/listing"
+                className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-slate-300"
+              >
+                Preview listing
+              </Link>
+              <Link
+                to="/dashboard/associate"
+                className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-slate-300"
+              >
+                Open associate dashboard
+              </Link>
             </div>
           </div>
         </section>

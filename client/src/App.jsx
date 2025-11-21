@@ -40,6 +40,8 @@ import SupportChatWidget from "./components/SupportChatWidget";
 import SuperAdminDashboard from "./pages/dashboard/SuperAdminDashboard";
 import UserDashboard from "./pages/dashboard/UserDashboard";
 import AssociateDashboard from "./pages/dashboard/AssociateDashboard";
+import AssociateListing from "./pages/dashboard/AssociateListing.jsx";
+import AssociateProfileEdit from "./pages/dashboard/AssociateProfileEdit.jsx";
 import FirmDashboard from "./pages/dashboard/FirmDashboard";
 import ClientDashboard from "./pages/dashboard/ClientDashboard";
 import VendorDashboard from "./pages/dashboard/SaleDashboard";
@@ -227,6 +229,8 @@ const App = () => {
               <Route path="/dashboard/admin" element={wrapWithTransition(<AdminDashboard />)} />
               <Route path="/dashboard/user" element={wrapWithTransition(<UserDashboard />)} />
               <Route path="/dashboard/associate" element={wrapWithTransition(<AssociateDashboard />)} />
+              <Route path="/dashboard/associate/listing" element={wrapWithTransition(<AssociateListing />)} />
+              <Route path="/dashboard/associate/edit" element={wrapWithTransition(<AssociateProfileEdit />)} />
               <Route path="/dashboard/firm" element={wrapWithTransition(<FirmDashboard />)} />
               <Route path="/dashboard/client" element={wrapWithTransition(<ClientDashboard />)} />
               <Route path="/dashboard/vendor" element={wrapWithTransition(<VendorDashboard />)} />

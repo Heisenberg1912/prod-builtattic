@@ -20,8 +20,6 @@ import {
   RefreshCcw,
   Sparkles,
   ShieldCheck,
-  Target,
-  CalendarCheck,
 } from "lucide-react";
 import PlanUploadPanel from "../../components/dashboard/PlanUploadPanel.jsx";
 import ServicePackManager from "../../components/dashboard/ServicePackManager.jsx";
@@ -29,7 +27,6 @@ import MeetingScheduler from "../../components/dashboard/MeetingScheduler.jsx";
 import DownloadCenter from "../../components/dashboard/DownloadCenter.jsx";
 import ClientChatPanel from "../../components/dashboard/ClientChatPanel.jsx";
 import AssociateProfileEditor from "../../components/associate/AssociateProfileEditor.jsx";
-import AssociatePortfolioShowcase from "../../components/associate/AssociatePortfolioShowcase.jsx";
 import PortfolioMediaPlayer from "../../components/associate/PortfolioMediaPlayer.jsx";
 import { fetchAssociatePortalProfile } from "../../services/portal.js";
 import { fetchAssociateDashboard } from "../../services/dashboard.js";
@@ -77,6 +74,42 @@ const PROFILE_FIELD_LABELS = {
   portfolioLinks: "Portfolio links",
   keyProjects: "Key projects",
 };
+
+const SectionShell = ({ id, eyebrow, title, description, action, children }) => (
+  <section id={id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        {eyebrow ? (
+          <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">{eyebrow}</p>
+        ) : null}
+        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+        {description ? <p className="text-sm text-slate-500">{description}</p> : null}
+      </div>
+      {action || null}
+    </div>
+    {children}
+  </section>
+);
+
+const InsightStat = ({ label, value, helper, accent = "bg-slate-900/5" }) => (
+  <div className={`rounded-2xl border border-slate-200 ${accent} px-4 py-5 shadow-sm`}>
+    <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{label}</p>
+    <p className="mt-2 text-2xl font-semibold text-slate-900">{value ?? "-"}</p>
+    {helper ? <p className="text-xs text-slate-500 mt-1">{helper}</p> : null}
+  </div>
+);
+
+const QuickActionButton = ({ label, helper, to, state, onClick }) => (
+  <Link
+    to={to}
+    state={state}
+    onClick={onClick}
+    className="flex flex-col rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-slate-300"
+  >
+    <span className="text-sm font-semibold text-slate-900">{label}</span>
+    {helper ? <span className="text-xs text-slate-500">{helper}</span> : null}
+  </Link>
+);
 
 const OPPORTUNITY_BOARD = [
   {
@@ -129,15 +162,114 @@ const OPPORTUNITY_BOARD = [
   },
 ];
 
-const SIDEBAR_ITEMS = [
+const NAV_SECTIONS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "profile", label: "Profile", icon: User },
-  { id: "jobs", label: "Jobs", icon: Briefcase },
-  { id: "earnings", label: "Earnings", icon: DollarSign },
-  { id: "applications", label: "Applications", icon: FileText },
+  { id: "pipeline", label: "Pipeline", icon: Briefcase },
+  { id: "workspace", label: "Workspace", icon: FileText },
   { id: "notifications", label: "Notifications", icon: Bell },
 ];
 const isBrowser = typeof window !== "undefined";
+
+const AssociateSidebar = ({
+  profile,
+  meta,
+  stats = [],
+  sections = NAV_SECTIONS,
+  onNavigate,
+  previewLink,
+  className = "",
+}) => {
+  const avatar = getAssociateAvatar(profile) || getAssociateFallback(profile);
+  const summary =
+    profile?.availability ||
+    profile?.summary ||
+    "Keep your Skill Studio presence synced with the marketplace.";
+
+  return (
+    <aside className={`rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-6 ${className}`}>
+      <div className="flex items-start gap-3">
+        <img
+          src={avatar}
+          alt="Associate avatar"
+          className="h-12 w-12 rounded-2xl border border-slate-200 object-cover"
+          onError={(event) => {
+            event.currentTarget.src = getAssociateFallback(profile);
+          }}
+        />
+        <div className="space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Skill Studio</p>
+          <h2 className="text-xl font-semibold text-slate-900">{profile?.title || "Associate workspace"}</h2>
+          <p className="text-sm text-slate-600">{summary}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{stat.label}</p>
+            <p className="text-lg font-semibold text-slate-900">{stat.value ?? "-"}</p>
+            {stat.helper ? <p className="text-[11px] text-slate-500">{stat.helper}</p> : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Link
+          to={previewLink?.to || "/associateportfolio"}
+          state={previewLink?.state}
+          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-slate-300"
+          onClick={onNavigate}
+        >
+          Preview associate profile
+        </Link>
+        <Link
+          to="/dashboard/associate/edit"
+          className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          onClick={onNavigate}
+        >
+          Update profile
+        </Link>
+      </div>
+
+      <nav className="space-y-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Navigate</p>
+        <div className="space-y-1">
+          {sections.map((section) => {
+            const Icon = section.icon;
+            return (
+              <a
+                key={section.id}
+                href={`#${section.id}`}
+                onClick={onNavigate}
+                className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                {Icon ? <Icon size={16} className="text-slate-500" /> : null}
+                <span>{section.label}</span>
+              </a>
+            );
+          })}
+        </div>
+      </nav>
+
+      <Link
+        to="/dashboard/associate/listing"
+        onClick={onNavigate}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+      >
+        Marketplace listing <ExternalLink size={14} />
+      </Link>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Completeness</p>
+        <p className="text-lg font-semibold text-slate-900">{meta?.completeness ?? 0}%</p>
+        <p className="text-[11px] text-slate-500">
+          {meta?.updatedAt ? `Updated ${formatRelativeTime(meta.updatedAt)}` : "Not synced yet"}
+        </p>
+      </div>
+    </aside>
+  );
+};
 
 const loadStoredList = (key) => {
   if (!isBrowser) return [];
@@ -384,7 +516,6 @@ const formatPlanHighlights = (plan) => {
   return highlights;
 };
 function AssociateDashboard() {
-  const [activeView, setActiveView] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileState, setProfileState] = useState({ loading: true, error: null, profile: null });
   const [dashboardState, setDashboardState] = useState({ loading: true, data: null, error: null });
@@ -500,7 +631,6 @@ function AssociateDashboard() {
   const dashboardLeads = dashboardData.leads || [];
   const dashboardApplications = dashboardData.applications || [];
   const dashboardNextActions = dashboardData.nextActions || [];
-  const dashboardFeedback = dashboardData.feedback || {};
   const dashboardServicePacks = dashboardData.servicePacks || [];
   const dashboardMeetings = dashboardData.meetings || [];
   const planUploads = dashboardData.planUploads || [];
@@ -751,185 +881,432 @@ function AssociateDashboard() {
     persistList(STORAGE_KEYS.activity, []);
   }, []);
 
-  const activeNav = SIDEBAR_ITEMS.find((item) => item.id === activeView);
+  const completenessValue = Number.isFinite(dashboardMetrics.profileCompleteness)
+    ? dashboardMetrics.profileCompleteness
+    : profileMeta.completeness;
+  const listingStatus = completenessValue >= 80
+    ? { label: "Marketplace ready", accent: "bg-emerald-50" }
+    : completenessValue >= 50
+      ? { label: "Needs polish", accent: "bg-amber-50" }
+      : { label: "Draft", accent: "bg-slate-100" };
+  const currencyCode = profileState.profile?.rates?.currency || profileState.profile?.currency || "USD";
+  const hourlyRateValue = Number.isFinite(dashboardMetrics.hourlyRate)
+    ? dashboardMetrics.hourlyRate
+    : profileMeta.stats.hourly;
+  const dailyRateValue = profileMeta.stats.daily || (hourlyRateValue ? hourlyRateValue * 8 : null);
+  const hourlyRateLabel = hourlyRateValue ? formatCurrency(hourlyRateValue, currencyCode) : "Add hourly rate";
+  const dailyRateLabel = dailyRateValue ? formatCurrency(dailyRateValue, currencyCode) : null;
+  const leadsCount = Number.isFinite(dashboardMetrics.activeLeads) ? dashboardMetrics.activeLeads : pipelineMatches.length;
+  const applicationsCount = Number.isFinite(dashboardMetrics.applicationsTracked)
+    ? dashboardMetrics.applicationsTracked
+    : displayApplications.length;
+  const alertsCount = Number.isFinite(dashboardMetrics.alerts) ? dashboardMetrics.alerts : unreadNotifications;
+  const planStats = {
+    total: planUploads.length,
+    renders: planUploads.reduce(
+      (sum, plan) => sum + (Array.isArray(plan.renderImages) ? plan.renderImages.length : 0),
+      0
+    ),
+    walkthroughs: planUploads.filter((plan) => Boolean(plan.walkthrough)).length,
+  };
+  const publishedServicePacks = dashboardServicePacks.filter(
+    (pack) => (pack.status || "").toLowerCase() === "published",
+  );
+  const nextActionsPreview = dashboardNextActions.slice(0, 3);
+  const pipelinePreview = pipelineMatches.slice(0, 3);
+  const meetingPreviews = [...dashboardMeetings]
+    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
+    .slice(0, 3);
+  const showcaseState = { associate: profileState.profile, dashboard: dashboardData };
+  const sidebarStats = [
+    { label: "Profile", value: `${completenessValue}%`, helper: listingStatus.label },
+    { label: "Leads", value: leadsCount, helper: "Active matches" },
+    { label: "Apps", value: applicationsCount, helper: "Tracked" },
+    { label: "Alerts", value: alertsCount, helper: "Unread" },
+  ];
+  const profileProgress = Math.min(Math.max(Number(profileMeta.completeness) || 0, 0), 100);
+  const profileLastSynced = profileMeta.updatedAt ? formatRelativeTime(profileMeta.updatedAt) : "Never";
+  const profileMissingPreview = (profileMeta.pendingFields || []).slice(0, 3);
+  const profileFieldsTotal =
+    (profileMeta.pendingFields?.length || 0) + (profileMeta.filledFields?.length || 0);
+  const profileStatTiles = [
+    { label: "Hourly rate", value: profileMeta.stats.hourly ? formatCurrency(profileMeta.stats.hourly, currencyCode) : "Add rate" },
+    { label: "Daily rate", value: profileMeta.stats.daily ? formatCurrency(profileMeta.stats.daily, currencyCode) : "Add rate" },
+    { label: "Experience", value: profileMeta.stats.years ? `${profileMeta.stats.years} yrs` : "Add experience" },
+    { label: "Projects", value: profileMeta.stats.projects ? `${profileMeta.stats.projects}` : "Add count" },
+  ];
 
-  const renderContent = () => {
-    switch (activeView) {
-      case "overview":
-        return (
-          <OverviewView
-            loading={profileState.loading}
-            error={profileState.error}
-            profile={profileState.profile}
-            meta={profileMeta}
-            featuredPlan={featuredPlan}
-            planUploads={planUploads}
-            opportunityMatches={pipelineMatches}
-            applications={displayApplications}
-            activity={displayActivity}
-            onNavigateProfile={() => setActiveView("profile")}
-            onRefreshProfile={() => refreshProfile()}
-            dashboardLoading={(dashboardState.loading && !dashboardState.data) || isSectionRefreshing("overview")}
-            metrics={dashboardMetrics}
-            nextActions={dashboardNextActions}
-            refreshButton={renderRefreshButton("overview", "Refresh insights")}
-            sectionError={renderSectionError("overview", "Some insights might be cached.")}
-            servicePacks={dashboardServicePacks}
-            meetings={dashboardMeetings}
-            downloads={downloads}
-            chats={chats}
-            onPlanRefresh={() => refreshDashboard(null, { silent: true })}
-          />
-        );
-      case "profile":
-        return (
-          <ProfileView
-            profile={profileState.profile}
-            meta={profileMeta}
-            onProfileUpdate={handleProfileUpdated}
-            onRefresh={() => refreshProfile()}
-          />
-        );
-      case "jobs":
-        return (
-          <JobsView
-            profile={profileState.profile}
-            matches={pipelineMatches}
-            applications={displayApplications}
-            meta={profileMeta}
-            onTrackOpportunity={handleTrackOpportunity}
-            refreshButton={renderRefreshButton("jobs", "Refresh leads")}
-            sectionError={renderSectionError("jobs", "Lead recommendations may be cached.")}
-            loading={(dashboardState.loading && !dashboardState.data) || isSectionRefreshing("jobs")}
-          />
-        );
-      case "earnings":
-        return (
-          <EarningsView
-            profile={profileState.profile}
-            meta={profileMeta}
-            applications={displayApplications}
-          />
-        );
-      case "applications":
-        return (
-          <ApplicationsView
-            applications={displayApplications}
-            onUpdateStatus={handleApplicationStatusChange}
-            onRemove={handleRemoveApplication}
-            readOnly={!hasLocalApplications}
-            refreshButton={renderRefreshButton("applications", "Refresh applications")}
-            sectionError={renderSectionError("applications", "Pipeline sync may be outdated.")}
-          />
-        );
-      case "notifications":
-        return (
-          <NotificationsView
-            activity={displayActivity}
-            onMarkRead={handleMarkActivityRead}
-            onDismiss={handleDismissActivity}
-            onClear={handleClearActivity}
-            readOnly={!hasLocalActivity}
-            refreshButton={renderRefreshButton("notifications", "Refresh alerts")}
-            sectionError={renderSectionError("notifications", "Sync alerts if this looks off.")}
-          />
-        );
-      default:
-        return null;
+  const formatDateTime = (value, options = { dateStyle: "medium", timeStyle: "short" }) => {
+    if (!value) return "Schedule TBA";
+    try {
+      return new Date(value).toLocaleString(undefined, options);
+    } catch {
+      return "Schedule TBA";
     }
   };
 
-  const avatarImage = getAssociateAvatar(profileState.profile) || getAssociateFallback(profileState.profile);
-
   return (
-    <div className="flex min-h-screen bg-gray-100 text-gray-900">
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <aside
-        className={`fixed md:static z-30 w-64 bg-white border-r border-gray-200 p-4 flex-col transform transition-transform duration-300 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-        }`}
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-semibold">Associate</h1>
-          <button
-            className="md:hidden rounded-lg p-1.5 hover:bg-gray-100"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <nav className="space-y-1">
-          {SIDEBAR_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const badge =
-              item.id === "notifications"
-                ? unreadNotifications || null
-                : item.id === "applications"
-                  ? applications.length || null
-                  : null;
-            return (
-              <SidebarButton
-                key={item.id}
-                icon={Icon}
-                label={item.label}
-                isActive={activeView === item.id}
-                badge={badge}
-                onClick={() => {
-                  setActiveView(item.id);
-                  setSidebarOpen(false);
-                }}
-              />
-            );
-          })}
-        </nav>
-      </aside>
-
-      <main className="flex-1 flex flex-col max-w-full">
-        <header className="flex items-center justify-between p-4 md:p-6 border-b bg-white">
-          <div className="flex items-center gap-3">
-            <button
-              className="md:hidden p-2 rounded-lg hover:bg-gray-100"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu size={20} />
-            </button>
-            <div>
-              <h2 className="text-lg font-semibold capitalize">{activeNav?.label || "Overview"}</h2>
-              <p className="text-xs text-slate-500">
-                {profileState.profile?.title
-                  ? `${profileState.profile.title} · ${profileState.profile.location || "Location TBA"}`
-                  : "Keep your Skill Studio presence current"}
-              </p>
-            </div>
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-[1800px] space-y-14 px-8 py-12 lg:px-14 xl:px-18">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Builtattic</p>
+            <h1 className="text-2xl font-semibold text-slate-900">Associate dashboard</h1>
+            <p className="text-sm text-slate-600">
+              Same workspace polish as the firm dashboard, tuned for Skill Studio associates.
+            </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-slate-900">
-                {profileState.profile?.user?.email || "associate@builtattic.com"}
-              </p>
-              <p className="text-xs text-slate-500">
-                {profileMeta.updatedAt ? `Last updated ${formatRelativeTime(profileMeta.updatedAt)}` : "Not synced yet"}
-              </p>
-            </div>
-            <img
-              src={avatarImage}
-              alt="Associate avatar"
-              className="w-10 h-10 rounded-full border border-gray-200 object-cover"
-              onError={(event) => {
-                event.currentTarget.src = getAssociateFallback(profileState.profile);
-              }}
+          <div className="flex flex-wrap items-center gap-2">
+            {renderRefreshButton("overview", "Refresh dashboard")}
+            <button
+              type="button"
+              onClick={() => refreshProfile()}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
+            >
+              <RefreshCcw size={14} /> Sync profile
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400 lg:hidden"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+            >
+              {sidebarOpen ? <X size={14} /> : <Menu size={14} />} Menu
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-12 lg:grid-cols-[380px_1fr]">
+          <div className={sidebarOpen ? "" : "hidden lg:block"}>
+            <AssociateSidebar
+              profile={profileState.profile}
+              meta={profileMeta}
+              stats={sidebarStats}
+              sections={NAV_SECTIONS}
+              previewLink={{ to: "/associateportfolio", state: showcaseState }}
+              onNavigate={() => setSidebarOpen(false)}
+              className="lg:sticky lg:top-8"
             />
           </div>
-        </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">{renderContent()}</div>
-      </main>
+          <div className="space-y-6">
+            <SectionShell
+              id="overview"
+              eyebrow="Skill Studio overview"
+              title="Workspace pulse"
+              description="High-signal cards from your marketplace presence, routed leads, and buyer-facing assets."
+              action={renderRefreshButton("overview", "Refresh insights")}
+            >
+              {renderSectionError("overview", "Some insights might be cached.")}
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <InsightStat label="Profile completeness" value={`${completenessValue}%`} helper={listingStatus.label} accent={listingStatus.accent} />
+                <InsightStat label="Hourly rate" value={hourlyRateLabel} helper={dailyRateLabel ? `Day rate ${dailyRateLabel}` : "Set your preferred rates"} />
+                <InsightStat label="Active leads" value={leadsCount} helper="Routed matches" />
+                <InsightStat label="Applications" value={applicationsCount} helper={`${alertsCount} alerts`} />
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Pipeline</p>
+                      <h3 className="text-lg font-semibold text-slate-900">Next up</h3>
+                    </div>
+                    <Link to="#pipeline" className="text-xs font-semibold text-slate-900 underline">
+                      View pipeline
+                    </Link>
+                  </div>
+                  {pipelinePreview.length ? (
+                    <ul className="space-y-2 text-sm text-slate-700">
+                      {pipelinePreview.map((opportunity) => (
+                        <li key={opportunity.id} className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="font-semibold text-slate-900">{opportunity.title}</p>
+                          <p className="text-xs text-slate-500">{opportunity.company}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {opportunity.responseBy
+                              ? `Respond by ${formatDateTime(opportunity.responseBy, { dateStyle: "medium" })}`
+                              : "Flexible timeline"}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-slate-500">No matches yet. Polish your profile to unlock routed leads.</p>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Workspace</p>
+                      <h3 className="text-lg font-semibold text-slate-900">What buyers see</h3>
+                    </div>
+                    <Link to="#workspace" className="text-xs font-semibold text-slate-900 underline">
+                      Manage assets
+                    </Link>
+                  </div>
+                  <div className="grid gap-2 text-sm text-slate-700">
+                    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <span>Plan uploads</span>
+                      <span className="font-semibold text-slate-900">{planStats.total}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <span>Service packs</span>
+                      <span className="font-semibold text-slate-900">{publishedServicePacks.length || 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      <span>Meetings</span>
+                      <span className="font-semibold text-slate-900">{meetingPreviews.length}</span>
+                    </div>
+                    {downloads.length ? (
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                        Latest WD-W3: {downloads[0].label || downloads[0].tag || "Deliverable"}{downloads[0].updatedAt ? ` • ${formatRelativeTime(downloads[0].updatedAt)}` : ""}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <QuickActionButton label="Upload a plan" helper="Renders, walkthroughs, specs" to="#workspace" onClick={() => setSidebarOpen(false)} />
+                <QuickActionButton
+                  label="Preview profile"
+                  helper="Open the associate profile page"
+                  to="/associateportfolio"
+                  state={showcaseState}
+                />
+              </div>
+            </SectionShell>
+
+            <div id="profile" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Profile</p>
+                  <h3 className="text-lg font-semibold text-slate-900">Marketplace profile</h3>
+                  <p className="text-sm text-slate-600">
+                    Edit your listing on the dedicated profile page. This dashboard stays focused on signals and workflow.
+                  </p>
+                  <p className="text-xs text-slate-500">Last synced {profileLastSynced}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to="/dashboard/associate/edit"
+                    state={showcaseState}
+                    className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    Update profile
+                  </Link>
+                  <Link
+                    to="/dashboard/associate/listing"
+                    state={showcaseState}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
+                  >
+                    View listing
+                  </Link>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,1fr)] items-start">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">Status</p>
+                      <p className="text-xl font-semibold text-slate-900">{profileProgress}% complete</p>
+                      <p className="text-xs text-slate-500">
+                        {profileMeta.filledFields?.length || 0} / {profileFieldsTotal || profileMeta.filledFields?.length || 0} fields filled
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to="/dashboard/associate/edit"
+                        state={showcaseState}
+                        className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+                      >
+                        Keep polishing
+                      </Link>
+                      <Link
+                        to="/associateportfolio"
+                        state={showcaseState}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
+                      >
+                        Preview public card
+                      </Link>
+                    </div>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white">
+                    <div
+                      className="h-2 rounded-full bg-slate-900 transition-all"
+                      style={{ width: `${profileProgress}%` }}
+                    />
+                  </div>
+                  {profileMissingPreview.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {profileMissingPreview.map((field) => (
+                        <span
+                          key={field}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">All required fields are filled. Add media and links to stay fresh.</p>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {profileStatTiles.map((stat) => (
+                      <div key={stat.label} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{stat.label}</p>
+                        <p className="mt-1 text-base font-semibold text-slate-900">{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <MarketplacePreview
+                  profile={profileState.profile}
+                  meta={profileMeta}
+                  featuredPlan={profileState.profile?.featuredPlan || null}
+                  loading={profileState.loading}
+                  previewState={showcaseState}
+                  previewPath="/associateportfolio"
+                />
+              </div>
+            </div>
+
+            <SectionShell
+              id="pipeline"
+              eyebrow="Pipeline"
+              title="Jobs and applications"
+              description="Track routed opportunities and move applications forward."
+              action={renderRefreshButton("jobs", "Refresh leads")}
+            >
+              {renderSectionError("jobs", "Lead recommendations may be cached.")}
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(360px,1fr)]">
+                <JobsView
+                  profile={profileState.profile}
+                  matches={pipelineMatches}
+                  applications={displayApplications}
+                  meta={profileMeta}
+                  onTrackOpportunity={handleTrackOpportunity}
+                  refreshButton={null}
+                  sectionError={null}
+                  loading={(dashboardState.loading && !dashboardState.data) || isSectionRefreshing("jobs")}
+                  compact
+                />
+                <div className="space-y-6">
+                  <ApplicationsView
+                    applications={displayApplications}
+                    onUpdateStatus={handleApplicationStatusChange}
+                    onRemove={handleRemoveApplication}
+                    readOnly={!hasLocalApplications}
+                    refreshButton={renderRefreshButton("applications", "Refresh applications")}
+                    sectionError={renderSectionError("applications", "Pipeline sync may be outdated.")}
+                    compact
+                  />
+                  <EarningsView profile={profileState.profile} meta={profileMeta} applications={displayApplications} compact />
+                </div>
+              </div>
+            </SectionShell>
+
+            <SectionShell
+              id="workspace"
+              eyebrow="Workspace"
+              title="Marketplace assets"
+              description="Upload concepts, publish service packs, schedule syncs, and drop WD-W3 files."
+              action={renderRefreshButton("workspace", "Refresh workspace")}
+            >
+              <div className="space-y-6">
+                <PlanUploadPanel
+                  role="associate"
+                  workspaceName="Skill Studio"
+                  initialPlans={planUploads}
+                  onPlanChange={() => refreshDashboard(null, { silent: true })}
+                />
+
+                <ServicePackManager
+                  ownerType="associate"
+                  initialPacks={dashboardServicePacks}
+                  heading="Service packs"
+                  eyebrow="Skill Studio services"
+                  description="Package your go-to scope so ops can drop you into buyer pipelines instantly."
+                  emptyMessage="No packs published yet. Add at least one pack so the marketplace team can route work."
+                />
+
+                <MeetingScheduler
+                  ownerType="associate"
+                  initialMeetings={dashboardMeetings}
+                  heading="Meeting schedule"
+                  eyebrow="Syncs"
+                  description="Track onboarding, review, and offboarding calls tied to each client."
+                  emptyMessage="No syncs scheduled. Log your next touchpoints so everyone stays aligned."
+                />
+
+                <DownloadCenter
+                  ownerType="associate"
+                  initialDownloads={downloads}
+                  heading="Deliverable downloads"
+                  eyebrow="WD W3"
+                  description="Publish WD-W3 packs, walkthrough links, and plan zips buyers can pull from instantly."
+                  emptyMessage="No WD-W3 drops yet. Upload a deliverable handoff to unlock routing."
+                />
+
+                <ClientChatPanel
+                  ownerType="associate"
+                  initialChats={chats}
+                  heading="Client chat"
+                  eyebrow="Workspace thread"
+                  description="Keep notes and buyer conversations visible to the ops team."
+                  emptyMessage="Start logging context when a buyer pings you for changes."
+                />
+              </div>
+            </SectionShell>
+
+            <SectionShell
+              id="notifications"
+              eyebrow="Workflow"
+              title="Notifications & next actions"
+              description="Mark alerts as read, clear old activity, and keep moving forward."
+              action={renderRefreshButton("notifications", "Refresh alerts")}
+            >
+              {renderSectionError("notifications", "Sync alerts if this looks off.")}
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,1fr)]">
+                <NotificationsView
+                  activity={displayActivity}
+                  onMarkRead={handleMarkActivityRead}
+                  onDismiss={handleDismissActivity}
+                  onClear={handleClearActivity}
+                  readOnly={!hasLocalActivity}
+                  refreshButton={null}
+                  sectionError={null}
+                  compact
+                />
+
+                <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-5 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Next actions</p>
+                      <h3 className="text-lg font-semibold text-slate-900">Stay visible</h3>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500">{nextActionsPreview.length} tasks</span>
+                  </div>
+                  {nextActionsPreview.length ? (
+                    <ul className="space-y-2 text-sm text-slate-700">
+                      {nextActionsPreview.map((action) => (
+                        <li key={action.id || action.title} className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="font-semibold text-slate-900">{action.title}</p>
+                          <p className="text-xs text-slate-500">{action.detail}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-slate-500">No reminders right now. Publish a bundle or refresh your profile to trigger new tasks.</p>
+                  )}
+                </div>
+              </div>
+            </SectionShell>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -943,7 +1320,6 @@ function OverviewView({
   opportunityMatches,
   applications,
   activity,
-  onNavigateProfile,
   onRefreshProfile,
   dashboardLoading,
   metrics,
@@ -1049,13 +1425,6 @@ function OverviewView({
               className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-400"
             >
               Reload profile
-            </button>
-            <button
-              type="button"
-              onClick={onNavigateProfile}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              Update profile <ArrowRight size={16} />
             </button>
           </div>
         </div>
@@ -1415,13 +1784,15 @@ function OverviewView({
           meta={meta}
           featuredPlan={featuredPlan}
           loading={dashboardLoading}
+          previewState={profile ? { associate: profile } : undefined}
         />
       </div>
     </div>
   );
 }
 
-function MarketplacePreview({ profile, meta, loading, featuredPlan }) {
+function MarketplacePreview({ profile, meta, loading, featuredPlan, previewState, previewPath = "/associateportfolio" }) {
+  const loadingLabel = loading ? "Loading profile." : meta.updatedAt ? `Last synced ${formatRelativeTime(meta.updatedAt)}` : "Not synced yet";
   const avatar = getAssociateAvatar(profile) || getAssociateFallback(profile);
   const planHighlights = formatPlanHighlights(featuredPlan);
   const planRenderImages = Array.isArray(featuredPlan?.renderImages)
@@ -1510,86 +1881,216 @@ function MarketplacePreview({ profile, meta, loading, featuredPlan }) {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Link
-            to={profile?._id ? `/associateportfolio/${profile._id}` : "/associates"}
-            state={profile ? { associate: profile } : undefined}
+            to={previewPath}
+            state={previewState || (profile ? { associate: profile } : undefined)}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
           >
             Preview listing <ExternalLink size={14} />
           </Link>
-          <span className="text-xs text-slate-400">
-            {loading
-              ? "Loading profile."
-              : meta.updatedAt
-                ? `Last synced ${formatRelativeTime(meta.updatedAt)}`
-                : "Not synced yet"}
-          </span>
+          <span className="text-xs text-slate-400">{loadingLabel}</span>
         </div>
       </div>
     </div>
   );
 }
 
-function ProfileView({ profile, meta, onProfileUpdate, onRefresh }) {
+function ProfileView({
+  profile,
+  meta,
+  onProfileUpdate,
+  onRefresh,
+  showHeader = true,
+  previewState,
+  previewPath = "/associateportfolio",
+}) {
   const lastUpdated = meta.updatedAt ? formatRelativeTime(meta.updatedAt) : "Never";
+  const previewPayload = previewState || (profile ? { associate: profile } : undefined);
+  const missingFields = (meta.pendingFields || []).slice(0, 4);
+  const filledCount = meta.filledFields?.length || 0;
+  const totalFields = filledCount + (meta.pendingFields?.length || 0);
+  const progressPercent = Math.min(Math.max(Number(meta.completeness) || 0, 0), 100);
+  const profileStats = [
+    { label: "Hourly rate", value: meta.stats?.hourly ? formatCurrency(meta.stats.hourly, profile?.rates?.currency || "USD") : "Add rate" },
+    { label: "Daily rate", value: meta.stats?.daily ? formatCurrency(meta.stats.daily, profile?.rates?.currency || "USD") : "Add rate" },
+    { label: "Experience", value: meta.stats?.years ? `${meta.stats.years} yrs` : "Add experience" },
+    { label: "Projects", value: meta.stats?.projects ? `${meta.stats.projects}` : "Add count" },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Marketplace profile</h2>
-          <p className="text-sm text-slate-600">
-            Everything you publish here flows directly to your Skill Studio card and associate listing.
-          </p>
-          <p className="mt-1 text-xs text-slate-500">Last synced {lastUpdated}</p>
+      {showHeader ? (
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900">Marketplace profile</h2>
+            <p className="text-sm text-slate-600">
+              Everything you publish here flows directly to your Skill Studio card and associate listing.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Last synced {lastUpdated}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              to={previewPath}
+              state={previewPayload}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
+            >
+              Preview public card <ExternalLink size={14} />
+            </Link>
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Sync now <RefreshCcw size={14} />
+            </button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to={profile?._id ? `/associateportfolio/${profile._id}` : "/associates"}
-            state={profile ? { associate: profile } : undefined}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
-          >
-            Preview public card <ExternalLink size={14} />
-          </Link>
-          <button
-            type="button"
-            onClick={onRefresh}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            Sync now <RefreshCcw size={14} />
-          </button>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">Profile</p>
+            <h3 className="text-lg font-semibold text-slate-900">Marketplace profile</h3>
+            <p className="text-xs text-slate-500">Last synced {lastUpdated}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
+            >
+              <RefreshCcw size={14} /> Sync profile
+            </button>
+            <Link
+              to={previewPath}
+              state={previewPayload}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              Preview <ExternalLink size={14} />
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]">
-        <AssociateProfileEditor onProfileUpdate={onProfileUpdate} header={null} />
-        <div className="space-y-4">
-          <PortfolioMediaPlayer
-            items={profile?.portfolioMedia}
-            title="Live portfolio tiles"
-            subtitle="Click through the carousel exactly how it appears on Skill Studio."
-          />
-          <AssociatePortfolioShowcase
-            profile={profile}
-            className="border border-slate-200 bg-white shadow-sm"
-          />
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(460px,1fr)] items-start">
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">Status</p>
+                  <p className="text-xl font-semibold text-slate-900">{progressPercent}% complete</p>
+                  <p className="text-xs text-slate-500">
+                    {filledCount} / {totalFields || filledCount} fields filled · Last synced {lastUpdated}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={onRefresh}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:border-slate-400"
+                  >
+                    <RefreshCcw size={14} /> Sync profile
+                  </button>
+                  <Link
+                    to={previewPath}
+                    state={previewPayload}
+                    className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    Preview <ExternalLink size={14} />
+                  </Link>
+                </div>
+              </div>
+              <div className="mt-3 h-2 w-full rounded-full bg-white/70">
+                <div
+                  className="h-2 rounded-full bg-slate-900 transition-all"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              {missingFields.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {missingFields.map((field) => (
+                    <span
+                      key={field}
+                      className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700"
+                    >
+                      {field}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">All required fields are filled. Keep your media fresh.</p>
+              )}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {profileStats.map((stat) => (
+                  <div key={stat.label} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{stat.label}</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <AssociateProfileEditor onProfileUpdate={onProfileUpdate} header={null} />
+            </div>
+          </div>
+
+          <div className="space-y-4 xl:sticky xl:top-4">
+            <MarketplacePreview
+              profile={profile}
+              meta={meta}
+              featuredPlan={profile?.featuredPlan || null}
+              loading={false}
+              previewState={previewPayload}
+              previewPath={previewPath}
+            />
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <PortfolioMediaPlayer
+                items={profile?.portfolioMedia}
+                title="Live portfolio tiles"
+                subtitle="Click through the carousel exactly how it appears on Skill Studio."
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function JobsView({ profile, matches, applications, meta, onTrackOpportunity, refreshButton, sectionError, loading }) {
+function JobsView({
+  profile,
+  matches,
+  applications,
+  meta,
+  onTrackOpportunity,
+  refreshButton,
+  sectionError,
+  loading,
+  compact = false,
+}) {
   const trackedIds = new Set(applications.map((item) => item.id));
   const availability = meta.availabilityWindows?.length ? meta.availabilityWindows : [];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold text-slate-900">Pipeline planner</h2>
-        <p className="text-sm text-slate-600">
-          Leads that align with your skills, software stack, and timezone appear here. Add them to your pipeline to start tracking progress.
-        </p>
-        <div className="flex flex-wrap gap-2">{refreshButton}</div>
+        {compact ? (
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">Pipeline</p>
+              <h3 className="text-lg font-semibold text-slate-900">Pipeline planner</h3>
+            </div>
+            <div className="flex flex-wrap gap-2">{refreshButton}</div>
+          </div>
+        ) : (
+          <>
+            <h2 className="text-2xl font-semibold text-slate-900">Pipeline planner</h2>
+            <p className="text-sm text-slate-600">
+              Leads that align with your skills, software stack, and timezone appear here. Add them to your pipeline to start tracking progress.
+            </p>
+            <div className="flex flex-wrap gap-2">{refreshButton}</div>
+          </>
+        )}
       </div>
 
       {sectionError}
@@ -1601,97 +2102,103 @@ function JobsView({ profile, matches, applications, meta, onTrackOpportunity, re
       )}
 
       {loading && !matches.length ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="h-72 rounded-2xl bg-slate-200/60 animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div
+          className="grid gap-6"
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}
+        >
           {matches.map((opportunity) => {
-          const applied = trackedIds.has(opportunity.id);
-          const strength = opportunity.score >= 4 ? "High match" : opportunity.score >= 2 ? "Solid match" : "Emerging";
-          return (
-            <div key={opportunity.id} className="flex h-full flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    {opportunity.title}
-                  </h3>
-                  <p className="text-sm text-slate-500">{opportunity.company} · {opportunity.format}</p>
-                </div>
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                  strength === "High match"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : strength === "Solid match"
-                      ? "bg-indigo-100 text-indigo-700"
-                      : "bg-slate-100 text-slate-600"
-                }`}>
-                  {strength}
-                </span>
-              </div>
-              <p className="text-sm leading-relaxed text-slate-600">{opportunity.description}</p>
-              <div className="grid gap-3 text-xs text-slate-500 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
-                    Response by
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {new Date(opportunity.responseBy).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
-                    Budget
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {formatCurrency(opportunity.budgetHourly, "USD")} / hr
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
-                    Timezone
-                  </p>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {opportunity.timezone || "Flexible"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                {opportunity.tags.map((tag) => (
-                  <span key={`${opportunity.id}-${tag}`} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
-                    {tag}
+            const applied = trackedIds.has(opportunity.id);
+            const strength = opportunity.score >= 4 ? "High match" : opportunity.score >= 2 ? "Solid match" : "Emerging";
+            return (
+              <div
+                key={opportunity.id}
+                className="min-w-0 flex h-full flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold text-slate-900 line-clamp-2">
+                      {opportunity.title}
+                    </h3>
+                    <p className="text-sm text-slate-500">{opportunity.company} · {opportunity.format}</p>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                    strength === "High match"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : strength === "Solid match"
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "bg-slate-100 text-slate-600"
+                  }`}>
+                    {strength}
                   </span>
-                ))}
+                </div>
+                <p className="text-sm leading-relaxed text-slate-600 line-clamp-4">{opportunity.description}</p>
+                <div className="grid gap-3 text-xs text-slate-500 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+                      Response by
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {new Date(opportunity.responseBy).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+                      Budget
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {formatCurrency(opportunity.budgetHourly, "USD")} / hr
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400 mb-1">
+                      Timezone
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {opportunity.timezone || "Flexible"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                  {opportunity.tags.map((tag) => (
+                    <span key={`${opportunity.id}-${tag}`} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                <ul className="space-y-1 text-xs text-slate-500">
+                  {opportunity.reasons.map((reason, index) => (
+                    <li key={`${opportunity.id}-reason-${index}`} className="flex items-start gap-2">
+                      <CheckCircle size={12} className="mt-[2px] text-emerald-500" />
+                      <span>{reason}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-auto flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onTrackOpportunity(opportunity)}
+                    disabled={applied}
+                    className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {applied ? "In pipeline" : "Add to pipeline"}
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
+                    onClick={() => onTrackOpportunity(opportunity)}
+                  >
+                    {applied ? "Update status in Applications tab" : "Log interest"}
+                  </button>
+                </div>
               </div>
-              <ul className="space-y-1 text-xs text-slate-500">
-                {opportunity.reasons.map((reason, index) => (
-                  <li key={`${opportunity.id}-reason-${index}`} className="flex items-start gap-2">
-                    <CheckCircle size={12} className="mt-[2px] text-emerald-500" />
-                    <span>{reason}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => onTrackOpportunity(opportunity)}
-                  disabled={applied}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  {applied ? "In pipeline" : "Add to pipeline"}
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
-                  onClick={() => onTrackOpportunity(opportunity)}
-                >
-                  {applied ? "Update status in Applications tab" : "Log interest"}
-                </button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
       )}
 
@@ -1714,7 +2221,7 @@ function JobsView({ profile, matches, applications, meta, onTrackOpportunity, re
     </div>
   );
 }
-function EarningsView({ profile, meta, applications }) {
+function EarningsView({ profile, meta, applications, compact = false }) {
   const hourly = meta.stats.hourly || 0;
   const projectedMonthly = hourly ? hourly * 8 * 18 : 0;
   const projectedQuarter = projectedMonthly * 3;
@@ -1723,10 +2230,19 @@ function EarningsView({ profile, meta, applications }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold text-slate-900">Earnings outlook</h2>
-        <p className="text-sm text-slate-600">
-          Projected revenue based on your published rates and the momentum of your pipeline.
-        </p>
+        {compact ? (
+          <>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">Earnings</p>
+            <h3 className="text-lg font-semibold text-slate-900">Earnings outlook</h3>
+          </>
+        ) : (
+          <>
+            <h2 className="text-2xl font-semibold text-slate-900">Earnings outlook</h2>
+            <p className="text-sm text-slate-600">
+              Projected revenue based on your published rates and the momentum of your pipeline.
+            </p>
+          </>
+        )}
       </div>
 
       {!hourly && (
@@ -1781,7 +2297,15 @@ function EarningsView({ profile, meta, applications }) {
   );
 }
 
-function ApplicationsView({ applications, onUpdateStatus, onRemove, readOnly, refreshButton, sectionError }) {
+function ApplicationsView({
+  applications,
+  onUpdateStatus,
+  onRemove,
+  readOnly,
+  refreshButton,
+  sectionError,
+  compact = false,
+}) {
   const statusIcon = {
     Draft: Clock,
     Submitted: Loader,
@@ -1793,11 +2317,20 @@ function ApplicationsView({ applications, onUpdateStatus, onRemove, readOnly, re
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold text-slate-900">Applications</h2>
-        <p className="text-sm text-slate-600">
-          Track responses and progression across every opportunity you have added to your pipeline.
-        </p>
-        <div className="flex flex-wrap gap-2">{refreshButton}</div>
+        {compact ? (
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold text-slate-900">Applications</h3>
+            <div className="flex flex-wrap gap-2">{refreshButton}</div>
+          </div>
+        ) : (
+          <>
+            <h2 className="text-2xl font-semibold text-slate-900">Applications</h2>
+            <p className="text-sm text-slate-600">
+              Track responses and progression across every opportunity you have added to your pipeline.
+            </p>
+            <div className="flex flex-wrap gap-2">{refreshButton}</div>
+          </>
+        )}
       </div>
 
       {sectionError}
@@ -1808,74 +2341,94 @@ function ApplicationsView({ applications, onUpdateStatus, onRemove, readOnly, re
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Opportunity</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Company</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Tracked</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {applications.map((application) => {
-                const Icon = statusIcon[application.status] || Clock;
-                return (
-                  <tr key={application.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {application.title}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{application.company}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Icon size={14} className="text-slate-500" />
-                        <select
-                          value={application.status}
-                          onChange={(event) => onUpdateStatus(application.id, event.target.value)}
-                          disabled={readOnly}
-                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-slate-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                        >
-                          {APPLICATION_STATUSES.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </td>
-                  <td className="px-4 py-3 text-slate-500">
-                    {formatRelativeTime(application.trackedAt || application.updatedAt)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => onRemove(application.id)}
-                      disabled={readOnly}
-                      className="rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:bg-transparent"
-                    >
-                      {readOnly ? "Sync to edit" : "Remove"}
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 sticky top-0 z-10">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Opportunity</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Company</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Tracked</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              );
-            })}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {applications.map((application) => {
+                  const Icon = statusIcon[application.status] || Clock;
+                  return (
+                    <tr key={application.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {application.title}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{application.company}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Icon size={14} className="text-slate-500" />
+                          <select
+                            value={application.status}
+                            onChange={(event) => onUpdateStatus(application.id, event.target.value)}
+                            disabled={readOnly}
+                            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-slate-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            {APPLICATION_STATUSES.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                      {formatRelativeTime(application.trackedAt || application.updatedAt)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => onRemove(application.id)}
+                        disabled={readOnly}
+                        className="rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:bg-transparent"
+                      >
+                        {readOnly ? "Sync to edit" : "Remove"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
   );
 }
-function NotificationsView({ activity, onMarkRead, onDismiss, onClear, readOnly, refreshButton, sectionError }) {
+function NotificationsView({
+  activity,
+  onMarkRead,
+  onDismiss,
+  onClear,
+  readOnly,
+  refreshButton,
+  sectionError,
+  compact = false,
+}) {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Notifications</h2>
-          <p className="text-sm text-slate-600">
-            Sync events, pipeline updates, and reminders land here. Mark them as read or clear once actioned.
-          </p>
+          {compact ? (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">Notifications</p>
+              <h3 className="text-lg font-semibold text-slate-900">Alerts</h3>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-semibold text-slate-900">Notifications</h2>
+              <p className="text-sm text-slate-600">
+                Sync events, pipeline updates, and reminders land here. Mark them as read or clear once actioned.
+              </p>
+            </>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {refreshButton}
