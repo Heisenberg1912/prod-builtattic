@@ -18,6 +18,7 @@ import {
   Database,
   Inbox,
   Sparkles,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   fetchAdminUsers,
@@ -34,6 +35,7 @@ import {
   updateAdminUser,
   deleteAdminUser,
   fetchAdminStudioRequests,
+  clearMarketplaceCache,
 } from "../../services/marketplace.js";
 import {
   createDummyEntry,
@@ -51,6 +53,7 @@ const sidebarItems = [
   { id: "Firms", label: "Firms", icon: <Building2 size={18} /> },
   { id: "Clients", label: "Clients", icon: <Briefcase size={18} /> },
   { id: "Marketplace", label: "Marketplace", icon: <ShoppingCart size={18} /> },
+  { id: "Control", label: "Control Center", icon: <SlidersHorizontal size={18} /> },
   { id: "Data", label: "Data Explorer", icon: <Database size={18} /> },
 ];
 
@@ -233,6 +236,35 @@ const pickRandomSeed = (type) => {
   return pool[index];
 };
 
+const CONTROL_RESOURCE_CONFIG = [
+  { key: 'products', resource: 'products', label: 'Marketplace listings', statusField: 'status', statusOptions: ['published', 'draft'] },
+  { key: 'servicepacks', resource: 'servicepacks', label: 'Service packs', statusField: 'status', statusOptions: ['published', 'draft'] },
+  { key: 'workspacedownloads', resource: 'workspacedownloads', label: 'Workspace downloads', statusField: 'status', statusOptions: ['released', 'processing', 'draft', 'failed'] },
+  { key: 'workspacechats', resource: 'workspacechats', label: 'Workspace chats', statusField: 'status', statusOptions: ['open', 'resolved'] },
+  { key: 'meetingschedules', resource: 'meetingschedules', label: 'Meetings', statusField: 'status', statusOptions: ['scheduled', 'completed', 'cancelled'] },
+  { key: 'leads', resource: 'leads', label: 'Leads', statusField: 'status', statusOptions: ['new', 'contacted', 'proposal', 'won', 'lost'] },
+  { key: 'studiorequests', resource: 'studiorequests', label: 'Studio requests', statusField: 'status', statusOptions: ['new', 'in-progress', 'responded', 'archived'] },
+  { key: 'planuploads', resource: 'planuploads', label: 'Plan uploads', deletable: true },
+  { key: 'accessrequests', resource: 'accessrequests', label: 'Access requests', deletable: true },
+  { key: 'ratings', resource: 'ratings', label: 'Ratings', deletable: true },
+  { key: 'vitruviusages', resource: 'vitruviusages', label: 'Vitruvi usage', deletable: false },
+];
+
+const CONTROL_RESOURCE_INDEX = CONTROL_RESOURCE_CONFIG.reduce((acc, cfg) => {
+  acc[cfg.key] = cfg;
+  return acc;
+}, {});
+
+const resolveRecordId = (record) => record?._id || record?.id;
+
+const humanizeLabel = (value, fallback = 'Unknown') => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return fallback;
+  return text
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 export default function SuperAdminDashboard({ onLogout }) {
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState("Dashboard");
@@ -256,6 +288,14 @@ export default function SuperAdminDashboard({ onLogout }) {
     [DUMMY_TYPES.MATERIAL]: [],
   });
   const [dummyLoading, setDummyLoading] = useState(true);
+  const [controlState, setControlState] = useState({
+    loading: true,
+    resources: {},
+    error: null,
+    busy: {},
+    lastFetchedAt: null,
+    cacheClearing: false,
+  });
   const userQueryRef = useRef("");
   const navigate = useNavigate();
   const [authToken, setAuthToken] = useState(() => {
@@ -323,6 +363,39 @@ export default function SuperAdminDashboard({ onLogout }) {
     }
   }, [authToken]);
 
+  const refreshControlResources = useCallback(async ({ silent = false } = {}) => {
+    if (!authToken) {
+      setControlState((prev) => ({ ...prev, loading: false, resources: {}, lastFetchedAt: null }));
+      return;
+    }
+    if (!silent) {
+      setControlState((prev) => ({ ...prev, loading: true, error: null }));
+    }
+    try {
+      const entries = await Promise.all(
+        CONTROL_RESOURCE_CONFIG.map(async (cfg) => {
+          const response = await fetchAdminDataItems(cfg.resource, { limit: cfg.limit || 80 });
+          const items = response?.items || response || [];
+          return [cfg.key, items];
+        }),
+      );
+      setControlState((prev) => ({
+        ...prev,
+        loading: false,
+        error: null,
+        resources: Object.fromEntries(entries),
+        busy: {},
+        lastFetchedAt: Date.now(),
+      }));
+    } catch (error) {
+      setControlState((prev) => ({
+        ...prev,
+        loading: false,
+        error: error?.response?.data?.error || error?.message || 'Unable to load control resources',
+      }));
+    }
+  }, [authToken]);
+
   useEffect(() => {
     refreshDummyCatalog();
   }, [refreshDummyCatalog]);
@@ -342,6 +415,16 @@ export default function SuperAdminDashboard({ onLogout }) {
       clearInterval(interval);
     };
   }, [authToken, refreshStudioRequests]);
+
+  useEffect(() => {
+    refreshControlResources({ silent: true });
+  }, [authToken, refreshControlResources]);
+
+  useEffect(() => {
+    if (activeView !== 'Control') return undefined;
+    const timer = setTimeout(() => refreshControlResources({ silent: true }), 200);
+    return () => clearTimeout(timer);
+  }, [activeView, refreshControlResources]);
 
   const normalizedSearch = search.trim().toLowerCase();
   const handleCreateDummy = useCallback(async (type, payload) => {
@@ -373,6 +456,89 @@ export default function SuperAdminDashboard({ onLogout }) {
       toast.success('Dummy entry removed');
     } catch (error) {
       toast.error(error?.response?.data?.error || 'Unable to remove entry');
+    }
+  }, []);
+
+  const handleControlStatusChange = useCallback(async (resourceKey, record, nextStatus) => {
+    const cfg = CONTROL_RESOURCE_INDEX[resourceKey];
+    const recordId = resolveRecordId(record);
+    if (!cfg || !cfg.statusField || !recordId) return;
+    setControlState((prev) => ({
+      ...prev,
+      busy: { ...prev.busy, [recordId]: 'saving' },
+    }));
+    try {
+      const updated = await updateAdminDataItem(cfg.resource, recordId, { [cfg.statusField]: nextStatus });
+      setControlState((prev) => {
+        const list = prev.resources[resourceKey] || [];
+        const nextList = list.map((item) =>
+          resolveRecordId(item) === recordId ? { ...item, ...updated, [cfg.statusField]: nextStatus } : item
+        );
+        const nextBusy = { ...prev.busy };
+        delete nextBusy[recordId];
+        return {
+          ...prev,
+          resources: { ...prev.resources, [resourceKey]: nextList },
+          busy: nextBusy,
+        };
+      });
+      toast.success(`${cfg.label} status set to ${humanizeLabel(nextStatus)}`);
+    } catch (error) {
+      setControlState((prev) => {
+        const nextBusy = { ...prev.busy };
+        delete nextBusy[recordId];
+        return { ...prev, busy: nextBusy };
+      });
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to update status');
+    }
+  }, []);
+
+  const handleControlDelete = useCallback(async (resourceKey, record) => {
+    const cfg = CONTROL_RESOURCE_INDEX[resourceKey];
+    const recordId = resolveRecordId(record);
+    if (!cfg?.deletable || !recordId) return;
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm(`Delete this record from ${cfg.label}? This cannot be undone.`);
+    if (!confirmed) return;
+    setControlState((prev) => ({
+      ...prev,
+      busy: { ...prev.busy, [recordId]: 'deleting' },
+    }));
+    try {
+      await deleteAdminDataItem(cfg.resource, recordId);
+      setControlState((prev) => {
+        const list = prev.resources[resourceKey] || [];
+        const nextList = list.filter((item) => resolveRecordId(item) !== recordId);
+        const nextBusy = { ...prev.busy };
+        delete nextBusy[recordId];
+        return {
+          ...prev,
+          resources: { ...prev.resources, [resourceKey]: nextList },
+          busy: nextBusy,
+        };
+      });
+      toast.success('Record removed');
+    } catch (error) {
+      setControlState((prev) => {
+        const nextBusy = { ...prev.busy };
+        delete nextBusy[recordId];
+        return { ...prev, busy: nextBusy };
+      });
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to delete record');
+    }
+  }, []);
+
+  const handleClearMarketplaceCache = useCallback(async () => {
+    setControlState((prev) => ({ ...prev, cacheClearing: true }));
+    try {
+      const ok = await clearMarketplaceCache();
+      toast.success(ok ? 'Marketplace cache cleared' : 'Cache clear requested');
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error?.message || 'Unable to clear cache');
+    } finally {
+      setControlState((prev) => ({ ...prev, cacheClearing: false }));
     }
   }, []);
 
@@ -596,6 +762,11 @@ export default function SuperAdminDashboard({ onLogout }) {
     onRemoveDummy: handleRemoveDummy,
     onRefreshStudioRequests: refreshStudioRequests,
     onSyncDummyCatalog: refreshDummyCatalog,
+    control: controlState,
+    onRefreshControl: refreshControlResources,
+    onControlStatusChange: handleControlStatusChange,
+    onControlDelete: handleControlDelete,
+    onClearMarketplaceCache: handleClearMarketplaceCache,
   };
 
   const handleLogout = async () => {
@@ -618,6 +789,7 @@ export default function SuperAdminDashboard({ onLogout }) {
       case "Firms": return <FirmsView {...viewProps} />;
       case "Clients": return <ClientsView {...viewProps} />;
       case "Marketplace": return <MarketplaceView {...viewProps} />;
+      case "Control": return <ControlCenterView {...viewProps} />;
       case "Data": return <DataExplorerView authToken={authToken} />;
       default: return <DashboardView {...viewProps} />;
     }
@@ -737,7 +909,7 @@ function DashboardView({
       if (dbOverview.limited) {
         return dbOverview?.db?.name || 'Status available';
       }
-      return `${dbOverview?.db?.name || 'Cluster'}  ${formatBytes(dbOverview?.db?.dataSize)}`;
+      return `${dbOverview?.db?.name || 'Cluster'} | ${formatBytes(dbOverview?.db?.dataSize)}`;
     }, [dbOverview]);
 
     const dummyTotals = useMemo(() => {
@@ -2249,6 +2421,172 @@ function MarketplaceView({ search, products, loading }) {
   );
 }
 
+function ControlCenterView({
+  control,
+  onRefreshControl,
+  onControlStatusChange,
+  onControlDelete,
+  onClearMarketplaceCache,
+}) {
+  const { loading, error, resources = {}, lastFetchedAt, busy = {}, cacheClearing } = control || {};
+  const summary = CONTROL_RESOURCE_CONFIG.map((cfg) => ({
+    key: cfg.key,
+    label: cfg.label,
+    count: (resources[cfg.key] || []).length,
+  }));
+
+  const resolvePrimaryLabel = (record) =>
+    record.title ||
+    record.projectTitle ||
+    record.subject ||
+    record.label ||
+    record.name ||
+    record.contact ||
+    record.email ||
+    record.ownerId ||
+    record._id ||
+    'Record';
+
+  const resolveSecondaryLabel = (record) => {
+    const bits = [];
+    if (record.ownerType) bits.push(humanizeLabel(record.ownerType));
+    if (record.ownerId) bits.push(String(record.ownerId).slice(-6));
+    if (record.tag) bits.push(record.tag);
+    return bits.join(' • ');
+  };
+
+  return (
+    <Section title="Control Center">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-3">
+        <div>
+          <p className="text-sm text-gray-600">
+            Live controls for marketplace, workspace, and ops data. Use quick status edits here; open the Data Explorer for schema-level changes.
+          </p>
+          <p className="text-xs text-gray-500">
+            Last sync {lastFetchedAt ? formatRelativeTime(lastFetchedAt) : 'never'}.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onRefreshControl?.({})}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:border-gray-400 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh control data
+          </button>
+          <button
+            type="button"
+            onClick={onClearMarketplaceCache}
+            disabled={cacheClearing}
+            className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm text-orange-800 hover:border-orange-300 disabled:opacity-60"
+          >
+            {cacheClearing ? 'Clearing cache...' : 'Clear marketplace cache'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {summary.map((entry) => (
+          <div key={entry.key} className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-gray-500">{entry.label}</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">{entry.count}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 space-y-6">
+        {CONTROL_RESOURCE_CONFIG.map((cfg) => {
+          const records = (resources[cfg.key] || []).slice(0, 6);
+          return (
+            <div key={cfg.key} className="rounded-xl border border-gray-200 bg-white p-4">
+              <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{cfg.label}</h3>
+                  <p className="text-xs text-gray-500">
+                    Showing {records.length} of {(resources[cfg.key] || []).length} records
+                  </p>
+                </div>
+                {cfg.statusField && (
+                  <p className="text-xs text-gray-400">
+                    Status values: {(cfg.statusOptions || []).map(humanizeLabel).join(' / ')}
+                  </p>
+                )}
+              </div>
+
+              {loading ? (
+                <p className="text-sm text-gray-500">Syncing...</p>
+              ) : records.length === 0 ? (
+                <p className="text-sm text-gray-500">No records found. Try the Data Explorer to create entries.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {records.map((record) => {
+                    const recordId = resolveRecordId(record);
+                    const statusValue = cfg.statusField ? record[cfg.statusField] : null;
+                    const busyState = busy[recordId];
+                    return (
+                      <li
+                        key={recordId}
+                        className="py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div className="space-y-1">
+                          <p className="font-semibold text-gray-900">{resolvePrimaryLabel(record)}</p>
+                          <p className="text-xs text-gray-500">
+                            {resolveSecondaryLabel(record) || humanizeLabel(statusValue || '')}
+                          </p>
+                          <p className="text-[11px] text-gray-400">
+                            Updated {formatRelativeTime(record.updatedAt || record.createdAt)}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {statusValue && <StatusBadge status={humanizeLabel(statusValue)} />}
+                          {cfg.statusField && (cfg.statusOptions || []).length ? (
+                            <select
+                              value={statusValue || cfg.statusOptions?.[0] || ''}
+                              onChange={(event) =>
+                                onControlStatusChange?.(cfg.key, record, event.target.value)
+                              }
+                              disabled={busyState === 'saving'}
+                              className="rounded border border-gray-200 px-3 py-1 text-sm text-gray-700 disabled:opacity-60"
+                            >
+                              {(cfg.statusOptions || []).map((option) => (
+                                <option key={option} value={option}>
+                                  {humanizeLabel(option)}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
+                          {cfg.deletable && (
+                            <button
+                              type="button"
+                              onClick={() => onControlDelete?.(cfg.key, record)}
+                              disabled={busyState === 'deleting'}
+                              className="text-xs px-3 py-1 rounded border border-red-200 text-red-700 hover:border-red-300 disabled:opacity-60"
+                            >
+                              {busyState === 'deleting' ? 'Deleting...' : 'Delete'}
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
 //
 // --- Reusable Components ---
 //
@@ -2320,6 +2658,7 @@ function Table({ headers, rows }) {
 }
 
 function StatusBadge({ status }) {
+  const label = humanizeLabel(status || '');
   const styles = {
     Active: "bg-green-100 text-green-700",
     Completed: "bg-green-100 text-green-700",
@@ -2329,10 +2668,22 @@ function StatusBadge({ status }) {
     Published: "bg-green-100 text-green-700",
     Draft: "bg-gray-200 text-gray-700",
     Suspended: "bg-red-100 text-red-700",
+    Processing: "bg-yellow-100 text-yellow-700",
+    Released: "bg-green-100 text-green-700",
+    Failed: "bg-red-100 text-red-700",
+    Scheduled: "bg-blue-50 text-blue-700",
+    Resolved: "bg-green-50 text-green-700",
+    Open: "bg-indigo-50 text-indigo-700",
+    Cancelled: "bg-red-50 text-red-700",
+    "In Progress": "bg-yellow-50 text-yellow-800",
+    Contacted: "bg-blue-50 text-blue-700",
+    Proposal: "bg-purple-50 text-purple-700",
+    Won: "bg-green-100 text-green-700",
+    Lost: "bg-gray-200 text-gray-700",
   };
   return (
-    <span className={`px-2 py-1 text-xs rounded-full ${styles[status] || "bg-gray-100 text-gray-700"}`}>
-      {status}
+    <span className={`px-2 py-1 text-xs rounded-full ${styles[label] || "bg-gray-100 text-gray-700"}`}>
+      {label || '—'}
     </span>
   );
 }

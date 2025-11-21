@@ -11,6 +11,15 @@ import AssociateProfile from '../models/AssociateProfile.js';
 import Cart from '../models/Cart.js';
 import Asset from '../models/Asset.js';
 import OTP from '../models/OTP.js';
+import ServicePack from '../models/ServicePack.js';
+import PlanUpload from '../models/PlanUpload.js';
+import WorkspaceDownload from '../models/WorkspaceDownload.js';
+import WorkspaceChatThread from '../models/WorkspaceChatThread.js';
+import MeetingSchedule from '../models/MeetingSchedule.js';
+import Rating from '../models/Rating.js';
+import Lead from '../models/Lead.js';
+import AccessRequest from '../models/AccessRequest.js';
+import VitruviUsage from '../models/VitruviUsage.js';
 import StudioRequest from '../models/StudioRequest.js';
 import DummyCatalogEntry from '../models/DummyCatalogEntry.js';
 import { requireAuth, requireGlobal } from '../rbac/guards.js';
@@ -18,6 +27,7 @@ import { sendSignupCredentialsEmail, sendAdminNotificationEmail } from '../servi
 import { validateEmailDeliverability } from '../utils/emailValidation.js';
 import logger from '../utils/logger.js';
 import { normalizeDummyPayload, mapCatalogEntry, DUMMY_TYPES } from '../utils/dummyCatalog.js';
+import { clearMarketplaceCache } from './marketplace.js';
 
 const router = Router();
 
@@ -305,6 +315,16 @@ router.delete(
 );
 
 router.post(
+  '/admin/cache/marketplace/clear',
+  requireAuth,
+  requireGlobal('superadmin'),
+  (_req, res) => {
+    const remaining = clearMarketplaceCache();
+    res.json({ ok: true, cleared: true, remaining });
+  }
+);
+
+router.post(
   '/admin/users/:id/reset-password',
   requireAuth,
   requireGlobal('superadmin'),
@@ -414,6 +434,61 @@ const ADMIN_DATA_RESOURCES = {
     model: OTP,
     label: 'OTP codes',
     searchFields: ['email', 'purpose'],
+  },
+  servicepacks: {
+    model: ServicePack,
+    label: 'Service Packs',
+    searchFields: ['title', 'status', 'ownerType'],
+  },
+  planuploads: {
+    model: PlanUpload,
+    label: 'Plan Uploads',
+    searchFields: ['projectTitle', 'category', 'licenseType'],
+  },
+  workspacedownloads: {
+    model: WorkspaceDownload,
+    label: 'Workspace Downloads',
+    searchFields: ['label', 'tag', 'downloadCode'],
+    sort: { updatedAt: -1 },
+  },
+  workspacechats: {
+    model: WorkspaceChatThread,
+    label: 'Workspace Chats',
+    searchFields: ['subject', 'clientEmail', 'clientName', 'status'],
+    sort: { updatedAt: -1 },
+  },
+  meetingschedules: {
+    model: MeetingSchedule,
+    label: 'Meeting Schedules',
+    searchFields: ['title', 'status'],
+    sort: { scheduledFor: -1 },
+  },
+  ratings: {
+    model: Rating,
+    label: 'Ratings',
+    searchFields: ['target'],
+  },
+  leads: {
+    model: Lead,
+    label: 'Leads',
+    searchFields: ['title', 'status'],
+  },
+  accessrequests: {
+    model: AccessRequest,
+    label: 'Access Requests',
+    searchFields: ['contact', 'country', 'role'],
+    sort: { createdAt: -1 },
+  },
+  vitruviusages: {
+    model: VitruviUsage,
+    label: 'Vitruvi Usage',
+    searchFields: ['ownerId', 'plan', 'ownerType'],
+    sort: { createdAt: -1 },
+  },
+  studiorequests: {
+    model: StudioRequest,
+    label: 'Studio Requests',
+    searchFields: ['status', 'source'],
   },
 };
 
@@ -602,6 +677,15 @@ router.get(
         'otps',
         'carts',
         'assets',
+        'servicepacks',
+        'planuploads',
+        'workspacedownloads',
+        'workspacechatthreads',
+        'meetingschedules',
+        'ratings',
+        'leads',
+        'accessrequests',
+        'vitruviusages',
         'supportthreads',
         'documents',
       ];

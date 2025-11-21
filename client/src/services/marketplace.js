@@ -628,6 +628,11 @@ export async function fetchAdminStudioRequests(params = {}) {
   }
 }
 
+export async function clearMarketplaceCache() {
+  const { data } = await client.post('/admin/cache/marketplace/clear');
+  return Boolean(data?.ok);
+}
+
 export async function fetchAdminDataResources() {
   try {
     const { data } = await client.get('/admin/data');

@@ -21,6 +21,11 @@ const router = Router();
 const cacheStore = new Map();
 const DEFAULT_CACHE_TTL_MS = Number.parseInt(process.env.MARKETPLACE_CACHE_TTL_MS || '15000', 10);
 
+export const clearMarketplaceCache = () => {
+  cacheStore.clear();
+  return cacheStore.size;
+};
+
 const buildCacheKey = (req) => {
   const params = new URLSearchParams();
   Object.entries(req.query || {}).forEach(([key, value]) => {
