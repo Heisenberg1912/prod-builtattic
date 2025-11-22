@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Upload, ExternalLink } from "lucide-react";
-import { applyFallback, getStudioFallback } from "../../utils/imageFallbacks.js";
+import { normaliseAssetUrl } from "../../utils/studioForm.js";
 
 const baseFieldClasses =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200";
@@ -36,27 +36,37 @@ const FormField = ({ label, hint, children }) => (
 );
 
 const StudioPreviewCard = ({ form }) => {
-  const heroImage = form.heroImage?.trim();
+  const heroImage = normaliseAssetUrl(form.heroImage);
   const title = form.title?.trim() || "Untitled studio";
   const summary = form.summary?.trim() || "Add a concise project pitch to see it here.";
-  const galleryEntries = (form.gallery || "")
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  const galleryEntries = useMemo(
+    () =>
+      (form.gallery || "")
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map(normaliseAssetUrl),
+    [form.gallery]
+  );
+  const [heroError, setHeroError] = useState(false);
+
+  useEffect(() => {
+    setHeroError(false);
+  }, [heroImage]);
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="relative h-48 bg-slate-100">
-        {heroImage ? (
+        {heroImage && !heroError ? (
           <img
             src={heroImage}
             alt="Studio hero preview"
             className="h-full w-full object-cover"
-            onError={(event) => applyFallback(event, getStudioFallback({ slug: form.slug }))}
+            onError={() => setHeroError(true)}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm text-slate-500">
-            Add a hero image URL to preview it here.
+            Upload a hero image to preview it here.
           </div>
         )}
         {galleryEntries.length ? (
@@ -69,6 +79,31 @@ const StudioPreviewCard = ({ form }) => {
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Preview</p>
         <h4 className="text-lg font-semibold text-slate-900">{title}</h4>
         <p className="text-sm text-slate-600">{summary}</p>
+        {galleryEntries.length ? (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Gallery preview</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {galleryEntries.slice(0, 5).map((asset, index) => (
+                <div key={`${asset}-${index}`} className="relative aspect-video overflow-hidden rounded-xl bg-slate-100">
+                  <img
+                    src={asset}
+                    alt={`Gallery asset ${index + 1}`}
+                    className="h-full w-full object-cover"
+                    onError={(event) => {
+                      event.currentTarget.classList.add("hidden");
+                    }}
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/10 to-transparent" />
+                </div>
+              ))}
+              {galleryEntries.length > 5 ? (
+                <div className="flex aspect-video items-center justify-center rounded-xl bg-slate-900 text-xs font-semibold uppercase tracking-[0.2em] text-white">
+                  +{galleryEntries.length - 5} more
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -107,7 +142,8 @@ const StudioForm = ({
 }) => {
   const handleChange = (key) => (event) => {
     const value = event?.target?.value;
-    onChange((prev) => ({ ...prev, [key]: value }));
+    const nextValue = key === "heroImage" ? normaliseAssetUrl(value) : value;
+    onChange((prev) => ({ ...prev, [key]: nextValue }));
   };
   const handleCheckboxChange = (key) => (event) => {
     const { checked } = event?.target || {};
@@ -161,7 +197,7 @@ const StudioForm = ({
             <FormField label="Description" hint="Longer copy for the detail page">
               <TextArea value={form.description} onChange={handleChange("description")} rows={4} />
             </FormField>
-            <FormField label="Hero image" hint="Paste a URL or upload">
+            <FormField label="Hero image" hint="Upload an image or paste a link. Uploads populate the field automatically.">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input value={form.heroImage} onChange={handleChange("heroImage")} placeholder="https://cdn..." />
                 <button
@@ -175,7 +211,10 @@ const StudioForm = ({
                 <input ref={heroFileInputRef} type="file" accept="image/*" className="hidden" onChange={onHeroUpload} />
               </div>
             </FormField>
-            <FormField label="Gallery" hint="One URL per line">
+            <FormField
+              label="Gallery"
+              hint="Upload images for the fastest preview. Pasting links still works (one per line)."
+            >
               <TextArea value={form.gallery} onChange={handleChange("gallery")} rows={4} />
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button

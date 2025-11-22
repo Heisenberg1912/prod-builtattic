@@ -809,13 +809,15 @@ function WeatherCard({ data, loading, onRefresh }) {
         </div>
 
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
-          {weatherHighlights.map(({ label, value, icon: Icon }, idx) => (
+          {weatherHighlights.map(
+            // eslint-disable-next-line no-unused-vars
+            ({ label, value, icon: IconComponent }, idx) => (
             <div
               key={`${label}-${value}-${idx}`}
               className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-white px-2.5 sm:px-3 py-3 sm:py-4 text-center shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
             >
               <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-[var(--color-accent)]/12 text-[var(--color-accent)]">
-                <Icon className="h-4 w-4" aria-hidden="true" />
+                <IconComponent className="h-4 w-4" aria-hidden="true" />
               </div>
               <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.16em] sm:tracking-[0.18em] text-textMuted">
                 {label}
@@ -1230,8 +1232,6 @@ function GalleryCategories({ categories, loading }) {
 
 /** PRODUCT SHOWCASE — collapsible, starts collapsed */
 function ProductShowcase({ items, loading }) {
-  if (loading) return <SectionSkeleton lines={6} minH="min-h-[320px]" />;
-
   const cards = items && items.length ? items : FALLBACK_DASHBOARD.catalogue;
   const [browserOpen, setBrowserOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
@@ -1247,6 +1247,10 @@ function ProductShowcase({ items, loading }) {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  if (loading) {
+    return <SectionSkeleton lines={6} minH="min-h-[320px]" />;
+  }
 
   return (
     <section aria-label="Systems catalogue" className="relative overflow-hidden rounded-3xl border border-border bg-surface shadow-card">
@@ -1710,7 +1714,6 @@ export default function Dashboard() {
     weather,
     gallery,
     kpis,
-    chatConfig,
     refreshAll,
     refreshWeather,
     loading,

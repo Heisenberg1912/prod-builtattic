@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { motion } from "framer-motion";
+import { motion as Motion } from "framer-motion";
 import Footer from "../components/Footer";
 import RatingModal from "../components/RatingModal.jsx";
 import RegistrStrip from "../components/registrstrip";
@@ -334,8 +334,8 @@ const Firms = () => {
               const startingPrice = resolveFirmStartingPrice(firm);
 
               return (
-                <motion.article
-                  key={firm._id}
+               <Motion.article
+                 key={firm._id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition"
@@ -482,7 +482,7 @@ const Firms = () => {
                       </Link>
                     </div>
                   </div>
-                </motion.article>
+               </Motion.article>
               );
             })}
         </section>

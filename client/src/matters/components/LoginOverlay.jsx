@@ -12,8 +12,8 @@ export default function LoginOverlay(){
     setSubmitted(true)
     try{
       await login?.(email, password)
-    }catch(err){
-      // error handled via context state
+    }catch(error){
+      console.warn('login_overlay_error', error)
     }finally{
       setSubmitted(false)
     }

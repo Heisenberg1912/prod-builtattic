@@ -7,7 +7,7 @@
 
 import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import { toast } from "react-hot-toast";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, PenSquare } from "lucide-react";
 import { useCart } from "../context/CartContext";
@@ -1103,7 +1103,7 @@ const StudioDetail = () => {
               <div className="relative aspect-[16/10] w-full overflow-hidden rounded-lg bg-slate-200">
                 <AnimatePresence mode="wait">
                   {activeGalleryImage ? (
-                    <motion.img
+                    <Motion.img
                       key={activeGalleryImage}
                       src={activeGalleryImage}
                       alt={studio.title}
@@ -1116,7 +1116,7 @@ const StudioDetail = () => {
                       transition={{ duration: 0.35 }}
                     />
                   ) : (
-                    <motion.div
+                    <Motion.div
                       key="placeholder"
                       className="h-full w-full bg-slate-200"
                       initial={{ opacity: 0 }}

@@ -66,6 +66,7 @@ const SkillStudio = () => {
                 Publish trusted bios, rates, and case studies without waiting on the marketplace team. Every save updates
                 your Skill Studio card and associate marketplace profile in real time.
               </p>
+              {loading && <p className="text-sm font-semibold text-amber-600">Syncing your latest profile data…</p>}
             </div>
             <div className="flex flex-wrap gap-4 text-sm text-slate-700">
               {heroStats.map((item) => (

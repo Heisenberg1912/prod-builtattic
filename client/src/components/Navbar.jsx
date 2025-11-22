@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import main_logo from "/src/assets/main_logo/main_logo.png";
 import cartIcon from "/src/assets/icons/Cart Vector.png";
 import userAvatar from "/src/assets/icons/Profile Settings vector.png";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import { normalizeRole, resolveDashboardPath } from "../constants/roles.js";
 import { logout as performLogout } from "../services/auth.js";
 import { useCart } from "../context/CartContext";
@@ -255,7 +255,7 @@ const Navbar = () => {
               </button>
               <AnimatePresence>
                 {isDropdownOpen && isDesktop && (
-                  <motion.div
+                  <Motion.div
                     ref={dropdownRef}
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -275,19 +275,31 @@ const Navbar = () => {
                         </NavLink>
                       ))}
                     </nav>
-                    {showSignInCTA && (
+                    {isAuthed ? (
                       <div className="border-t border-white/10 px-6 py-4">
-                        <NavLink
-                          to="/login"
+                        <button
+                          type="button"
+                          onClick={handleLogoutClick}
                           className="inline-flex w-full items-center justify-center rounded-full bg-white text-sm font-semibold text-black transition hover:bg-white/90"
-                          onClick={() => closeDropdown(true)}
                         >
-                          Sign in
-                        </NavLink>
+                          Sign out
+                        </button>
                       </div>
+                    ) : (
+                      showSignInCTA && (
+                        <div className="border-t border-white/10 px-6 py-4">
+                          <NavLink
+                            to="/login"
+                            className="inline-flex w-full items-center justify-center rounded-full bg-white text-sm font-semibold text-black transition hover:bg-white/90"
+                            onClick={() => closeDropdown(true)}
+                          >
+                            Sign in
+                          </NavLink>
+                        </div>
+                      )
                     )}
 
-                  </motion.div>
+                  </Motion.div>
                 )}
               </AnimatePresence>
             </div>
@@ -358,14 +370,14 @@ const Navbar = () => {
 
       <AnimatePresence>
         {isDropdownOpen && !isDesktop && (
-          <motion.div
+          <Motion.div
             className="fixed inset-0 z-[70] flex items-start justify-center bg-black/55 backdrop-blur-sm pt-24 md:pt-28"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => closeDropdown(true)}
           >
-            <motion.div
+            <Motion.div
               ref={dropdownRef}
               initial={{ opacity: 0, y: -16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -397,9 +409,19 @@ const Navbar = () => {
                   </NavLink>
                 </div>
               )}
-
-            </motion.div>
-          </motion.div>
+              {isAuthed && (
+                <div className="border-t border-white/10 px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={handleLogoutClick}
+                    className="inline-flex w-full items-center justify-center rounded-full bg-white text-sm font-semibold text-black transition hover:bg-white/90"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </Motion.div>
+          </Motion.div>
         )}
       </AnimatePresence>
     </>

@@ -77,7 +77,11 @@ export default function NavbarCurrencySelector() {
 
   const handleChange = (code) => {
     setTo(code);
-    try { localStorage.setItem("fx_to", code); } catch {}
+    try {
+      localStorage.setItem("fx_to", code);
+    } catch (storageError) {
+      console.warn("fx_to_persist_error", storageError);
+    }
     setupGlobalAPI(code, base, rates);
   };
 
@@ -117,14 +121,20 @@ export default function NavbarCurrencySelector() {
       };
 
       // CSS hook and event for app-wide reactions
-      try { document.documentElement.setAttribute("data-currency", selectedCode); } catch {}
+      try {
+        document.documentElement.setAttribute("data-currency", selectedCode);
+      } catch (domError) {
+        console.warn("currency_dom_flag_error", domError);
+      }
       try {
         window.dispatchEvent(
           new CustomEvent("currency:change", {
             detail: { code: selectedCode, base: baseCode, rates: allRates },
           })
         );
-      } catch {}
+      } catch (emitError) {
+        console.warn("currency_change_emit_error", emitError);
+      }
     } catch (e) {
       console.error("Currency setup failed", e);
     }

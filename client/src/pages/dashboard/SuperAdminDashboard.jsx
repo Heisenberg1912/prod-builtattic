@@ -311,7 +311,9 @@ export default function SuperAdminDashboard({ onLogout }) {
     const syncToken = () => {
       try {
         setAuthToken(localStorage.getItem('auth_token'));
-      } catch {}
+      } catch (error) {
+        console.warn('superadmin_token_sync_error', error);
+      }
     };
     window.addEventListener('storage', syncToken);
     window.addEventListener('auth:login', syncToken);

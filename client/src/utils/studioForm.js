@@ -25,6 +25,34 @@ const sanitiseNumber = (value) => {
   return Number.isFinite(numeric) ? numeric : undefined;
 };
 
+const extractDriveId = (value = "") => {
+  const patterns = [
+    /https?:\/\/drive\.google\.com\/file\/d\/([^/]+)\//i,
+    /https?:\/\/drive\.google\.com\/open\?id=([^&]+)/i,
+    /https?:\/\/drive\.google\.com\/uc\?(?:export=\w+&)?id=([^&]+)/i,
+    /https?:\/\/drive\.google\.com\/thumbnail\?id=([^&]+)/i,
+    /https?:\/\/drive\.googleusercontent\.com\/[^?]*[?&]id=([^&]+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+};
+
+export const buildDriveImageUrl = (id, { size = 1600 } = {}) =>
+  id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${size}` : null;
+
+export const normaliseAssetUrl = (value) => {
+  if (!value) return value;
+  const trimmed = value.trim();
+  const driveId = extractDriveId(trimmed);
+  if (driveId) {
+    return buildDriveImageUrl(driveId);
+  }
+  return trimmed;
+};
+
 export const EMPTY_STUDIO_FORM = {
   id: null,
   title: "",
@@ -140,6 +168,11 @@ export const studioFormToPayload = (form = {}) => {
     timezone: form.timezone?.trim(),
   });
 
+  const heroImage = normaliseAssetUrl(form.heroImage);
+  const gallery = splitLines(form.gallery, 20)
+    .map(normaliseAssetUrl)
+    .filter(Boolean);
+
   const delivery = cleanupPayload({
     instructions: form.deliveryNotes?.trim(),
     fulfilmentType: form.fulfilmentType?.trim(),
@@ -158,8 +191,8 @@ export const studioFormToPayload = (form = {}) => {
     price: sanitiseNumber(form.price),
     priceSqft: sanitiseNumber(form.priceSqft),
     currency: form.currency?.trim()?.toUpperCase() || undefined,
-    heroImage: form.heroImage?.trim() || undefined,
-    gallery: splitLines(form.gallery, 20),
+    heroImage: heroImage || undefined,
+    gallery,
     categories: splitComma(form.categories, 20),
     category: form.category?.trim() || undefined,
     tags: splitComma(form.tags, 30),

@@ -16,7 +16,9 @@ const safeParse = (value, fallback) => {
 const persist = (key, payload) => {
   try {
     localStorage.setItem(key, JSON.stringify(payload));
-  } catch {}
+  } catch (error) {
+    console.warn("product_discovery_persist_error", error);
+  }
 };
 
 const read = (key, fallback) => {
@@ -135,4 +137,3 @@ export const getSearchSuggestions = (engine, query, limit = 6) => {
       score,
     }));
 };
-

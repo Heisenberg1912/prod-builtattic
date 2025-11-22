@@ -52,7 +52,9 @@ const writeState = (state) => {
   if (!storage) return;
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
+  } catch (error) {
+    console.warn('workspace_sync_persist_error', error);
+  }
 };
 
 const emitSyncEvent = (role, nextState) => {
@@ -63,7 +65,9 @@ const emitSyncEvent = (role, nextState) => {
         detail: { role, state: nextState },
       }),
     );
-  } catch {}
+  } catch (error) {
+    console.warn('workspace_sync_emit_error', error);
+  }
 };
 
 const createId = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;

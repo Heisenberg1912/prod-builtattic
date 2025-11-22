@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion as Motion } from "framer-motion";
 import { toast } from "react-hot-toast";
 import { AiFillStar } from "react-icons/ai";
 import RegistrStrip from "../components/registrstrip";
@@ -111,7 +111,7 @@ const formatMoney = (value, currency = "USD") => {
       currency,
       maximumFractionDigits: 0,
     }).format(value);
-  } catch (error) {
+} catch {
     return `${currency} ${value}`;
   }
 };
@@ -237,7 +237,9 @@ const Associates = () => {
       if (typeof parsed.web3 === 'boolean') setOnlyWeb3Verified(parsed.web3);
       if (typeof parsed.open === 'boolean') setOnlyOpenForBriefs(parsed.open);
       if (typeof parsed.portfolio === 'boolean') setOnlyHasPortfolio(parsed.portfolio);
-    } catch {}
+    } catch (storageError) {
+      console.warn('associate_filters_restore_error', storageError);
+    }
   }, []);
 
   useEffect(() => {
@@ -246,7 +248,9 @@ const Associates = () => {
         SIGNAL_FILTER_STORAGE_KEY,
         JSON.stringify({ web3: onlyWeb3Verified, open: onlyOpenForBriefs, portfolio: onlyHasPortfolio })
       );
-    } catch {}
+    } catch (storageError) {
+      console.warn('associate_filters_persist_error', storageError);
+    }
   }, [onlyHasPortfolio, onlyOpenForBriefs, onlyWeb3Verified]);
 
   useEffect(() => {
@@ -1103,7 +1107,7 @@ const Associates = () => {
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {quickFilterSuggestions.map(({ section, option, count }) => (
-                        <motion.button
+                        <Motion.button
                           key={`${section}-${option}`}
                           type="button"
                           whileTap={{ scale: 0.97 }}
@@ -1114,7 +1118,7 @@ const Associates = () => {
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
                             {count}
                           </span>
-                        </motion.button>
+                        </Motion.button>
                       ))}
                     </div>
                   </div>
@@ -1249,7 +1253,7 @@ const Associates = () => {
                                 const isActive = filters?.[section]?.has(option);
                                 const count = stats[option] || 0;
                                 return (
-                                  <motion.button
+                                  <Motion.button
                                     key={option}
                                     type="button"
                                     whileTap={{ scale: 0.98 }}
@@ -1268,7 +1272,7 @@ const Associates = () => {
                                     >
                                       {count}
                                     </span>
-                                  </motion.button>
+                                  </Motion.button>
                                 );
                               })}
                               {hiddenCount > 0 ? (
@@ -1482,10 +1486,9 @@ const Associates = () => {
                   const isOpenForBriefs = typeof associate.availability === 'string'
                     ? associate.availability.toLowerCase().includes('open')
                     : Boolean(associate.booking?.slots?.length);
-                  const hasPortfolioLink = Boolean(primaryPortfolio);
 
                   return (
-                    <motion.article
+                    <Motion.article
                       key={associate._id}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -1722,7 +1725,7 @@ const Associates = () => {
                           </div>
                         </Link>
                       </div>
-                    </motion.article>
+                    </Motion.article>
                   );
                 })}
             </section>

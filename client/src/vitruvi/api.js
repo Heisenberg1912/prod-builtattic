@@ -19,10 +19,10 @@ async function enrichError(prefix, response) {
   try {
     data = await response.clone().json();
     detail = data?.detail || data?.error || JSON.stringify(data);
-  } catch (_) {
+  } catch {
     try {
       detail = await response.clone().text();
-    } catch (__) {
+    } catch {
       detail = "";
     }
   }

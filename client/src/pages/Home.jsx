@@ -1,7 +1,7 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion as Motion } from "framer-motion";
 import Footer from "../components/Footer";
 import hero_img from "/src/assets/home/hero_img.jpg";
 import searchBackground from "/src/assets/home/Search Background.png";
@@ -94,17 +94,8 @@ const SEARCH_MAPPINGS = [
 ];
 
 const HomePage = () => {
-  const scrollRef = useRef(null);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-
-  const scrollLeft = () => {
-    scrollRef.current.scrollBy({ left: -300, behavior: "smooth" });
-  };
-
-  const scrollRight = () => {
-    scrollRef.current.scrollBy({ left: 300, behavior: "smooth" });
-  };
 
   // Animation variants for reusability
   const fadeUp = {
@@ -257,7 +248,7 @@ const circleMaterials = useMemo(
       <RegistrStrip />
       <div className="bg-white text-gray-900 overflow-x-hidden">
         {/* Hero Section with home image */}
-        <motion.section
+        <Motion.section
           initial="hidden"
           animate="show"
           variants={fadeUp}
@@ -268,7 +259,7 @@ const circleMaterials = useMemo(
           }}
         >
           {/* Image */}
-          <motion.img
+          <Motion.img
             src={hero_img}
             alt="Preview"
             variants={scaleIn}
@@ -285,7 +276,7 @@ const circleMaterials = useMemo(
           />
 
           {/* Text Overlay */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
@@ -302,8 +293,8 @@ const circleMaterials = useMemo(
             {/* <button className="bg-white text-gray-800 px-6 sm:px-8 py-2 sm:py-3 rounded-full shadow-md font-bold transition-all duration-300">
               Watch the film
             </button> */}
-          </motion.div>
-        </motion.section>
+          </Motion.div>
+        </Motion.section>
 
         <div className="border-t-8 border-white"></div>
 
@@ -552,7 +543,7 @@ const circleMaterials = useMemo(
           </div>
 
           {/* Grid */}
-          <motion.div
+          <Motion.div
             className="max-w-7xl mx-auto px-4"
             initial="hidden"
             whileInView="show"
@@ -564,7 +555,7 @@ const circleMaterials = useMemo(
                 <CircleItem key={item.name} item={item} />
               ))}
             </div>
-          </motion.div>
+          </Motion.div>
 
           </section>
         </div>
@@ -572,14 +563,14 @@ const circleMaterials = useMemo(
         <div className="border-t-8 border-white"></div>
 
         {/* Footer with fade in */}
-        <motion.div
+        <Motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.7 }}
         >
           <Footer />
-        </motion.div>
+        </Motion.div>
       </div>
     </>
   );
@@ -593,7 +584,7 @@ const CircleItem = ({ item }) => {
   const image = images?.[0];
 
   return (
-    <motion.div className="flex flex-col items-center text-center gap-1">
+    <Motion.div className="flex flex-col items-center text-center gap-1">
       {/* Portrait rounded-rectangle instead of circle */}
       <div
         className="w-45 aspect-[3/4] rounded-2xl overflow-hidden shadow-md mb-2 bg-white flex items-center justify-center"
@@ -608,6 +599,6 @@ const CircleItem = ({ item }) => {
         ) : null}
       </div>
       <span className="text-sm font-medium text-white">{name}</span>
-    </motion.div>
+    </Motion.div>
   );
 };

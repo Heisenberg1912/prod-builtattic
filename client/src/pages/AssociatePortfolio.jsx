@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Footer from "../components/Footer.jsx";
 import PortfolioMediaPlayer from "../components/associate/PortfolioMediaPlayer.jsx";
 import { fetchMarketplaceAssociateProfile } from "../services/marketplace.js";
 import { fetchAssociateDashboard } from "../services/dashboard.js";
 import { fetchAssociatePortalProfile } from "../services/portal.js";
+import { toast } from "react-hot-toast";
 
 const formatCurrency = (value, currency) => {
   if (!Number.isFinite(Number(value))) return null;
@@ -63,10 +64,20 @@ const formatLinkLabel = (url) => {
   }
 };
 
+const buildMailtoLink = (email, subject, body) => {
+  if (!email) return null;
+  const params = [];
+  if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
+  if (body) params.push(`body=${encodeURIComponent(body)}`);
+  const query = params.length ? `?${params.join("&")}` : "";
+  return `mailto:${email}${query}`;
+};
+
 
 const AssociatePortfolio = () => {
   const routerLocation = useLocation();
   const { id } = useParams();
+  const navigate = useNavigate();
   const state = routerLocation.state;
   const initialAssociate = useMemo(() => state?.associate ?? state?.profile ?? state ?? null, [state]);
   const initialDashboard = useMemo(() => state?.dashboard ?? null, [state]);
@@ -76,6 +87,7 @@ const AssociatePortfolio = () => {
     loading: !initialAssociate,
     error: null,
   }));
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     if (initialAssociate) {
@@ -379,6 +391,161 @@ const AssociatePortfolio = () => {
     dashboardMeetings.length ||
     dashboardDownloads.length ||
     dashboardChats.length;
+  const enquiryHref = contactEmail
+    ? buildMailtoLink(
+      contactEmail,
+      `Enquiry about ${title} | Skill Studio`,
+      `Hi ${title || "team"},\nI would like to learn more about your availability and scope.\n\nProject notes:`
+    )
+    : null;
+  const meetingHref =
+    schedulingMeeting ||
+    (contactEmail
+      ? buildMailtoLink(
+        contactEmail,
+        `Schedule time with ${title}`,
+        "Hi, can we book a quick intro to review fit and next steps?"
+      )
+      : null);
+  const buyHref =
+    servicePack ||
+    workingDrawings ||
+    serviceBundle ||
+    enquiryHref;
+
+  const quickActions = [
+    {
+      id: "buy",
+      title: price ? `Start from ${price}` : "Buy services",
+      description:
+        servicePack || serviceBundle
+          ? "Check out with the scoped pack or bundle."
+          : "Share a brief and get a scoped quote fast.",
+      href: buyHref,
+      cta: servicePack || serviceBundle ? "Buy / view scope" : "Start order",
+      accent: "bg-emerald-50 text-emerald-700 border-emerald-100",
+      available: true,
+      fallback: "Open the order form to proceed.",
+    },
+    {
+      id: "schedule",
+      title: bookingHighlights[0] || "Book a meeting",
+      description: schedulingMeeting
+        ? "Pick a slot that works for you."
+        : "Request a time to align on fit and next steps.",
+      href: meetingHref,
+      cta: schedulingMeeting ? "Schedule intro" : "Request intro",
+      accent: "bg-indigo-50 text-indigo-700 border-indigo-100",
+      available: true,
+      fallback: meetingHref
+        ? "Opens the scheduling link."
+        : "Use the request form to pick a time slot.",
+    },
+    {
+      id: "enquiry",
+      title: "Raise an enquiry",
+      description: "Ask about scope, capacity, or project fit.",
+      href: enquiryHref,
+      cta: "Send enquiry",
+      accent: "bg-amber-50 text-amber-800 border-amber-100",
+      available: true,
+      fallback: enquiryHref
+        ? "Opens your email client to send an enquiry."
+        : "Fill the enquiry form so we can route your request.",
+    },
+  ];
+
+  const isHttpLink = (url) => /^https?:\/\//i.test(url);
+  const isMailLink = (url) => /^mailto:/i.test(url);
+  const isTelLink = (url) => /^tel:/i.test(url);
+
+  const openHttpLink = (url) => {
+    if (!url || typeof url !== "string" || !isHttpLink(url)) return false;
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      return true;
+    } catch (error) {
+      console.error("link_open_failed", error);
+      return false;
+    }
+  };
+
+  const openMailLink = (url) => {
+    if (!url || typeof url !== "string" || (!isMailLink(url) && !isTelLink(url))) return false;
+    try {
+      window.location.href = url;
+      return true;
+    } catch (error) {
+      console.error("mailto_open_failed", error);
+      return false;
+    }
+  };
+
+  const handleAction = async (actionId) => {
+    if (actionLoading) return;
+    setActionLoading(true);
+    try {
+      if (actionId === "buy") {
+        if (buyHref && isHttpLink(buyHref)) {
+          openHttpLink(buyHref);
+          toast.success("Opening service pack / bundle");
+        }
+        if (buyHref && (isMailLink(buyHref) || isTelLink(buyHref))) {
+          openMailLink(buyHref);
+          toast("Send your scope via email/phone");
+        }
+        navigate("/associate/order" + (id ? `/${id}` : ""), {
+          state: { associate, price, currency, cover, profile, buyHref, contactEmail },
+        });
+        toast("Finish order via the form");
+        return;
+      }
+
+      if (actionId === "schedule") {
+        if (meetingHref && isHttpLink(meetingHref)) {
+          openHttpLink(meetingHref);
+          toast.success("Opening scheduling link");
+        }
+        if (meetingHref && (isMailLink(meetingHref) || isTelLink(meetingHref))) {
+          openMailLink(meetingHref);
+          toast("Request a slot via email/phone");
+        }
+        if (enquiryHref && (isMailLink(enquiryHref) || isTelLink(enquiryHref))) {
+          openMailLink(enquiryHref);
+          toast("Request a slot via email");
+        }
+        navigate("/associate/schedule" + (id ? `/${id}` : ""), {
+          state: { associate, meetingHref, contactEmail, title, availability, timezone },
+        });
+        toast("Pick a slot via the schedule form");
+        return;
+      }
+
+      if (actionId === "enquiry") {
+        if (enquiryHref && isHttpLink(enquiryHref)) {
+          openHttpLink(enquiryHref);
+          toast.success("Opening enquiry link");
+        }
+        if (enquiryHref && (isMailLink(enquiryHref) || isTelLink(enquiryHref))) {
+          openMailLink(enquiryHref);
+          toast.success("Open your email client to send an enquiry");
+        }
+        navigate("/associate/enquiry" + (id ? `/${id}` : ""), {
+          state: { associate, contactEmail, title, price, currency },
+        });
+        toast("Use the enquiry form to submit details.");
+        return;
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <div className="bg-gradient-to-b from-white via-slate-50 to-white min-h-screen flex flex-col text-slate-900">
@@ -435,12 +602,52 @@ const AssociatePortfolio = () => {
               </div>
             )}
           </div>
+
+          <div className="grid gap-4 rounded-3xl bg-white/80 p-4 shadow-xl ring-1 ring-white/60 backdrop-blur-sm md:grid-cols-3">
+            {quickActions.map((action) => {
+              const disabled = !action.available || actionLoading;
+              const pillLabel = action.id === "buy" ? "Order" : action.id === "schedule" ? "Meet" : "Enquiry";
+              return (
+                <div
+                  key={action.id}
+                  className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100"
+                >
+                  <span
+                    className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] ${action.accent}`}
+                  >
+                    {pillLabel}
+                  </span>
+                  <div className="space-y-1">
+                    <p className="text-base font-semibold text-slate-900">{action.title}</p>
+                    <p className="text-sm text-slate-600">{action.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleAction(action.id)}
+                    className={`inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition ${disabled
+                      ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                      : "bg-slate-900 text-white shadow hover:bg-slate-800"
+                      }`}
+                    aria-disabled={disabled}
+                    disabled={disabled}
+                    title={!action.available ? action.fallback : undefined}
+                  >
+                    {action.cta}
+                    <span className="ml-2 text-xs opacity-70">&rarr;</span>
+                  </button>
+                  {!action.available && (
+                    <p className="text-xs text-slate-500">{action.fallback}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       <main className="relative z-10 -mt-12 pb-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,2.1fr)_minmax(360px,1fr)]">
             <section className="space-y-6">
               <article className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
                 <div className="flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
@@ -470,6 +677,52 @@ const AssociatePortfolio = () => {
                   ) : null}
                 </div>
               </article>
+
+              <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Get started</p>
+                    <h2 className="text-lg font-semibold text-slate-900">Ways to work together</h2>
+                    <p className="text-sm text-slate-600">
+                      Pick the fastest path to buy, schedule time, or ask a question.
+                    </p>
+                  </div>
+                  {price ? (
+                    <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow">
+                      {price}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {quickActions.map((action) => {
+                    const disabled = !action.available || actionLoading;
+                    return (
+                      <div key={action.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
+                        <p className="text-sm font-semibold text-slate-900">{action.cta}</p>
+                        <p className="mt-1 text-sm text-slate-600">{action.description}</p>
+                        <button
+                          type="button"
+                          onClick={() => handleAction(action.id)}
+                          className={`mt-3 inline-flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${disabled
+                            ? "cursor-not-allowed bg-white text-slate-400 ring-1 ring-slate-100"
+                            : "bg-slate-900 text-white shadow hover:bg-slate-800"
+                            }`}
+                          aria-disabled={disabled}
+                          disabled={disabled}
+                          title={!action.available ? action.fallback : undefined}
+                        >
+                          {action.id === "buy" ? "Purchase or start order" : action.id === "schedule" ? "Schedule time" : "Send enquiry"}
+                          <span className="text-xs opacity-70">&rarr;</span>
+                        </button>
+                        {!action.available && <p className="mt-2 text-xs text-slate-500">{action.fallback}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+                {availability ? (
+                  <p className="text-xs text-slate-500">Availability right now: {availability}. Ask to hold a slot.</p>
+                ) : null}
+              </section>
 
               {stats.length > 0 && (
                 <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
@@ -523,6 +776,92 @@ const AssociatePortfolio = () => {
                   variant="bare"
                 />
               </section>
+
+              {(serviceBundle || workingDrawings || servicePack || schedulingMeeting) && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Packages</p>
+                      <h2 className="text-lg font-semibold text-slate-900">Service offerings</h2>
+                      <p className="text-sm text-slate-600">
+                        Ready-made scopes, bundles, and meeting links you can act on immediately.
+                      </p>
+                    </div>
+                    {price ? (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">
+                        from {price}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {servicePack && (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Service pack</p>
+                        <p className="text-sm text-slate-700">
+                          Pre-scoped deliverables and pricing ready for checkout.
+                        </p>
+                        <a
+                          href={servicePack}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800 transition"
+                        >
+                          Buy the pack
+                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
+                        </a>
+                      </div>
+                    )}
+                    {serviceBundle && (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Bundle</p>
+                        <p className="text-sm text-slate-700">{serviceBundle}</p>
+                        <a
+                          href={buyHref || enquiryHref || undefined}
+                          onClick={(event) => {
+                            if (!(buyHref || enquiryHref)) event.preventDefault();
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
+                        >
+                          Purchase bundle
+                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
+                        </a>
+                      </div>
+                    )}
+                    {workingDrawings && (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Working drawings</p>
+                        <p className="text-sm text-slate-700">Review the drawing set shared with buyers.</p>
+                        <a
+                          href={workingDrawings}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50 transition"
+                        >
+                          View drawings
+                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
+                        </a>
+                      </div>
+                    )}
+                    {schedulingMeeting && (
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700">Schedule</p>
+                        <p className="text-sm text-emerald-900">
+                          Use the live calendar to book a discovery call.
+                        </p>
+                        <a
+                          href={schedulingMeeting}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
+                        >
+                          Book a meeting
+                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {deliverables.length > 0 && (
                 <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
@@ -616,73 +955,55 @@ const AssociatePortfolio = () => {
               )}
             </section>
 
-              {(serviceBundle || workingDrawings || servicePack || schedulingMeeting) && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-slate-900">Service Offerings</h2>
-                    <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                      Packages & Resources
+            <aside className="space-y-6 lg:sticky lg:top-8 h-fit">
+              <section className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-white text-slate-900 p-6 shadow-2xl ring-1 ring-slate-100 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Action center</p>
+                    <h3 className="text-lg font-semibold">Engage {title}</h3>
+                    <p className="text-sm text-slate-600">
+                      {availability ? `Availability: ${availability}` : "Replies within 1 business day."}
+                    </p>
+                  </div>
+                  {price ? (
+                    <span className="rounded-full bg-slate-900 text-white px-3 py-1 text-xs font-semibold shadow ring-1 ring-slate-900/10">
+                      {price}
                     </span>
-                  </div>
-                  <div className="space-y-4">
-                    {serviceBundle && (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                          Service Bundle
-                        </p>
-                        <p className="text-sm text-slate-700">{serviceBundle}</p>
-                      </div>
-                    )}
-                    {workingDrawings && (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                          Working Drawings
-                        </p>
-                        <a
-                          href={workingDrawings}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sm font-semibold text-slate-900 underline hover:text-slate-700"
-                        >
-                          View Sample Working Drawings
-                        </a>
-                      </div>
-                    )}
-                    {servicePack && (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                          Service Pack
-                        </p>
-                        <a
-                          href={servicePack}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sm font-semibold text-slate-900 underline hover:text-slate-700"
-                        >
-                          View Service Packages & Pricing
-                        </a>
-                      </div>
-                    )}
-                    {schedulingMeeting && (
-                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600 mb-2">
-                          Schedule a Meeting
-                        </p>
-                        <a
-                          href={schedulingMeeting}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
-                        >
-                          Book a Discovery Call
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  {quickActions.map((action) => {
+                    const disabled = !action.available || actionLoading;
+                    const href = action.available ? action.href : undefined;
+                    return (
+                      <button
+                        type="button"
+                        key={`action-${action.id}`}
+                        onClick={() => handleAction(action.id)}
+                        className={`flex items-center justify-between rounded-2xl px-3 py-3 text-sm font-semibold transition ${disabled
+                          ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-100"
+                          : "bg-slate-900 text-white hover:bg-slate-800 shadow"
+                          }`}
+                        aria-disabled={disabled}
+                        disabled={disabled}
+                        title={!href ? action.fallback : undefined}
+                      >
+                        <span>{action.cta}</span>
+                        <span className="text-xs opacity-80">&rarr;</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="rounded-2xl bg-slate-100 p-3 text-xs text-slate-700 space-y-1 ring-1 ring-slate-200">
+                  <p>
+                    {contactEmail
+                      ? `Prefer email? ${contactEmail}`
+                      : "Add a contact email so enquiries can be routed directly."}
+                  </p>
+                  {timezone ? <p>Timezone: {timezone}</p> : null}
+                </div>
+              </section>
 
-            <aside className="space-y-6">
               {(contactEmail || availability || timezone) && (
                 <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
                   <h3 className="text-base font-semibold text-slate-900">Buyer playbook</h3>
@@ -797,7 +1118,7 @@ const AssociatePortfolio = () => {
                             <span className="text-xs font-semibold text-slate-400">{index + 1}.</span>
                             <span>
                               {stage.label || stage.stage}
-                              {stage.minutes ? ` · ${stage.minutes} min` : null}
+                              {stage.minutes ? ` - ${stage.minutes} min` : null}
                             </span>
                           </li>
                         ))}
@@ -840,7 +1161,7 @@ const AssociatePortfolio = () => {
                           <li key={plan.id || plan.projectTitle} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
                             <p className="font-semibold text-slate-900">{plan.projectTitle || "Concept"}</p>
                             <p className="text-[11px] text-slate-500">
-                              {plan.category || "Concept"}{plan.primaryStyle ? ` · ${plan.primaryStyle}` : ""}
+                              {plan.category || "Concept"}{plan.primaryStyle ? ` - ${plan.primaryStyle}` : ""}
                             </p>
                           </li>
                         ))}
@@ -933,7 +1254,7 @@ const AssociatePortfolio = () => {
                       <ul className="space-y-2 text-sm text-slate-700">
                         {prepChecklist.map((item, index) => (
                           <li key={`${item}-${index}`} className="flex gap-2">
-                            <span className="text-emerald-500">–</span>
+                            <span className="text-emerald-500">-</span>
                             <span>{item}</span>
                           </li>
                         ))}

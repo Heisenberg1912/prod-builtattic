@@ -9,7 +9,6 @@
 // - Montserrat font injected via <link> (no other file edits)
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "react-hot-toast";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { HiOutlineSearch } from "react-icons/hi";
@@ -22,7 +21,6 @@ import { createEmptyFilterState } from "../constants/designFilters.js";
 import { marketplaceFeatures } from "../data/marketplace.js";
 import { fetchStudios, fetchDesignStudioHosting, buildStudioSlug } from "../services/marketplace.js";
 import { fetchFirmDashboard } from "../services/dashboard.js";
-import { submitRating, fetchRatingSnapshot } from "../services/ratings.js";
 import { analyzeImage } from "../utils/imageSearch.js";
 import {
   applyFallback,
@@ -570,8 +568,9 @@ const Studio = () => {
           services: Array.isArray(hosting.services) ? hosting.services : [],
           products: Array.isArray(hosting.products) ? hosting.products : [],
         });
-      } catch (_error) {
+      } catch (error) {
         if (cancelled) return;
+        console.warn("studio_hosting_load_error", error);
         setHostingTiles(EMPTY_HOSTING_TILES);
       }
     }
@@ -1011,8 +1010,8 @@ const Studio = () => {
   // Active filters count
   const activeFilterCount = useMemo(() => {
     let n = 0;
-    for (const [k, v] of Object.entries(filters)) {
-      if (v instanceof Set && v.size) n += v.size;
+    for (const value of Object.values(filters)) {
+      if (value instanceof Set && value.size) n += value.size;
     }
     const ranges = [
       [priceSel, priceRange],
@@ -1069,7 +1068,7 @@ const Studio = () => {
         <div className="max-w-screen-2xl mx-auto px-3 py-3 flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setMobileSheetOpen(true)}
+            onClick={() => setFiltersOpen(true)}
             className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700"
           >
             Filters{activeFilterCount ? <span className="ml-1 text-xs text-slate-500">({activeFilterCount})</span> : null}

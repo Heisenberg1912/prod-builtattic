@@ -1,6 +1,7 @@
 import client from "../config/axios.jsx";
 import { ASSOCIATE_PORTAL_FALLBACK, VENDOR_PORTAL_FALLBACK, FIRM_PORTAL_FALLBACK } from "../data/portalFallbacks.js";
 import { VENDOR_DASHBOARD_FALLBACK, FIRM_DASHBOARD_FALLBACK } from "../data/dashboardFallbacks.js";
+import { normaliseAssetUrl, buildDriveImageUrl } from "../utils/studioForm.js";
 
 export const ASSOCIATE_PROFILE_DRAFT_KEY = "associate_portal_profile_draft";
 
@@ -287,7 +288,7 @@ const loadFirmProfileDraft = (firmId) => {
   return safeParseJSON(localStorage.getItem(firmDraftStorageKey(firmId)));
 };
 
-const saveFirmProfileDraft = (profile = {}, _meta = {}, firmId) => {
+const saveFirmProfileDraft = (profile = {}, firmId) => {
   if (!draftsEnabled() || typeof window === "undefined") {
     return { ...profile };
   }
@@ -518,7 +519,7 @@ export async function fetchFirmPortalProfile(options = {}) {
     const { data } = await client.get("/portal/firm/profile", config);
     const profile = data?.profile || null;
     if (profile) {
-      saveFirmProfileDraft({ ...profile, updatedAt: profile.updatedAt || nowISO() }, { source: "remote" }, firmId);
+      saveFirmProfileDraft({ ...profile, updatedAt: profile.updatedAt || nowISO() }, firmId);
     }
     return {
       ok: true,
@@ -549,7 +550,6 @@ export async function upsertFirmPortalProfile(payload = {}, options = {}) {
   if (shouldMockPortalApi()) {
     const merged = saveFirmProfileDraft(
       { ...(loadFirmProfileDraft(firmId) || {}), ...payload, updatedAt: nowISO() },
-      { source: options.source || "mock" },
       firmId
     );
     return {
@@ -564,7 +564,7 @@ export async function upsertFirmPortalProfile(payload = {}, options = {}) {
     const { data } = await client.put("/portal/firm/profile", payload, config);
     const profile = data?.profile || null;
     if (profile) {
-      saveFirmProfileDraft({ ...profile, updatedAt: profile.updatedAt || nowISO() }, { source: "remote" }, firmId);
+      saveFirmProfileDraft({ ...profile, updatedAt: profile.updatedAt || nowISO() }, firmId);
     }
     return {
       ok: true,
@@ -577,7 +577,6 @@ export async function upsertFirmPortalProfile(payload = {}, options = {}) {
     if (handlePortalNetworkFailure(error)) {
       const merged = saveFirmProfileDraft(
         { ...(loadFirmProfileDraft(firmId) || {}), ...payload, updatedAt: nowISO() },
-        { source: "mock" },
         firmId
       );
       return {
@@ -689,6 +688,11 @@ export async function fetchFirmStudios(params = {}) {
       meta: response.meta || { total: (response.items || []).length },
     };
   } catch (error) {
+    const status = error?.response?.status;
+    if (status === 400) {
+      activatePortalMockMode(error);
+      return getMockFirmStudiosPayload();
+    }
     if (handlePortalNetworkFailure(error)) {
       return getMockFirmStudiosPayload();
     }
@@ -883,7 +887,20 @@ export async function uploadAsset(file, { studioId, kind = "marketing", secure =
   const { data } = await client.post('/uploads', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return okOrThrow(data, 'Unable to upload document');
+  const response = okOrThrow(data, 'Unable to upload document') || data || {};
+  const asset = response.asset || {};
+  const drivePreview = asset.driveFileId ? buildDriveImageUrl(asset.driveFileId) : null;
+  const candidate =
+    normaliseAssetUrl(
+      asset.publicUrl ||
+        asset.url ||
+        asset.storagePath ||
+        response.downloadUrl ||
+        drivePreview ||
+        asset.key
+    ) || drivePreview;
+  const url = candidate || response.downloadUrl || asset.storagePath || asset.url || null;
+  return { ...response, asset, url, previewUrl: candidate || null };
 }
 
 export async function uploadStudioAsset(file, options = {}) {

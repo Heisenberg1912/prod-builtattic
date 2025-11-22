@@ -64,6 +64,7 @@ export default function DownloadCenter({
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [processingIds, setProcessingIds] = useState(() => new Set());
+  const [downloadingIds, setDownloadingIds] = useState(() => new Set());
   const pollersRef = useRef(new Map());
 
   useEffect(() => {
@@ -92,6 +93,15 @@ export default function DownloadCenter({
 
   const setProcessingFlag = (id, value) => {
     setProcessingIds((prev) => {
+      const next = new Set(prev);
+      if (value) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const setDownloadingFlag = (id, value) => {
+    setDownloadingIds((prev) => {
       const next = new Set(prev);
       if (value) next.add(id);
       else next.delete(id);
@@ -136,6 +146,62 @@ export default function DownloadCenter({
       }
     }, delay);
     pollersRef.current.set(id, timer);
+  };
+
+  const deriveFilename = (download, response) => {
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename\\*?=([^;]+)/i);
+    if (match && match[1]) {
+      const raw = match[1].replace(/(^['"]|['"]$)/g, "");
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        return raw;
+      }
+    }
+    if (download?.fileUrl) {
+      try {
+        const url = new URL(download.fileUrl, window.location.href);
+        const last = url.pathname.split("/").pop();
+        if (last) return last;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (download?.label) {
+      return `${download.label.replace(/\\s+/g, "-")}.zip`;
+    }
+    return "download";
+  };
+
+  const handleDownloadFile = async (download) => {
+    if (!download?.fileUrl) {
+      toast.error("No file URL attached");
+      return;
+    }
+    setDownloadingFlag(download.id, true);
+    try {
+      const response = await fetch(download.fileUrl, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error(response.status === 403 ? "Access denied for this download" : "Unable to download file");
+      }
+      const blob = await response.blob();
+      const filename = deriveFilename(download, response);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename || "download";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Download started");
+    } catch (error) {
+      console.error("workspace_download_failed", error);
+      toast.error(error?.message || "Download blocked");
+    } finally {
+      setDownloadingFlag(download.id, false);
+    }
   };
 
   useEffect(() => {
@@ -420,9 +486,10 @@ export default function DownloadCenter({
                       <button
                         type="button"
                         className="underline"
-                        onClick={() => window.open(download.metadata.artifactUrl, "_blank")}
+                        onClick={() => handleDownloadFile({ ...download, fileUrl: download.metadata.artifactUrl })}
+                        disabled={downloadingIds.has(download.id)}
                       >
-                        Download
+                        {downloadingIds.has(download.id) ? "Downloading..." : "Download"}
                       </button>
                     </div>
                   )}
@@ -434,14 +501,14 @@ export default function DownloadCenter({
                   )}
                 </dl>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-                  <a
-                    href={download.fileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-full border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50"
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadFile(download)}
+                    disabled={downloadingIds.has(download.id)}
+                    className="rounded-full border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   >
-                    Open file
-                  </a>
+                    {downloadingIds.has(download.id) ? "Downloading..." : "Download file"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleProcess(download)}

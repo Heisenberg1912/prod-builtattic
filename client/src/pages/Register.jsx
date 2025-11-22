@@ -1,4 +1,3 @@
-/* global google */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Link, useNavigate } from "react-router-dom";
@@ -362,7 +361,9 @@ const getQueryRedirect = () => {
       const v = u.searchParams.get(key);
       if (v && v.startsWith("/")) return v;
     }
-  } catch {}
+  } catch (error) {
+    console.warn("register_redirect_parse_error", error);
+  }
   return null;
 };
 
@@ -399,7 +400,9 @@ const RegisterPage = () => {
         setRole(requestedRole);
         syncLayoutForRole(requestedRole);
       }
-    } catch {}
+    } catch (error) {
+      console.warn("register_role_prefill_error", error);
+    }
   }, [syncLayoutForRole]);
 
   const completeRegistrationLogin = useCallback(
@@ -414,7 +417,9 @@ const RegisterPage = () => {
         localStorage.setItem("auth_token", token);
         localStorage.setItem("role", resolvedRole);
         localStorage.setItem("user", JSON.stringify(user));
-      } catch {}
+      } catch (storageError) {
+        console.warn("register_persist_error", storageError);
+      }
       navigate(dest, { replace: true });
     },
     [navigate, role]
@@ -602,11 +607,14 @@ const RegisterPage = () => {
           secure: true,
         });
         const asset = uploadResponse?.asset || uploadResponse;
-        if (asset) {
-          profile[field.key] = asset.storagePath || asset.url || asset.key;
-          if (asset.key) {
-            profile[`${field.key}AssetKey`] = asset.key;
-          }
+        const resolved = uploadResponse?.previewUrl || uploadResponse?.url;
+        const storagePath = asset?.storagePath || asset?.url || asset?.key || null;
+        const finalUrl = resolved || storagePath;
+        if (finalUrl) {
+          profile[field.key] = finalUrl;
+        }
+        if (asset?.key) {
+          profile[`${field.key}AssetKey`] = asset.key;
         }
       }
 
@@ -823,7 +831,7 @@ const RegisterPage = () => {
 
               <div className="mt-8 space-y-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Prefer using Google?</div>
-                {Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID) ? (
+                {import.meta.env.VITE_GOOGLE_CLIENT_ID ? (
                   <div className="flex justify-start">
                     <div ref={googleButtonRef} className="inline-flex" />
                   </div>

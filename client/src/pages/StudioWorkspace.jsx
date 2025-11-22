@@ -475,12 +475,16 @@ export default function StudioWorkspace() {
   const handleHeroUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    const tempUrl = URL.createObjectURL(file);
+    setForm((prev) => ({ ...prev, heroImage: tempUrl }));
     setUploading((prev) => ({ ...prev, hero: true }));
     try {
-      const { url } = await uploadStudioAsset(file, { kind: 'preview', secure: false });
-      if (!url) throw new Error('Upload did not return a URL');
-      setForm((prev) => ({ ...prev, heroImage: url }));
+      const { url, previewUrl } = await uploadStudioAsset(file, { kind: 'preview', secure: false });
+      const resolved = previewUrl || url;
+      if (!resolved) throw new Error('Upload did not return a URL');
+      setForm((prev) => ({ ...prev, heroImage: resolved }));
       toast.success('Hero image uploaded');
+      URL.revokeObjectURL(tempUrl);
     } catch (error) {
       console.error(error);
       toast.error(error?.message || 'Unable to upload hero image');
@@ -497,8 +501,9 @@ export default function StudioWorkspace() {
     try {
       const uploaded = [];
       for (const file of files) {
-        const { url } = await uploadStudioAsset(file, { kind: 'preview', secure: false });
-        if (url) uploaded.push(url);
+          const { url, previewUrl } = await uploadStudioAsset(file, { kind: 'preview', secure: false });
+          const resolved = previewUrl || url;
+          if (resolved) uploaded.push(resolved);
       }
       if (uploaded.length) {
         setForm((prev) => ({

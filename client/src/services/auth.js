@@ -167,7 +167,9 @@ export async function fetchCurrentUser() {
     try {
       const cached = localStorage.getItem("user");
       return cached ? JSON.parse(cached) : null;
-    } catch {}
+    } catch (cacheError) {
+      console.warn("auth_cached_user_parse_error", cacheError);
+    }
     if (err?.code === "ERR_NETWORK" || !err?.response) return null;
     throw err;
   }

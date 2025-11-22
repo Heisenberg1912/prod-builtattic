@@ -1,5 +1,5 @@
 import React from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion as Motion, useReducedMotion } from "framer-motion";
 
 const springyEase = [0.25, 1, 0.5, 1];
 
@@ -37,7 +37,7 @@ const PageTransition = ({ children }) => {
   const prefersReduced = useReducedMotion();
 
   return (
-    <motion.div
+    <Motion.div
       className="page-transition"
       initial="initial"
       animate="animate"
@@ -53,7 +53,7 @@ const PageTransition = ({ children }) => {
       }}
     >
       {children}
-    </motion.div>
+    </Motion.div>
   );
 };
 

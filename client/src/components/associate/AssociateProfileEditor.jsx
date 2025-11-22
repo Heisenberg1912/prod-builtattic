@@ -14,6 +14,7 @@ import {
   deriveProfileStats,
   formatCurrency,
 } from "../../utils/associateProfile.js";
+import { normaliseAssetUrl } from "../../utils/studioForm.js";
 import { ASSOCIATE_PORTAL_FALLBACK } from "../../data/portalFallbacks.js";
 
 const Badge = ({ tone = "slate", children }) => {
@@ -226,13 +227,16 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
 
   const handleInput = (field) => (event) => {
     const value = event.target.value;
-    setForm((prev) => ({ ...prev, [field]: value }));
+    const nextValue =
+      field === "heroImage" || field === "profileImage" ? normaliseAssetUrl(value) : value;
+    setForm((prev) => ({ ...prev, [field]: nextValue }));
   };
 
   const handleBrandInputChange = (field, previewKey) => (event) => {
     const value = event.target.value;
-    setForm((prev) => ({ ...prev, [field]: value }));
-    setImagePreviews((prev) => ({ ...prev, [previewKey]: value || null }));
+    const nextValue = field === "heroImage" || field === "profileImage" ? normaliseAssetUrl(value) : value;
+    setForm((prev) => ({ ...prev, [field]: nextValue }));
+    setImagePreviews((prev) => ({ ...prev, [previewKey]: nextValue || null }));
   };
 
   const serviceFileRefs = {
@@ -248,12 +252,13 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
     if (!file) return;
     setServiceUploading((prev) => ({ ...prev, [field]: true }));
     try {
-      const { url } = await uploadStudioAsset(file, {
+      const { url, previewUrl } = await uploadStudioAsset(file, {
         kind: `associate_service_${field}`,
         secure: true,
       });
-      if (!url) throw new Error("Upload failed. Try another file.");
-      setForm((prev) => ({ ...prev, [field]: url }));
+      const resolved = previewUrl || url;
+      if (!resolved) throw new Error("Upload failed. Try another file.");
+      setForm((prev) => ({ ...prev, [field]: resolved }));
       toast.success("Document uploaded");
     } catch (error) {
       console.error("service_document_upload_error", error);
@@ -319,9 +324,10 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
     if (!file) return;
     try {
       setMediaUploadIndex(index);
-      const { url } = await uploadStudioAsset(file, { kind: "associate_portfolio", secure: true });
-      if (!url) throw new Error("Upload failed. Try another file.");
-      handleMediaChange(index, "mediaUrl", url);
+      const { url, previewUrl } = await uploadStudioAsset(file, { kind: "associate_portfolio", secure: true });
+      const resolved = previewUrl || url;
+      if (!resolved) throw new Error("Upload failed. Try another file.");
+      handleMediaChange(index, "mediaUrl", resolved);
       const inferredKind = detectMediaKind(file);
       if (inferredKind) {
         handleMediaChange(index, "kind", inferredKind);
@@ -346,10 +352,11 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
     try {
       tempUrl = URL.createObjectURL(file);
       setImagePreviews((prev) => ({ ...prev, [previewKey]: tempUrl }));
-      const { url } = await uploadStudioAsset(file, { kind, secure: true });
-      if (!url) throw new Error("Upload failed. Try another file.");
-      setForm((prev) => ({ ...prev, [targetKey]: url }));
-      setImagePreviews((prev) => ({ ...prev, [previewKey]: url }));
+      const { url, previewUrl } = await uploadStudioAsset(file, { kind, secure: true });
+      const resolved = previewUrl || url;
+      if (!resolved) throw new Error("Upload failed. Try another file.");
+      setForm((prev) => ({ ...prev, [targetKey]: resolved }));
+      setImagePreviews((prev) => ({ ...prev, [previewKey]: resolved }));
       toast.success("Image uploaded");
     } catch (error) {
       console.error("brand_image_upload_error", error);

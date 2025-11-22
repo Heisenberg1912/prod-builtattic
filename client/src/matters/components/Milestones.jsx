@@ -22,12 +22,13 @@ export const computeStageScore = (kpis = {}, incidents = []) => {
   };
 };
 
-const StageBadge = ({ label, Icon, score }) => {
+// eslint-disable-next-line no-unused-vars
+const StageBadge = ({ label, Icon: IconComponent, score }) => {
   const safeScore = Math.max(0, Math.round(score ?? 0));
   return (
     <div className="flex min-w-[72px] flex-col items-center gap-2">
       <span className="flex h-14 w-14 items-center justify-center rounded-full border border-border/70 bg-surface-soft text-textPrimary shadow-sm">
-        <Icon className="h-5 w-5" aria-hidden="true" />
+        <IconComponent className="h-5 w-5" aria-hidden="true" />
       </span>
       <span className="text-[11px] font-medium uppercase tracking-wide text-textMuted">{label}</span>
       <span className="text-sm font-semibold text-textPrimary">{safeScore}%</span>

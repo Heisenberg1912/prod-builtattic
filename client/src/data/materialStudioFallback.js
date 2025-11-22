@@ -34,7 +34,7 @@ function splitList(raw) {
   if (!raw || typeof raw !== "string") return [];
   return raw
     .split(/[\n;,]+/)
-    .map((entry) => entry.replace(/^\s*\d+[\).\s-]*/, "").trim())
+    .map((entry) => entry.replace(/^\s*\d+[).\s-]*/, "").trim())
     .filter(Boolean);
 }
 

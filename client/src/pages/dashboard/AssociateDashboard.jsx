@@ -57,6 +57,11 @@ const DAY_LABELS = {
   sun: "Sunday",
 };
 
+const formatNumber = (value) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toLocaleString() : "0";
+};
+
 const PROFILE_FIELD_LABELS = {
   title: "Headline",
   summary: "Bio",
@@ -338,23 +343,6 @@ const getValueByPath = (object, path) => {
   }, object);
 };
 
-const valuesEqual = (a, b) => {
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return JSON.stringify(a || []) === JSON.stringify(b || []);
-  }
-  return (a ?? null) === (b ?? null);
-};
-
-const summariseProfileChanges = (previousProfile = {}, nextProfile = {}) => {
-  const diff = [];
-  Object.entries(PROFILE_FIELD_LABELS).forEach(([path, label]) => {
-    if (!valuesEqual(getValueByPath(previousProfile, path), getValueByPath(nextProfile, path))) {
-      diff.push(label);
-    }
-  });
-  return diff;
-};
-
 const isFilled = (value) => {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === "number") return Number.isFinite(value);
@@ -481,15 +469,6 @@ const buildOpportunityMatches = (profile) => {
       score: opportunity.score || 1,
       reasons: opportunity.reasons?.length ? opportunity.reasons : ["New marketplace lead"],
     }));
-};
-
-const formatList = (items) => {
-  if (!items.length) return "";
-  if (items.length === 1) return items[0];
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  const copy = [...items];
-  const last = copy.pop();
-  return `${copy.join(", ")}, and ${last}`;
 };
 
 const formatAvailabilityWindow = (window) => {
@@ -636,7 +615,6 @@ function AssociateDashboard() {
   const planUploads = dashboardData.planUploads || [];
   const downloads = dashboardData.downloads || [];
   const chats = dashboardData.chats || [];
-  const featuredPlan = planUploads[0] || null;
 
   const pipelineMatches = useMemo(() => {
     if (recommendedMatches.length) return recommendedMatches;
@@ -734,29 +712,6 @@ function AssociateDashboard() {
       return next;
     });
   }, []);
-
-  const handleProfileUpdated = useCallback(
-    (nextProfile, meta = {}) => {
-      if (!nextProfile) return;
-      const previousProfile = profileState.profile;
-      setProfileState((prev) => ({ ...prev, profile: nextProfile, loading: false, error: null }));
-      const changes = summariseProfileChanges(previousProfile, nextProfile);
-      if (meta?.origin === "save" && meta?.source === "remote" && !meta?.authRequired) {
-        pushActivity({
-          id: createId(),
-          timestamp: new Date().toISOString(),
-          kind: "profile.updated",
-          title: "Profile synced to marketplace",
-          description: changes.length
-            ? `Updated ${formatList(changes.slice(0, 4))}`
-            : "Saved without field changes",
-          read: false,
-        });
-        toast.success("Profile saved");
-      }
-    },
-    [profileState.profile, pushActivity]
-  );
 
   const handleTrackOpportunity = useCallback(
     (opportunity) => {
@@ -1311,14 +1266,11 @@ function AssociateDashboard() {
   );
 }
 function OverviewView({
-  loading,
   error,
   profile,
   meta,
-  featuredPlan,
   planUploads = [],
   opportunityMatches,
-  applications,
   activity,
   onRefreshProfile,
   dashboardLoading,
@@ -1355,12 +1307,6 @@ function OverviewView({
     .filter((entry) => !Number.isNaN(entry.due.getTime()))
     .sort((a, b) => a.due.getTime() - b.due.getTime())[0];
   const leadsCount = Number.isFinite(metrics?.activeLeads) ? metrics.activeLeads : opportunityMatches.length;
-  const applicationsCount = Number.isFinite(metrics?.applicationsTracked)
-    ? metrics.applicationsTracked
-    : applications.length;
-  const alertsCount = Number.isFinite(metrics?.alerts)
-    ? metrics.alerts
-    : activity.filter((entry) => !entry.read).length;
   const derivedActions = Array.isArray(nextActions) && nextActions.length
     ? nextActions.slice(0, 5).map((action, index) => ({
         id: action.id || action.title || `next-action-${index}`,
@@ -1543,13 +1489,13 @@ function OverviewView({
                         <dl className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
                           <div>
                             <dt className="uppercase tracking-[0.3em] text-slate-400">Area</dt>
-                            <dd>{plan.areaSqft ? `${number(plan.areaSqft)} sqft` : "Add sqft"}</dd>
+                             <dd>{plan.areaSqft ? `${formatNumber(plan.areaSqft)} sqft` : "Add sqft"}</dd>
                           </div>
                           <div>
                             <dt className="uppercase tracking-[0.3em] text-slate-400">Design rate</dt>
                             <dd>
                               {Number.isFinite(plan.designRate)
-                                ? `$${number(plan.designRate)} / sqft`
+                                ? `$${formatNumber(plan.designRate)} / sqft`
                                 : "Share rate"}
                             </dd>
                           </div>
@@ -1782,7 +1728,7 @@ function OverviewView({
         <MarketplacePreview
           profile={profile}
           meta={meta}
-          featuredPlan={featuredPlan}
+          featuredPlan={profile?.featuredPlan || null}
           loading={dashboardLoading}
           previewState={profile ? { associate: profile } : undefined}
         />

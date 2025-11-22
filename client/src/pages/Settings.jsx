@@ -123,6 +123,7 @@ const detectTimezone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch (error) {
+    console.warn("settings_timezone_detect_error", error);
     return "UTC";
   }
 };
@@ -166,6 +167,7 @@ const detectCurrentSession = () => {
       trusted: true,
     };
   } catch (error) {
+    console.warn("settings_session_detect_error", error);
     return null;
   }
 };

@@ -1,4 +1,3 @@
-/* global google */
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login as passwordLogin, loginWithGoogle } from "../services/auth.js";
@@ -13,7 +12,9 @@ function getQueryRedirect() {
       const v = u.searchParams.get(k);
       if (v && v.startsWith("/")) return v;
     }
-  } catch {}
+  } catch (error) {
+    console.warn("login_redirect_parse_error", error);
+  }
   return null;
 }
 
@@ -47,7 +48,9 @@ const LoginPage = ({ onLogin }) => {
         localStorage.setItem("auth_token", token);
         localStorage.setItem("role", resolvedRole);
         localStorage.setItem("user", JSON.stringify(user));
-      } catch {}
+      } catch (storageError) {
+        console.warn("login_persist_error", storageError);
+      }
       if (typeof onLogin === "function") {
         onLogin({ token, role: resolvedRole, user, redirectPath: dest });
       }
@@ -71,9 +74,13 @@ const LoginPage = ({ onLogin }) => {
       const resolvedRole = inferRoleFromUser(user) || "user";
       const qsPath = getQueryRedirect();
       const dest = resolveRedirect(resolvedRole, null, qsPath);
-      try { localStorage.setItem("auth_token", token); } catch {}
-      try { localStorage.setItem("role", resolvedRole); } catch {}
-      try { localStorage.setItem("user", JSON.stringify(user || {})); } catch {}
+      try {
+        localStorage.setItem("auth_token", token);
+        localStorage.setItem("role", resolvedRole);
+        localStorage.setItem("user", JSON.stringify(user || {}));
+      } catch (storageError) {
+        console.warn("[GOOGLE LOGIN] persist failed", storageError);
+      }
       if (typeof onLogin === "function") {
         onLogin({ token, role: resolvedRole, user, redirectPath: dest });
       }
@@ -215,7 +222,7 @@ const LoginPage = ({ onLogin }) => {
           <div className="flex-grow border-t border-gray-300"></div>
         </div>
 
-        {Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID) ? (
+        {import.meta.env.VITE_GOOGLE_CLIENT_ID ? (
           <div ref={googleButtonRef} className="flex justify-center" />
         ) : (
           <p className="text-xs text-gray-400 mt-2 text-center">

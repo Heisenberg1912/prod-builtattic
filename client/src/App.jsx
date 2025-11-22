@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import Navbar from "./components/Navbar";
 import { Toaster, toast } from "react-hot-toast";
@@ -25,6 +25,9 @@ import CartPage from "./pages/CartPage";
 import Associates from "./pages/Associates";
 import FirmPortfolio from "./pages/FirmPortfolio";
 import AssociatePortfolio from "./pages/AssociatePortfolio";
+import AssociateOrder from "./pages/AssociateOrder.jsx";
+import AssociateSchedule from "./pages/AssociateSchedule.jsx";
+import AssociateEnquiry from "./pages/AssociateEnquiry.jsx";
 import Ai from "./pages/Ai";
 import Matters from "./pages/Matters";
 import AssociatePortal from "./pages/AssociatePortal";
@@ -65,8 +68,7 @@ const ScrollToTop = () => {
 };
 
 const App = () => {
-  const [auth, setAuth] = useState(() => ({ ...readStoredAuth(), loaded: false }));
-  const navigate = useNavigate();
+  const [, setAuth] = useState(() => ({ ...readStoredAuth(), loaded: false }));
   const location = useLocation();
 
   const handleLoginSuccess = ({ token, role, user }) => {
@@ -160,7 +162,9 @@ const App = () => {
             new CustomEvent("currency:change", { detail: { code: currencyCode, base: fxBase, rates: fxRates, ...detail } }),
           ),
       };
-    } catch {}
+    } catch (error) {
+      console.warn("currency_window_state_error", error);
+    }
   }, [currencyCode, fxBase, fxRates]);
 
   useEffect(() => {
@@ -216,6 +220,12 @@ const App = () => {
               <Route path="/firmportfolio" element={wrapWithTransition(<FirmPortfolio />)} />
               <Route path="/associateportfolio" element={wrapWithTransition(<AssociatePortfolio />)} />
               <Route path="/associateportfolio/:id" element={wrapWithTransition(<AssociatePortfolio />)} />
+              <Route path="/associate/order" element={wrapWithTransition(<AssociateOrder />)} />
+              <Route path="/associate/order/:id" element={wrapWithTransition(<AssociateOrder />)} />
+              <Route path="/associate/schedule" element={wrapWithTransition(<AssociateSchedule />)} />
+              <Route path="/associate/schedule/:id" element={wrapWithTransition(<AssociateSchedule />)} />
+              <Route path="/associate/enquiry" element={wrapWithTransition(<AssociateEnquiry />)} />
+              <Route path="/associate/enquiry/:id" element={wrapWithTransition(<AssociateEnquiry />)} />
               <Route path="/currencyconver" element={wrapWithTransition(<CurrencyConverter />)} />
               <Route path="/amazon" element={<Navigate to="/studio" replace />} />
               <Route path="/blinkit" element={<Navigate to="/warehouse" replace />} />

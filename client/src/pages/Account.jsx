@@ -168,7 +168,8 @@ const initialsFrom = (nameOrEmail) => {
   if (!tokens.length) return source.slice(0, 2).toUpperCase();
   const first = tokens[0][0] || "";
   const last = tokens.length > 1 ? tokens[tokens.length - 1][0] : tokens[0][1] || "";
-  return first.toUpperCase();
+  const initials = `${first}${last || ""}`.slice(0, 2);
+  return initials.toUpperCase() || "BT";
 };
 
 const Account = () => {
@@ -454,7 +455,7 @@ const Account = () => {
                   <p className="text-sm text-slate-600">Status: {order.status}</p>
                   <p className="mt-3 text-lg font-semibold text-slate-900">{order.amount}</p>
                   <Link to="/orders" className="mt-4 inline-flex items-center text-xs font-semibold text-slate-600 hover:text-slate-900">
-                    Track order >
+                    Track order &rsaquo;
                   </Link>
                 </div>
               ))

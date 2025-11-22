@@ -18,7 +18,24 @@ const readStorage = (key, fallback) => {
 const writeStorage = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  } catch (error) {
+    console.warn("profile_write_storage_error", error);
+  }
+};
+
+const formatCurrency = (value, currency = "INR") => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(numeric);
+  } catch (error) {
+    console.warn("profile_currency_format_error", error);
+    return `${currency} ${numeric.toLocaleString()}`;
+  }
 };
 
 const maskCard = (number) => {
@@ -463,5 +480,4 @@ const Profile = () => {
 };
 
 export default Profile;
-
 

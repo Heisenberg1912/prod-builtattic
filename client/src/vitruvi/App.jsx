@@ -98,9 +98,12 @@ const Icon = {
 
 
 const Section = ({ title, children, right }) => (
-  <div className="flex items-center justify-between text-xs uppercase tracking-wider text-neutral-600 py-2">
-    <span>{title}</span>
-    {right}
+  <div className="py-2 space-y-2">
+    <div className="flex items-center justify-between text-xs uppercase tracking-wider text-neutral-600">
+      <span>{title}</span>
+      {right}
+    </div>
+    {children}
   </div>
 );
 const Chip = ({ label, onRemove }) => (
@@ -229,9 +232,18 @@ function buildPromptWithFilters(promptText, selected) {
 
 function simulatePromptAnalysis(prompt, selected) {
   const lower = prompt.toLowerCase();
+  const selectedFirst = (key) => {
+    const set = selected?.[key];
+    if (set instanceof Set && set.size) {
+      return [...set][0];
+    }
+    return null;
+  };
   const pick = (key, fallbacks = []) => {
     const options = Array.isArray(FILTER_SETS[key]) ? FILTER_SETS[key] : [];
     const pool = options.length ? options : fallbacks;
+    const chosen = selectedFirst(key);
+    if (chosen) return chosen;
     for (const opt of pool) {
       const needle = opt.split(" - ")[0].toLowerCase();
       if (lower.includes(needle)) return opt;

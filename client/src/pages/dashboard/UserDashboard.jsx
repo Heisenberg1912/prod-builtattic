@@ -39,6 +39,7 @@ const detectBrowserTimezone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   } catch (error) {
+    console.warn('user_dashboard_timezone_error', error);
     return '';
   }
 };

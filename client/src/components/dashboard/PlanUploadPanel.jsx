@@ -295,41 +295,38 @@ export default function PlanUploadPanel({
     setForm(defaultPlanForm());
   };
 
-  const handlePlanMediaUpload = async (field, files, { secure = false, kindSuffix } = {}) => {
-    if (!files?.length) return;
-    setMediaUploads((prev) => ({ ...prev, [field]: true }));
-    try {
-      const uploads = [];
-      for (const file of files) {
-        const { url } = await uploadStudioAsset(file, {
-          kind: `${planMediaKindBase}_${kindSuffix || field}`,
-          secure,
-        });
-        if (!url) {
-          throw new Error("Upload failed. Try another file.");
-        }
-        uploads.push(url);
-      }
-      setForm((prev) => {
-        if (field === "renderImages") {
-          const currentList = splitList(prev.renderImages);
-          const combined = [...currentList, ...uploads];
-          return { ...prev, renderImages: combined.join("\n") };
-        }
-        return { ...prev, [field]: uploads[0] || "" };
-      });
-      toast.success(
-        uploads.length > 1
-          ? `${uploads.length} assets uploaded`
-          : "Asset uploaded"
-      );
-    } catch (error) {
-      console.error("plan_media_upload_error", error);
-      toast.error(error?.message || "Unable to upload media.");
-    } finally {
-      setMediaUploads((prev) => ({ ...prev, [field]: false }));
-    }
-  };
+  const handlePlanMediaUpload = async (field, files, { secure = false, kindSuffix } = {}) => {
+    if (!files?.length) return;
+    setMediaUploads((prev) => ({ ...prev, [field]: true }));
+    try {
+      const uploads = [];
+      for (const file of files) {
+        const { url, previewUrl } = await uploadStudioAsset(file, {
+          kind: `${planMediaKindBase}_${kindSuffix || field}`,
+          secure,
+        });
+        const resolved = previewUrl || url;
+        if (!resolved) {
+          throw new Error("Upload failed. Try another file.");
+        }
+        uploads.push(resolved);
+      }
+      setForm((prev) => {
+        if (field === "renderImages") {
+          const currentList = splitList(prev.renderImages);
+          const combined = [...currentList, ...uploads];
+          return { ...prev, renderImages: combined.join("\n") };
+        }
+        return { ...prev, [field]: uploads[0] || "" };
+      });
+      toast.success(uploads.length > 1 ? `${uploads.length} assets uploaded` : "Asset uploaded");
+    } catch (error) {
+      console.error("plan_media_upload_error", error);
+      toast.error(error?.message || "Unable to upload media.");
+    } finally {
+      setMediaUploads((prev) => ({ ...prev, [field]: false }));
+    }
+  };
 
   const handleRenderMediaUpload = async (event) => {
     const files = Array.from(event.target.files || []);
