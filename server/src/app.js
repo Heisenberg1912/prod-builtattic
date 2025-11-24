@@ -91,6 +91,7 @@ import planUploadsRouter from './routes/planUploads.js';
 import workspaceDownloadsRouter from './routes/workspaceDownloads.js';
 import workspaceChatsRouter from './routes/workspaceChats.js';
 import addressesRouter from './routes/addresses.js';
+import wishlistRouter from './routes/wishlist.js';
 
 
 const app = express();
@@ -297,6 +298,7 @@ app.use(['/portal/associate', '/api/portal/associate'], associatePortalRouter);
 app.use(['/portal/studio', '/api/portal/studio'], studioPortalRouter);
 
 app.use(['/addresses', '/api/addresses'], addressesRouter);
+app.use(['/wishlist', '/api/wishlist'], wishlistRouter);
 
 app.use(
 

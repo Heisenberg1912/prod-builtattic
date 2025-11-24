@@ -96,7 +96,7 @@ export const WishlistProvider = ({ children }) => {
       return;
     }
     try {
-      const { data } = await axios.get(withBase("/api/wishlist"), demoHeaders);
+      const { data } = await axios.get(withBase("/wishlist"), demoHeaders);
       setWishlistItems(normalizeServerList(data?.items));
     } catch (e) {
       console.warn("Wishlist API unavailable, using localStorage:", e?.message || e);
@@ -122,7 +122,7 @@ export const WishlistProvider = ({ children }) => {
     }
     try {
       await axios.post(
-        withBase("/api/wishlist/add"),
+        withBase("/wishlist/add"),
         {
           productId: resolvedId,
           source: item?.source || "Studio",
@@ -153,7 +153,7 @@ export const WishlistProvider = ({ children }) => {
     }
     try {
       await axios.post(
-        withBase("/api/wishlist/remove"),
+        withBase("/wishlist/remove"),
         { productId: keyOf(item) ?? fallbackIdFromItem(item), source: item?.source || "Studio" },
         demoHeaders
       );
