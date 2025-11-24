@@ -5,6 +5,7 @@ import ServicePackManager from "../../components/dashboard/ServicePackManager.js
 import MeetingScheduler from "../../components/dashboard/MeetingScheduler.jsx";
 import DownloadCenter from "../../components/dashboard/DownloadCenter.jsx";
 import ClientChatPanel from "../../components/dashboard/ClientChatPanel.jsx";
+import RoleOnboardingGuide from "../../components/onboarding/RoleOnboardingGuide.jsx";
 import FeedbackPanel from "../../components/dashboard/FeedbackPanel.jsx";
 import StudioDashboardCard from "../../components/studio/StudioDashboardCard.jsx";
 import { fetchFirmDashboard } from "../../services/dashboard.js";
@@ -635,6 +636,7 @@ export default function FirmDashboard() {
             </div>
           </div>
           <div className="mt-6 space-y-8 lg:col-start-2 lg:mt-0">
+            <RoleOnboardingGuide role="firm" dense />
             <section id="overview" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
               <div className="grid gap-6 lg:grid-cols-[1.25fr,0.75fr]">
                 <div className="space-y-4">

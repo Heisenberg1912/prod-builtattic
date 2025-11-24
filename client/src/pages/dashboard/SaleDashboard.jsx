@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchVendorDashboard } from "../../services/dashboard.js";
+import RoleOnboardingGuide from "../../components/onboarding/RoleOnboardingGuide.jsx";
 import VendorOnboardingChecklist from "../../components/vendor/VendorOnboardingChecklist.jsx";
 import { fetchVendorOnboarding } from "../../services/portal.js";
 
@@ -149,6 +150,8 @@ export default function SaleDashboard() {
           Demo Material Studio metrics are displayed. Link your vendor firm to sync live SKUs, orders, and pipeline data.
         </div>
       ) : null}
+
+      <RoleOnboardingGuide role="vendor" dense className="mb-6" />
 
       {!authRequired ? (
         <VendorOnboardingChecklist

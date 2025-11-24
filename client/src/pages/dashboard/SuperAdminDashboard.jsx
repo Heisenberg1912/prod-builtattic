@@ -265,6 +265,15 @@ const humanizeLabel = (value, fallback = 'Unknown') => {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+const slugify = (value = '') =>
+  value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+
 export default function SuperAdminDashboard({ onLogout }) {
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState("Dashboard");
@@ -280,6 +289,7 @@ export default function SuperAdminDashboard({ onLogout }) {
   const [usersRefreshing, setUsersRefreshing] = useState(false);
   const [userOps, setUserOps] = useState({ updatingId: null, resettingId: null, suspendingId: null, deletingId: null, inviting: false });
   const [userMeta, setUserMeta] = useState({ lastFetchedAt: null });
+  const [listingOps, setListingOps] = useState({ creating: false, error: '', refreshing: false });
   const [studioRequestsState, setStudioRequestsState] = useState({ loading: true, data: [], metrics: null, error: null, fetchedAt: null });
   const [currentUser] = useState(() => readStoredUser());
   const [dummyCatalog, setDummyCatalog] = useState({
@@ -398,6 +408,50 @@ export default function SuperAdminDashboard({ onLogout }) {
     }
   }, [authToken]);
 
+  const loadProducts = useCallback(async () => {
+    try {
+      if (!authToken) {
+        return await fetchCatalog();
+      }
+      const response = await fetchAdminDataItems('products', { limit: 200 });
+      const items = response?.items || response || [];
+      return Array.isArray(items) ? items : [];
+    } catch (error) {
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
+        try {
+          return await fetchCatalog();
+        } catch {
+          return [];
+        }
+      }
+      throw error;
+    }
+  }, [authToken]);
+
+  const refreshListings = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setListingOps((prev) => ({ ...prev, refreshing: true, error: '' }));
+    }
+    try {
+      const products = await loadProducts();
+      setDataState((prev) => ({ ...prev, products }));
+      if (!silent) {
+        toast.success('Listings synced');
+      }
+    } catch (error) {
+      const message = error?.response?.data?.error || error?.message || 'Unable to load listings';
+      setListingOps((prev) => ({ ...prev, error: message }));
+      if (!silent) {
+        toast.error(message);
+      }
+    } finally {
+      if (!silent) {
+        setListingOps((prev) => ({ ...prev, refreshing: false }));
+      }
+    }
+  }, [loadProducts]);
+
   useEffect(() => {
     refreshDummyCatalog();
   }, [refreshDummyCatalog]);
@@ -427,6 +481,12 @@ export default function SuperAdminDashboard({ onLogout }) {
     const timer = setTimeout(() => refreshControlResources({ silent: true }), 200);
     return () => clearTimeout(timer);
   }, [activeView, refreshControlResources]);
+
+  useEffect(() => {
+    if (activeView !== 'Marketplace') return undefined;
+    const timer = setTimeout(() => refreshListings({ silent: true }), 200);
+    return () => clearTimeout(timer);
+  }, [activeView, refreshListings]);
 
   const normalizedSearch = search.trim().toLowerCase();
   const handleCreateDummy = useCallback(async (type, payload) => {
@@ -543,6 +603,81 @@ export default function SuperAdminDashboard({ onLogout }) {
       setControlState((prev) => ({ ...prev, cacheClearing: false }));
     }
   }, []);
+
+  const handleCreateListing = useCallback(async (formValues = {}) => {
+    const normalizedTitle = (formValues.title || '').trim();
+    if (!normalizedTitle) {
+      const message = 'Title is required to create a listing';
+      setListingOps((prev) => ({ ...prev, error: message }));
+      toast.error(message);
+      return { ok: false, error: message };
+    }
+
+    const ensuredSlug =
+      (formValues.slug || '').trim().toLowerCase() ||
+      slugify(normalizedTitle) ||
+      `listing-${Date.now().toString(36)}`;
+    const currency = (formValues.currency || 'USD').toUpperCase();
+    const kind = ['studio', 'material', 'service'].includes((formValues.kind || '').toLowerCase())
+      ? formValues.kind.toLowerCase()
+      : 'studio';
+    const status = (formValues.status || 'published').toLowerCase();
+
+    const payload = {
+      title: normalizedTitle,
+      slug: ensuredSlug,
+      kind,
+      status,
+      currency,
+      pricing: { currency },
+    };
+
+    if (formValues.firmId) payload.firm = formValues.firmId;
+    if (formValues.summary?.trim()) payload.summary = formValues.summary.trim();
+    if (formValues.description?.trim()) payload.description = formValues.description.trim();
+    if (formValues.heroImage?.trim()) payload.heroImage = formValues.heroImage.trim();
+
+    const numPrice = Number(formValues.price);
+    if (Number.isFinite(numPrice)) {
+      payload.price = numPrice;
+      payload.pricing.basePrice = numPrice;
+    }
+    const numPriceSqft = Number(formValues.priceSqft);
+    if (Number.isFinite(numPriceSqft)) {
+      payload.priceSqft = numPriceSqft;
+      payload.pricing.priceSqft = numPriceSqft;
+    }
+
+    const categories = Array.isArray(formValues.categories)
+      ? formValues.categories
+      : typeof formValues.category === 'string' && formValues.category.trim()
+        ? formValues.category.split(',').map((entry) => entry.trim()).filter(Boolean)
+        : [];
+    if (categories.length) payload.categories = categories;
+
+    const tags = Array.isArray(formValues.tags)
+      ? formValues.tags
+      : typeof formValues.tags === 'string' && formValues.tags.trim()
+        ? formValues.tags.split(',').map((entry) => entry.trim()).filter(Boolean)
+        : [];
+    if (tags.length) payload.tags = tags;
+
+    setListingOps((prev) => ({ ...prev, creating: true, error: '' }));
+    try {
+      const created = await createAdminDataItem('products', payload);
+      setDataState((prev) => ({ ...prev, products: [created, ...(prev.products || [])] }));
+      toast.success('Listing created');
+      refreshControlResources({ silent: true });
+      await refreshListings({ silent: true });
+      setListingOps((prev) => ({ ...prev, creating: false, error: '' }));
+      return { ok: true, listing: created };
+    } catch (error) {
+      const message = error?.response?.data?.error || error?.message || 'Unable to create listing';
+      setListingOps((prev) => ({ ...prev, creating: false, error: message }));
+      toast.error(message);
+      return { ok: false, error: message };
+    }
+  }, [refreshControlResources, refreshListings]);
 
   const dashboardStats = useMemo(() => {
     const totalRevenue = dataState.products.reduce(
@@ -668,16 +803,12 @@ export default function SuperAdminDashboard({ onLogout }) {
 
 
   useEffect(() => {
-    if (!authToken) {
-      setDataState((prev) => ({ ...prev, loading: false }));
-      return undefined;
-    }
     let isMounted = true;
     const load = async () => {
       setDataState((prev) => ({ ...prev, loading: true, error: null }));
       try {
         const [products, firms, users, dbOverview] = await Promise.all([
-          fetchCatalog(),
+          loadProducts(),
           fetchFirms(),
           fetchAdminUsers(),
           fetchDbOverview(),
@@ -706,7 +837,7 @@ export default function SuperAdminDashboard({ onLogout }) {
     return () => {
       isMounted = false;
     };
-  }, [authToken]);
+  }, [authToken, loadProducts]);
 
   useEffect(() => {
     if (activeView !== 'Users') return undefined;
@@ -764,6 +895,9 @@ export default function SuperAdminDashboard({ onLogout }) {
     onRemoveDummy: handleRemoveDummy,
     onRefreshStudioRequests: refreshStudioRequests,
     onSyncDummyCatalog: refreshDummyCatalog,
+    onCreateListing: handleCreateListing,
+    onRefreshListings: refreshListings,
+    listingOps,
     control: controlState,
     onRefreshControl: refreshControlResources,
     onControlStatusChange: handleControlStatusChange,
@@ -2384,41 +2518,303 @@ function ClientsView({ search, users = [], loading }) {
   );
 }
 
-function MarketplaceView({ search, products, loading }) {
-  const filtered = (products || []).filter((product) => {
-    if (!search) return true;
-    return [product.title, product.slug, product.status]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(search));
-  });
+const makeListingForm = () => ({
+  title: '',
+  slug: '',
+  firmId: '',
+  kind: 'studio',
+  status: 'published',
+  price: '',
+  priceSqft: '',
+  currency: 'USD',
+  summary: '',
+  tags: '',
+  category: '',
+  heroImage: '',
+});
+
+function MarketplaceView({ search, products, firms = [], loading, onCreateListing, onRefreshListings, listingOps }) {
+  const [listingForm, setListingForm] = useState(makeListingForm);
+  const [localError, setLocalError] = useState('');
+
+  const sortedProducts = useMemo(() => {
+    const list = Array.isArray(products) ? [...products] : [];
+    return list.sort((a, b) => {
+      const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime() || 0;
+      const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime() || 0;
+      return bTime - aTime;
+    });
+  }, [products]);
+
+  const filtered = useMemo(
+    () =>
+      sortedProducts.filter((product) => {
+        if (!search) return true;
+        return [product.title, product.slug, product.status]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(search));
+      }),
+    [sortedProducts, search],
+  );
+
+  const handleListingChange = (event) => {
+    const { name, value } = event.target;
+    setListingForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleGenerateSlug = () => {
+    setListingForm((prev) => {
+      const source = prev.slug?.trim() || prev.title || `listing-${Date.now().toString(36)}`;
+      return { ...prev, slug: slugify(source) };
+    });
+  };
+
+  const handleSubmitListing = async (event) => {
+    event.preventDefault();
+    setLocalError('');
+    if (!onCreateListing) return;
+    const result = await onCreateListing(listingForm);
+    if (result?.ok) {
+      setListingForm(makeListingForm());
+    } else if (result?.error) {
+      setLocalError(result.error);
+    }
+  };
+
+  const creationError = localError || listingOps?.error || '';
+  const creating = Boolean(listingOps?.creating);
+  const refreshing = Boolean(listingOps?.refreshing);
 
   return (
     <Section title="Marketplace Listings">
-      {loading ? (
-        <div className="text-sm text-gray-500">Loading listings...</div>
-      ) : filtered.length === 0 ? (
-        <EmptySearchNotice term={search} />
-      ) : (
-        <ul className="space-y-3">
-          {filtered.map((product) => (
-            <li
-              key={product._id || product.slug}
-              className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-sm bg-white p-4 rounded-lg border"
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+        <p>Publish listings directly from the super admin panel.</p>
+        <button
+          type="button"
+          onClick={() => onRefreshListings?.()}
+          disabled={refreshing || loading}
+          className="inline-flex items-center gap-2 rounded border border-gray-200 px-3 py-1.5 font-medium text-gray-700 hover:border-gray-300 disabled:opacity-60"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Syncing...' : 'Refresh listings'}
+        </button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[380px,1fr]">
+        <form className="space-y-3 rounded-xl border border-gray-200 bg-white p-4" onSubmit={handleSubmitListing}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">Create a listing</h3>
+              <p className="text-xs text-gray-500">Super admins can create and publish tiles for any firm.</p>
+            </div>
+            <span className="text-[11px] rounded-full bg-gray-100 px-2 py-1 font-semibold text-gray-600">Admin-only</span>
+          </div>
+
+          <label className="text-xs font-semibold text-gray-600">
+            Title
+            <input
+              required
+              name="title"
+              value={listingForm.title}
+              onChange={handleListingChange}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Canyon House prefab"
+            />
+          </label>
+
+          <div className="grid gap-2 sm:grid-cols-[1fr,auto]">
+            <label className="text-xs font-semibold text-gray-600">
+              Slug
+              <input
+                name="slug"
+                value={listingForm.slug}
+                onChange={handleListingChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="canyon-house-prefab"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleGenerateSlug}
+              className="self-end rounded border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:border-gray-300"
             >
-              <div>
-                <p className="font-medium text-gray-900">{product.title}</p>
-                <p className="text-gray-500">{product.slug}</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="font-semibold text-gray-800">
-                  {formatCurrency(product.price || 0, product.currency || "USD")}
-                </span>
-                <StatusBadge status={(product.status || "draft").replace(/^\w/, (c) => c.toUpperCase())} />
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+              Generate
+            </button>
+          </div>
+
+          <label className="text-xs font-semibold text-gray-600">
+            Firm (optional)
+            <select
+              name="firmId"
+              value={listingForm.firmId}
+              onChange={handleListingChange}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            >
+              <option value="">Unassigned</option>
+              {firms.map((firm) => (
+                <option key={firm._id || firm.slug || firm.name} value={firm._id}>
+                  {firm.name || firm.slug || 'Firm'}{firm.slug ? ` (${firm.slug})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-gray-600">
+              Kind
+              <select
+                name="kind"
+                value={listingForm.kind}
+                onChange={handleListingChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              >
+                <option value="studio">Design studio</option>
+                <option value="material">Material</option>
+                <option value="service">Service</option>
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-gray-600">
+              Status
+              <select
+                name="status"
+                value={listingForm.status}
+                onChange={handleListingChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              >
+                <option value="published">Published</option>
+                <option value="draft">Draft</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-gray-600">
+              Price
+              <input
+                name="price"
+                inputMode="decimal"
+                value={listingForm.price}
+                onChange={handleListingChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="450000"
+              />
+            </label>
+            <label className="text-xs font-semibold text-gray-600">
+              Currency
+              <input
+                name="currency"
+                value={listingForm.currency}
+                onChange={handleListingChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm uppercase"
+                placeholder="USD"
+              />
+            </label>
+          </div>
+
+          <label className="text-xs font-semibold text-gray-600">
+            Price per sqft (optional)
+            <input
+              name="priceSqft"
+              inputMode="decimal"
+              value={listingForm.priceSqft}
+              onChange={handleListingChange}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="18"
+            />
+          </label>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-gray-600">
+              Category
+              <input
+                name="category"
+                value={listingForm.category}
+                onChange={handleListingChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Residential, Hospitality"
+              />
+            </label>
+            <label className="text-xs font-semibold text-gray-600">
+              Tags
+              <input
+                name="tags"
+                value={listingForm.tags}
+                onChange={handleListingChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Prefab,Low carbon"
+              />
+            </label>
+          </div>
+
+          <label className="text-xs font-semibold text-gray-600">
+            Hero image URL
+            <input
+              name="heroImage"
+              value={listingForm.heroImage}
+              onChange={handleListingChange}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="https://..."
+            />
+          </label>
+
+          <label className="text-xs font-semibold text-gray-600">
+            Summary
+            <textarea
+              name="summary"
+              value={listingForm.summary}
+              onChange={handleListingChange}
+              rows={3}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="Short blurb for the marketplace card"
+            />
+          </label>
+
+          {creationError && (
+            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {creationError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={creating}
+            className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
+          >
+            {creating ? 'Creating...' : 'Create listing'}
+          </button>
+          <p className="text-[11px] text-gray-500">
+            New listings are saved instantly via the admin API. Use the Control Center to toggle statuses later.
+          </p>
+        </form>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          {loading ? (
+            <div className="text-sm text-gray-500">Loading listings...</div>
+          ) : filtered.length === 0 ? (
+            <EmptySearchNotice term={search} />
+          ) : (
+            <ul className="space-y-3">
+              {filtered.map((product) => (
+                <li
+                  key={product._id || product.slug}
+                  className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100"
+                >
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-gray-900">{product.title}</p>
+                    <p className="text-xs text-gray-500">{product.slug}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-semibold text-gray-800">
+                      {formatCurrency(product.price || product.pricing?.basePrice || 0, product.currency || product.pricing?.currency || "USD")}
+                    </span>
+                    <StatusBadge status={(product.status || "draft").replace(/^\w/, (c) => c.toUpperCase())} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </Section>
   );
 }

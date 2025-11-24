@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 
 import { loadUserProfile, saveUserProfile } from '../../services/userProfile.js';
 import CartPanel from '../../components/dashboard/CartPanel.jsx';
+import RoleOnboardingGuide from '../../components/onboarding/RoleOnboardingGuide.jsx';
 import { getSettings } from '../../services/settings.js';
 import { fetchOrders } from '../../services/orders.js';
 import { useWishlist } from '../../context/WishlistContext.jsx';
@@ -395,6 +396,7 @@ export default function UserDashboard() {
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-[2fr_1fr]">
         <section className="space-y-6">
+          <RoleOnboardingGuide role="user" dense />
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>

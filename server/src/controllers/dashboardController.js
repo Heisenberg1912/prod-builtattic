@@ -120,15 +120,48 @@ const resolveFirmMembership = (user, allowedRoles = ['owner', 'admin', 'associat
 const ensureFirmMembership = async (user, allowedRoles = ['owner', 'admin']) =>
   provisionFirmMembership(user, allowedRoles);
 
-const mapProduct = (product) => ({
-  id: product._id.toString(),
-  title: product.title,
-  status: product.status,
-  price: product.price ?? product.pricing?.basePrice ?? null,
-  currency: product.pricing?.currency || product.currency || 'USD',
-  updatedAt: product.updatedAt,
-  kind: product.kind,
-});
+const mapProduct = (product) => {
+  const id = product?._id?.toString?.() || product?.id || product?._id;
+  const price = product?.price ?? product?.pricing?.basePrice ?? null;
+  const priceSqft = product?.priceSqft ?? product?.pricing?.priceSqft ?? null;
+  const areaSqft = product?.areaSqft ?? product?.metrics?.areaSqft ?? null;
+  const plotAreaSqft = product?.plotAreaSqft ?? product?.metrics?.plotAreaSqft ?? null;
+  const areaUnit = product?.areaUnit || product?.metrics?.areaUnit || 'sq ft';
+  const bedrooms = product?.bedrooms ?? product?.metadata?.bedrooms ?? null;
+  const bathrooms = product?.bathrooms ?? product?.metadata?.bathrooms ?? null;
+  const floors = product?.floors ?? product?.metadata?.floors ?? null;
+
+  return {
+    id,
+    _id: id,
+    slug: product?.slug,
+    title: product?.title,
+    summary: product?.summary,
+    description: product?.description,
+    status: product?.status,
+    price,
+    priceSqft,
+    pricing: product?.pricing || null,
+    currency: product?.pricing?.currency || product?.currency || 'USD',
+    heroImage: product?.heroImage,
+    gallery: Array.isArray(product?.gallery) ? product.gallery : [],
+    categories: Array.isArray(product?.categories) ? product.categories : [],
+    category: product?.category || product?.primaryCategory || null,
+    tags: Array.isArray(product?.tags) ? product.tags : [],
+    style: product?.style,
+    highlights: Array.isArray(product?.highlights) ? product.highlights : [],
+    areaSqft,
+    plotAreaSqft,
+    areaUnit,
+    bedrooms,
+    bathrooms,
+    floors,
+    location: product?.location || null,
+    delivery: product?.delivery || null,
+    updatedAt: product?.updatedAt,
+    kind: product?.kind,
+  };
+};
 
 const mapAsset = (asset) => ({
   id: asset._id.toString(),

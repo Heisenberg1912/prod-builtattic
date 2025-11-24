@@ -26,6 +26,7 @@ import ServicePackManager from "../../components/dashboard/ServicePackManager.js
 import MeetingScheduler from "../../components/dashboard/MeetingScheduler.jsx";
 import DownloadCenter from "../../components/dashboard/DownloadCenter.jsx";
 import ClientChatPanel from "../../components/dashboard/ClientChatPanel.jsx";
+import RoleOnboardingGuide from "../../components/onboarding/RoleOnboardingGuide.jsx";
 import AssociateProfileEditor from "../../components/associate/AssociateProfileEditor.jsx";
 import PortfolioMediaPlayer from "../../components/associate/PortfolioMediaPlayer.jsx";
 import { fetchAssociatePortalProfile } from "../../services/portal.js";
@@ -944,6 +945,7 @@ function AssociateDashboard() {
           </div>
 
           <div className="space-y-6">
+            <RoleOnboardingGuide role="associate" dense />
             <SectionShell
               id="overview"
               eyebrow="Skill Studio overview"

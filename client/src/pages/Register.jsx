@@ -3,12 +3,13 @@ import { toast } from "react-hot-toast";
 import { Link, useNavigate } from "react-router-dom";
 import { loginWithGoogle, register as registerAccount } from "../services/auth.js";
 import { uploadAsset } from "../services/portal.js";
-import VendorOnboardingGuide from "../components/vendor/VendorOnboardingGuide.jsx";
 import {
   inferRoleFromUser,
   normalizeRole,
   resolveDashboardPath,
 } from "../constants/roles.js";
+import VendorOnboardingGuide from "../components/vendor/VendorOnboardingGuide.jsx";
+import RoleOnboardingGuide from "../components/onboarding/RoleOnboardingGuide.jsx";
 
 const firmTypeOptions = ["Architecture", "Contractor", "Vendor", "Developer"];
 const userTypeOptions = ["Landowner", "Developer", "Student", "Architect"];
@@ -899,6 +900,8 @@ const RegisterPage = () => {
                 </Link>
               </p>
             </form>
+
+            <RoleOnboardingGuide role={role} dense />
 
             {role === "vendor" ? <VendorOnboardingGuide /> : null}
           </section>
