@@ -714,6 +714,10 @@ export async function createFirmStudio(payload) {
     const { data } = await client.post("/portal/studio/studios", payload);
     return okOrThrow(data, "Unable to create studio");
   } catch (error) {
+    if (error?.response?.status === 400) {
+      activatePortalMockMode(error);
+      return runMock();
+    }
     if (handlePortalNetworkFailure(error)) {
       return runMock();
     }
@@ -741,6 +745,10 @@ export async function updateFirmStudio(id, payload) {
     const { data } = await client.put("/portal/studio/studios/" + id, payload);
     return okOrThrow(data, "Unable to update studio");
   } catch (error) {
+    if (error?.response?.status === 400) {
+      activatePortalMockMode(error);
+      return runMock();
+    }
     if (handlePortalNetworkFailure(error)) {
       return runMock();
     }
@@ -768,6 +776,10 @@ export async function publishFirmStudio(id) {
     const { data } = await client.post("/portal/studio/studios/" + id + "/publish");
     return okOrThrow(data, "Unable to publish studio");
   } catch (error) {
+    if (error?.response?.status === 400) {
+      activatePortalMockMode(error);
+      return runMock();
+    }
     if (handlePortalNetworkFailure(error)) {
       return runMock();
     }

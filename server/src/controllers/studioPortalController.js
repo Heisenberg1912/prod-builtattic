@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { z } from "zod";
 import Product from "../models/Product.js";
+import { ensureFirmMembership } from "../services/roleProvisioning.js";
 import { ensureUniqueSlug } from "../utils/slugify.js";
 
 const OBJECT_ID = z
@@ -109,7 +110,7 @@ const isGlobalAdmin = (user) => {
   return globals.includes("superadmin") || globals.includes("admin");
 };
 
-const resolveFirmId = (req, explicitFirmId) => {
+const resolveFirmId = async (req, explicitFirmId) => {
   const memberships = (req.user?.memberships || []).map((membership) => ({
     firm: membership.firm?.toString(),
     role: String(membership.role || "").toLowerCase(),
@@ -122,6 +123,10 @@ const resolveFirmId = (req, explicitFirmId) => {
   }
 
   if (!firmId) {
+    if (!global) {
+      const provisioned = await ensureFirmMembership(req.user, ["owner", "admin"]);
+      if (provisioned?.firm) return provisioned.firm;
+    }
     if (global) {
       throw httpError(400, "firmId is required for admin users");
     }
@@ -161,7 +166,7 @@ const buildMeta = async (firmId) => {
 export const listStudios = async (req, res, next) => {
   try {
     if (!req.user) throw httpError(401, "Unauthorized");
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmId(req);
     const statusFilter = req.query.status?.toString();
     const match = { firm: firmId, kind: "studio" };
     if (statusFilter === "draft" || statusFilter === "published") {
@@ -178,7 +183,7 @@ export const listStudios = async (req, res, next) => {
 export const getStudio = async (req, res, next) => {
   try {
     if (!req.user) throw httpError(401, "Unauthorized");
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmId(req);
     const studio = await Product.findOne({
       _id: req.params.id,
       firm: firmId,
@@ -231,7 +236,7 @@ export const createStudio = async (req, res, next) => {
     if (!parsed.title) {
       throw httpError(400, "title is required");
     }
-    const firmId = resolveFirmId(req, parsed.firmId);
+    const firmId = await resolveFirmId(req, parsed.firmId);
     const update = prepareStudioUpdate(parsed);
     const slug = await ensureUniqueSlug(Product, update.title, { fallback: `studio-${Date.now()}` });
     const doc = await Product.create({
@@ -255,7 +260,7 @@ export const updateStudio = async (req, res, next) => {
   try {
     if (!req.user) throw httpError(401, "Unauthorized");
     const parsed = studioPayloadSchema.parse(req.body || {});
-    const firmId = resolveFirmId(req, parsed.firmId);
+    const firmId = await resolveFirmId(req, parsed.firmId);
     if (parsed.firmId) delete parsed.firmId;
     const update = prepareStudioUpdate(parsed);
     if (update.title) {
@@ -280,7 +285,7 @@ export const updateStudio = async (req, res, next) => {
 export const publishStudio = async (req, res, next) => {
   try {
     if (!req.user) throw httpError(401, "Unauthorized");
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmId(req);
     const studio = await Product.findOneAndUpdate(
       { _id: req.params.id, firm: firmId, kind: "studio" },
       { status: "published" },
@@ -297,7 +302,7 @@ export const publishStudio = async (req, res, next) => {
 export const deleteStudio = async (req, res, next) => {
   try {
     if (!req.user) throw httpError(401, "Unauthorized");
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmId(req);
     const studio = await Product.findOneAndDelete({
       _id: req.params.id,
       firm: firmId,
