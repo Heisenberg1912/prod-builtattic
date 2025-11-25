@@ -44,6 +44,7 @@ import {
   invalidateDummyCatalogCache,
   DUMMY_TYPES,
 } from "../../services/dummyCatalog.js";
+import { uploadStudioAsset } from "../../services/uploads.js";
 
 // Sidebar config
 const sidebarItems = [
@@ -289,7 +290,7 @@ export default function SuperAdminDashboard({ onLogout }) {
   const [usersRefreshing, setUsersRefreshing] = useState(false);
   const [userOps, setUserOps] = useState({ updatingId: null, resettingId: null, suspendingId: null, deletingId: null, inviting: false });
   const [userMeta, setUserMeta] = useState({ lastFetchedAt: null });
-  const [listingOps, setListingOps] = useState({ creating: false, error: '', refreshing: false });
+  const [listingOps, setListingOps] = useState({ creating: false, error: '', refreshing: false, updatingId: null });
   const [studioRequestsState, setStudioRequestsState] = useState({ loading: true, data: [], metrics: null, error: null, fetchedAt: null });
   const [currentUser] = useState(() => readStoredUser());
   const [dummyCatalog, setDummyCatalog] = useState({
@@ -521,6 +522,24 @@ export default function SuperAdminDashboard({ onLogout }) {
     }
   }, []);
 
+  const handleUploadTileAsset = useCallback(async (file, options = {}) => {
+    if (!file || (typeof File !== 'undefined' && !(file instanceof File))) {
+      toast.error('Please choose an image file to upload');
+      return null;
+    }
+    try {
+      const response = await uploadStudioAsset(file, { kind: options.kind || 'tile', productId: options.productId });
+      if (response?.url || response?.previewUrl) {
+        toast.success('Tile uploaded');
+      }
+      return response;
+    } catch (error) {
+      const message = error?.response?.data?.error || error?.message || 'Unable to upload tile';
+      toast.error(message);
+      return null;
+    }
+  }, []);
+
   const handleControlStatusChange = useCallback(async (resourceKey, record, nextStatus) => {
     const cfg = CONTROL_RESOURCE_INDEX[resourceKey];
     const recordId = resolveRecordId(record);
@@ -669,6 +688,11 @@ export default function SuperAdminDashboard({ onLogout }) {
       toast.success('Listing created');
       refreshControlResources({ silent: true });
       await refreshListings({ silent: true });
+      try {
+        await clearMarketplaceCache();
+      } catch (error) {
+        console.warn('marketplace_cache_clear_failed', error);
+      }
       setListingOps((prev) => ({ ...prev, creating: false, error: '' }));
       return { ok: true, listing: created };
     } catch (error) {
@@ -678,6 +702,37 @@ export default function SuperAdminDashboard({ onLogout }) {
       return { ok: false, error: message };
     }
   }, [refreshControlResources, refreshListings]);
+
+  const handleUpdateListingStatus = useCallback(async (product, nextStatus) => {
+    const productId = resolveRecordId(product) || product?.slug;
+    if (!productId) return;
+    const normalizedStatus = String(nextStatus || 'draft').toLowerCase();
+    setListingOps((prev) => ({ ...prev, updatingId: productId, error: '' }));
+    try {
+      const updated = await updateAdminDataItem('products', productId, { status: normalizedStatus });
+      setDataState((prev) => ({
+        ...prev,
+        products: (prev.products || []).map((item) => {
+          const itemId = resolveRecordId(item) || item?.slug;
+          if (itemId !== productId) return item;
+          return { ...item, ...updated, status: normalizedStatus };
+        }),
+      }));
+      toast.success(`Listing marked ${humanizeLabel(normalizedStatus)}`);
+      try {
+        await clearMarketplaceCache();
+        await refreshListings({ silent: true });
+      } catch (error) {
+        console.warn('marketplace_cache_refresh_failed', error);
+      }
+    } catch (error) {
+      const message = error?.response?.data?.error || error?.message || 'Unable to update listing';
+      setListingOps((prev) => ({ ...prev, error: message }));
+      toast.error(message);
+    } finally {
+      setListingOps((prev) => ({ ...prev, updatingId: null }));
+    }
+  }, []);
 
   const dashboardStats = useMemo(() => {
     const totalRevenue = dataState.products.reduce(
@@ -897,6 +952,8 @@ export default function SuperAdminDashboard({ onLogout }) {
     onSyncDummyCatalog: refreshDummyCatalog,
     onCreateListing: handleCreateListing,
     onRefreshListings: refreshListings,
+    onUploadTileAsset: handleUploadTileAsset,
+    onUpdateListingStatus: handleUpdateListingStatus,
     listingOps,
     control: controlState,
     onRefreshControl: refreshControlResources,
@@ -1031,6 +1088,7 @@ function DashboardView({
   loading,
   error,
   dbOverview,
+  listingOps,
   dummyCatalog,
   dummyLoading,
   studioRequests,
@@ -1038,6 +1096,9 @@ function DashboardView({
   onRemoveDummy,
   onSyncDummyCatalog,
   onRefreshStudioRequests,
+  onRefreshListings,
+  onUploadTileAsset,
+  onUpdateListingStatus,
 }) {
 
     const clusterDescription = useMemo(() => {
@@ -1167,6 +1228,15 @@ function DashboardView({
           </div>
         </section>
 
+        {onUpdateListingStatus ? (
+          <LiveTileManager
+            tiles={products}
+            busyId={listingOps?.updatingId}
+            onUpdateStatus={onUpdateListingStatus}
+            onRefresh={onRefreshListings}
+          />
+        ) : null}
+
         {dbOverview && <DatabaseOverview overview={dbOverview} />}
 
         <StudioRequestPipeline state={studioRequests} onRefresh={onRefreshStudioRequests} />
@@ -1178,6 +1248,7 @@ function DashboardView({
             onCreate={onCreateDummy}
             onDelete={onRemoveDummy}
             onSync={onSyncDummyCatalog}
+            onUploadTileAsset={onUploadTileAsset}
           />
         ) : null}
       </>
@@ -1217,6 +1288,91 @@ const makeMaterialForm = () => ({
   heroImage: '',
   gallery: '',
 });
+
+function LiveTileManager({ tiles = [], busyId, onUpdateStatus, onRefresh }) {
+  const liveTiles = useMemo(() => (Array.isArray(tiles) ? tiles.filter(Boolean) : []), [tiles]);
+  const publishedCount = liveTiles.filter((tile) => (tile.status || '').toLowerCase() === 'published').length;
+
+  return (
+    <Section title="Live Tile Manager">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-3">
+        <div>
+          <p className="text-sm text-gray-600">Flip tiles between live and draft without leaving the dashboard.</p>
+          <p className="text-xs text-gray-500">
+            {publishedCount} live / {liveTiles.length} total
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-green-50 px-3 py-1 text-[11px] font-semibold text-green-700">
+            Live ready
+          </span>
+          <button
+            type="button"
+            onClick={() => onRefresh?.()}
+            className="inline-flex items-center gap-2 rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-gray-300"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh live tiles
+          </button>
+        </div>
+      </div>
+
+      {liveTiles.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
+          No marketplace tiles yet. Create one to see it here and manage its live state.
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {liveTiles.slice(0, 9).map((tile) => {
+            const productId = tile._id || tile.id || tile.slug;
+            const hero = tile.heroImage || tile.gallery?.[0] || 'https://placehold.co/640x360?text=Tile';
+            const statusValue = (tile.status || 'draft').toLowerCase();
+            const summary = tile.summary || tile.description || '';
+            const summaryText = summary.length > 110 ? `${summary.slice(0, 107)}...` : summary;
+            const priceValue = tile.price || tile.pricing?.basePrice;
+            const currency = tile.currency || tile.pricing?.currency || 'USD';
+
+            return (
+              <article key={productId} className="flex h-full flex-col rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                <div className="h-32 w-full overflow-hidden rounded-lg bg-gray-100">
+                  <img src={hero} alt={tile.title || tile.slug || 'Tile'} className="h-full w-full object-cover" loading="lazy" />
+                </div>
+                <div className="mt-3 flex flex-1 flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <p className="font-semibold text-gray-900">{tile.title || tile.slug || 'Untitled tile'}</p>
+                      {summaryText && <p className="text-xs text-gray-500">{summaryText}</p>}
+                      {priceValue != null && (
+                        <p className="text-xs font-semibold text-gray-800">
+                          {formatCurrency(priceValue, currency)}
+                        </p>
+                      )}
+                    </div>
+                    <StatusBadge status={statusValue} />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs text-gray-500">
+                    <span className="truncate">{tile.slug || productId}</span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={statusValue}
+                        onChange={(event) => onUpdateStatus?.(tile, event.target.value)}
+                        disabled={!onUpdateStatus || busyId === productId}
+                        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 disabled:opacity-60"
+                      >
+                        <option value="published">Live</option>
+                        <option value="draft">Draft</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
 
 function StudioRequestPipeline({ state, onRefresh }) {
   if (!state) return null;
@@ -1352,12 +1508,22 @@ function StudioRequestPipeline({ state, onRefresh }) {
   );
 }
 
-function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync }) {
+function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync, onUploadTileAsset }) {
   const [designForm, setDesignForm] = useState(makeDesignForm);
   const [skillForm, setSkillForm] = useState(makeSkillForm);
   const [materialForm, setMaterialForm] = useState(makeMaterialForm);
   const [tileFilter, setTileFilter] = useState('all');
   const [seedingType, setSeedingType] = useState(null);
+  const [bulkTargets, setBulkTargets] = useState(() => ({
+    [DUMMY_TYPES.DESIGN]: true,
+    [DUMMY_TYPES.SKILL]: true,
+    [DUMMY_TYPES.MATERIAL]: true,
+  }));
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [uploadingType, setUploadingType] = useState(null);
+  const designUploadRef = useRef(null);
+  const skillUploadRef = useRef(null);
+  const materialUploadRef = useRef(null);
 
   const handleSubmit = (event, type) => {
     event.preventDefault();
@@ -1386,6 +1552,63 @@ function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync }) {
       [DUMMY_TYPES.MATERIAL]: setMaterialForm,
     };
     setterMap[type]?.((prev) => ({ ...prev, ...sample }));
+  };
+
+  const applyUploadedUrl = (type, url) => {
+    if (!url) return;
+    if (type === DUMMY_TYPES.DESIGN) {
+      setDesignForm((prev) => ({ ...prev, heroImage: url }));
+    } else if (type === DUMMY_TYPES.SKILL) {
+      setSkillForm((prev) => ({ ...prev, avatar: url, heroImage: url }));
+    } else if (type === DUMMY_TYPES.MATERIAL) {
+      setMaterialForm((prev) => ({ ...prev, heroImage: url }));
+    }
+  };
+
+  const handleLocalUpload = async (type, file) => {
+    if (!onUploadTileAsset || !file) return;
+    setUploadingType(type);
+    try {
+      const uploaded = await onUploadTileAsset(file, { kind: type });
+      const url = uploaded?.url || uploaded?.previewUrl;
+      if (url) {
+        applyUploadedUrl(type, url);
+        toast.success('Image attached to tile');
+      }
+    } catch (error) {
+      toast.error(error?.message || 'Upload failed');
+    } finally {
+      setUploadingType(null);
+    }
+  };
+
+  const handleBulkUpload = async (file) => {
+    if (!onUploadTileAsset || !file) return;
+    setBulkUploading(true);
+    try {
+      const uploaded = await onUploadTileAsset(file, { kind: 'tile' });
+      const url = uploaded?.url || uploaded?.previewUrl;
+      if (url) {
+        Object.entries(bulkTargets).forEach(([type, enabled]) => {
+          if (enabled) {
+            applyUploadedUrl(type, url);
+          }
+        });
+        toast.success('Tile attached to selected studio forms');
+      }
+    } catch (error) {
+      toast.error(error?.message || 'Upload failed');
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
+  const toggleAllTargets = (state) => {
+    setBulkTargets({
+      [DUMMY_TYPES.DESIGN]: state,
+      [DUMMY_TYPES.SKILL]: state,
+      [DUMMY_TYPES.MATERIAL]: state,
+    });
   };
 
   const handleSeedCurated = async () => {
@@ -1425,6 +1648,62 @@ function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync }) {
 
   return (
     <Section title="Dummy Data Generator">
+      {onUploadTileAsset && (
+        <div className="mb-4 rounded-2xl border border-gray-200 bg-white/90 px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-gray-900">Local tile upload to seed studio previews</p>
+              <p className="text-xs text-gray-600">
+                Upload once and we will prefill the hero / avatar for the studio tiles you select.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {Object.values(DUMMY_TYPES).map((type) => (
+                  <label
+                    key={`bulk-${type}`}
+                    className="flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-[11px] font-semibold text-gray-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(bulkTargets[type])}
+                      onChange={() => setBulkTargets((prev) => ({ ...prev, [type]: !prev[type] }))}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-gray-800 focus:ring-gray-400"
+                    />
+                    {dummyTypeLabels[type]}
+                  </label>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => toggleAllTargets(true)}
+                  className="rounded-full border border-gray-200 px-3 py-1 text-[11px] font-semibold text-gray-700 hover:border-gray-300"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleAllTargets(false)}
+                  className="rounded-full border border-gray-200 px-3 py-1 text-[11px] font-semibold text-gray-500 hover:border-gray-300"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                onChange={(event) => {
+                  handleBulkUpload(event.target.files?.[0]);
+                  if (event.target) event.target.value = '';
+                }}
+              />
+              <RefreshCw className={`h-4 w-4 ${bulkUploading ? 'animate-spin' : ''}`} />
+              {bulkUploading ? 'Uploading...' : 'Attach once'}
+            </label>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
           {filterOptions.map((option) => (
@@ -1558,6 +1837,30 @@ function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync }) {
               placeholder="https://..."
             />
           </label>
+          {onUploadTileAsset && (
+            <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <span>Upload from this device</span>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={designUploadRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    handleLocalUpload(DUMMY_TYPES.DESIGN, event.target.files?.[0]);
+                    if (event.target) event.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => designUploadRef.current?.click()}
+                  className="rounded border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-gray-300"
+                >
+                  {uploadingType === DUMMY_TYPES.DESIGN ? 'Uploading...' : 'Choose file'}
+                </button>
+              </div>
+            </div>
+          )}
           <label className="text-xs font-semibold text-gray-600">
             Tags (comma separated)
             <input
@@ -1669,6 +1972,30 @@ function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync }) {
               placeholder="https://..."
             />
           </label>
+          {onUploadTileAsset && (
+            <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <span>Upload from this device</span>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={skillUploadRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    handleLocalUpload(DUMMY_TYPES.SKILL, event.target.files?.[0]);
+                    if (event.target) event.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => skillUploadRef.current?.click()}
+                  className="rounded border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-gray-300"
+                >
+                  {uploadingType === DUMMY_TYPES.SKILL ? 'Uploading...' : 'Choose file'}
+                </button>
+              </div>
+            </div>
+          )}
           <button type="submit" className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
             Save associate profile
           </button>
@@ -1751,6 +2078,30 @@ function DummyDataManager({ catalog, loading, onCreate, onDelete, onSync }) {
               placeholder="https://..."
             />
           </label>
+          {onUploadTileAsset && (
+            <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <span>Upload from this device</span>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={materialUploadRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    handleLocalUpload(DUMMY_TYPES.MATERIAL, event.target.files?.[0]);
+                    if (event.target) event.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => materialUploadRef.current?.click()}
+                  className="rounded border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-gray-300"
+                >
+                  {uploadingType === DUMMY_TYPES.MATERIAL ? 'Uploading...' : 'Choose file'}
+                </button>
+              </div>
+            </div>
+          )}
           <button type="submit" className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
             Save material SKU
           </button>
@@ -2533,9 +2884,10 @@ const makeListingForm = () => ({
   heroImage: '',
 });
 
-function MarketplaceView({ search, products, firms = [], loading, onCreateListing, onRefreshListings, listingOps }) {
+function MarketplaceView({ search, products, firms = [], loading, onCreateListing, onRefreshListings, onUpdateListingStatus, listingOps }) {
   const [listingForm, setListingForm] = useState(makeListingForm);
   const [localError, setLocalError] = useState('');
+  const updatingId = listingOps?.updatingId;
 
   const sortedProducts = useMemo(() => {
     const list = Array.isArray(products) ? [...products] : [];
@@ -2588,7 +2940,7 @@ function MarketplaceView({ search, products, firms = [], loading, onCreateListin
   return (
     <Section title="Marketplace Listings">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
-        <p>Publish listings directly from the super admin panel.</p>
+        <p>Publish and manage live/draft marketplace tiles directly from the super admin panel.</p>
         <button
           type="button"
           onClick={() => onRefreshListings?.()}
@@ -2794,23 +3146,41 @@ function MarketplaceView({ search, products, firms = [], loading, onCreateListin
             <EmptySearchNotice term={search} />
           ) : (
             <ul className="space-y-3">
-              {filtered.map((product) => (
-                <li
-                  key={product._id || product.slug}
-                  className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100"
-                >
-                  <div className="space-y-0.5">
-                    <p className="font-semibold text-gray-900">{product.title}</p>
-                    <p className="text-xs text-gray-500">{product.slug}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="font-semibold text-gray-800">
-                      {formatCurrency(product.price || product.pricing?.basePrice || 0, product.currency || product.pricing?.currency || "USD")}
-                    </span>
-                    <StatusBadge status={(product.status || "draft").replace(/^\w/, (c) => c.toUpperCase())} />
-                  </div>
-                </li>
-              ))}
+              {filtered.map((product) => {
+                const productId = product._id || product.id || product.slug;
+                const statusValue = (product.status || 'draft').toLowerCase();
+                const busy = updatingId === productId;
+                const priceLabel = formatCurrency(
+                  product.price || product.pricing?.basePrice || 0,
+                  product.currency || product.pricing?.currency || "USD",
+                );
+                return (
+                  <li
+                    key={productId}
+                    className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100"
+                  >
+                    <div className="space-y-0.5">
+                      <p className="font-semibold text-gray-900">{product.title}</p>
+                      <p className="text-xs text-gray-500">{product.slug}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="font-semibold text-gray-800">{priceLabel}</span>
+                      <StatusBadge status={statusValue} />
+                      {onUpdateListingStatus && (
+                        <select
+                          value={statusValue}
+                          onChange={(event) => onUpdateListingStatus(product, event.target.value)}
+                          disabled={busy}
+                          className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-700 disabled:opacity-60"
+                        >
+                          <option value="published">Live</option>
+                          <option value="draft">Draft</option>
+                        </select>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

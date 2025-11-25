@@ -8,6 +8,7 @@ import Footer from "../components/Footer";
 import RatingModal from "../components/RatingModal.jsx";
 import { createEmptyFilterState, FILTER_SETS } from "../constants/designFilters.js";
 import { fetchMarketplaceAssociates } from "../services/marketplace.js";
+import { getDummyCatalogSnapshot, DUMMY_TYPES } from "../services/dummyCatalog.js";
 import { submitRating, fetchRatingSnapshot } from "../services/ratings.js";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
@@ -71,6 +72,7 @@ const VISIBLE_OPTION_LIMIT = 6;
 const QUICK_FILTER_LIMIT = 6;
 const MAX_SEARCH_SUGGESTIONS = 6;
 const SIGNAL_FILTER_STORAGE_KEY = 'associates_signal_filters';
+const DEFAULT_CURRENCY = 'USD';
 
 const buildAssociateHaystack = (associate) =>
   [
@@ -181,6 +183,43 @@ const formatRelativeTime = (iso) => {
   }
   return target.toLocaleDateString();
 };
+
+const mapDummySkillToAssociate = (entry, index = 0) => {
+  const slug = entry.slug || entry._id || entry.id || `dummy-skill-${index}`;
+  const hourly = Number(entry.hourly ?? entry.hourlyRate ?? entry.rates?.hourly);
+  const languages =
+    Array.isArray(entry.languages)
+      ? entry.languages
+      : typeof entry.languages === 'string'
+        ? entry.languages.split(',').map((value) => value.trim()).filter(Boolean)
+        : [];
+  const skills =
+    Array.isArray(entry.skills)
+      ? entry.skills
+      : typeof entry.skills === 'string'
+        ? entry.skills.split(/,|\n/).map((value) => value.trim()).filter(Boolean)
+        : [];
+  return {
+    _id: slug,
+    id: slug,
+    slug,
+    title: entry.title || entry.name || 'Skill Studio',
+    name: entry.name || entry.title || 'Skill Studio',
+    summary: entry.summary || entry.description || entry.availability || (skills.length ? skills.join(', ') : ''),
+    location: entry.location || 'Remote',
+    avatar: entry.avatar || entry.heroImage || entry.hero_image,
+    heroImage: entry.heroImage || entry.avatar || entry.hero_image,
+    rates: {
+      hourly: Number.isFinite(hourly) ? hourly : null,
+      currency: entry.currency || DEFAULT_CURRENCY,
+    },
+    languages,
+    skills,
+    specialisations: skills,
+    availability: entry.availability || null,
+    updatedAt: entry.updatedAt || entry.createdAt || Date.now(),
+  };
+};
 const ensureRange = (values, fallback, step = 1, hardMin = 0, hardMax = Infinity) => {
   if (!values.length) return fallback;
   const minimum = Math.min(...values);
@@ -262,7 +301,7 @@ const Associates = () => {
       try {
         const { items, meta } = await fetchMarketplaceAssociates();
         if (!cancelled) {
-          const cleaned = (items || []).filter((associate) => {
+          let cleaned = (items || []).filter((associate) => {
             const title = String(associate?.title || "").toLowerCase();
             const summary = String(associate?.summary || "");
             const isDefaultProfile =
@@ -270,6 +309,17 @@ const Associates = () => {
               summary.includes("Update your Skill Studio profile");
             return !isDefaultProfile;
           });
+
+          if (!cleaned.length) {
+            try {
+              const snapshot = await getDummyCatalogSnapshot();
+              const dummySkills = snapshot?.[DUMMY_TYPES.SKILL] || [];
+              cleaned = dummySkills.map(mapDummySkillToAssociate);
+            } catch (fallbackError) {
+              console.warn('associate_dummy_fallback_failed', fallbackError);
+            }
+          }
+
           setAssociates(cleaned);
           setWeb3Meta(meta?.web3 || null);
         }
@@ -277,6 +327,15 @@ const Associates = () => {
         if (!cancelled) {
           setError(err?.message || "Unable to load associates right now.");
           setWeb3Meta(null);
+          try {
+            const snapshot = await getDummyCatalogSnapshot();
+            const dummySkills = snapshot?.[DUMMY_TYPES.SKILL] || [];
+            if (dummySkills.length) {
+              setAssociates(dummySkills.map(mapDummySkillToAssociate));
+            }
+          } catch (fallbackError) {
+            console.warn('associate_dummy_fallback_failed', fallbackError);
+          }
         }
       } finally {
         if (!cancelled) {

@@ -444,22 +444,29 @@ export async function fetchMarketplaceAssociates(params = {}) {
 
 
 export async function fetchDesignStudioHosting(params = {}) {
-  const { data } = await client.get('/marketplace/design-studio/hosting', { params });
-  if (!data?.hosting) {
-    throw new Error("Hosting config not available");
+  try {
+    const { data } = await client.get('/marketplace/design-studio/hosting', { params });
+    const rawHosting = data?.hosting || null;
+    const hosting = normalizeHostingConfig(
+      rawHosting || { enabled: false, services: [], products: [], updatedAt: nowISO() },
+    );
+    return {
+      ...data,
+      fallback: !rawHosting,
+      hosting,
+    };
+  } catch (error) {
+    const message = error?.response?.data?.error || error?.message || "Unable to load hosting config";
+    // Gracefully degrade when hosting is missing or the endpoint is unavailable.
+    return {
+      ok: false,
+      fallback: true,
+      error: message,
+      hosting: normalizeHostingConfig({ enabled: false, services: [], products: [], updatedAt: nowISO() }),
+      firm: null,
+      meta: null,
+    };
   }
-  const hosting = data.hosting || {};
-  return {
-    ...data,
-    fallback: false,
-    hosting: {
-      enabled: Boolean(hosting.enabled),
-      serviceSummary: hosting.serviceSummary || "",
-      services: Array.isArray(hosting.services) ? hosting.services : [],
-      products: Array.isArray(hosting.products) ? hosting.products : [],
-      updatedAt: hosting.updatedAt || hosting.updated_at || nowISO(),
-    },
-  };
 }
 
 
