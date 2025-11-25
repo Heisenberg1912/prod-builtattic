@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
 import AssociateProfileEditor from "../components/associate/AssociateProfileEditor.jsx";
@@ -17,12 +17,20 @@ const ResourceCard = ({ title, description, action }) => (
 );
 
 const SkillStudio = () => {
-  const [profile, setProfile] = useState(null);
+  const location = useLocation();
+  const [profile, setProfile] = useState(() => location.state?.profile || null);
   const [loading, setLoading] = useState(false);
+  const seededFromDashboard = Boolean(location.state?.profile);
   const stats = useMemo(() => deriveProfileStats(profile || {}), [profile]);
   const hourlyLabel = stats.hourly ? formatCurrency(stats.hourly, profile?.rates?.currency || "USD") : null;
   const experienceLabel = stats.years ? `${stats.years} yrs` : null;
   const completeness = profile?.completeness || stats.completeness || 0;
+
+  useEffect(() => {
+    if (location.state?.profile) {
+      setProfile(location.state.profile);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     let mounted = true;
@@ -66,7 +74,12 @@ const SkillStudio = () => {
                 Publish trusted bios, rates, and case studies without waiting on the marketplace team. Every save updates
                 your Skill Studio card and associate marketplace profile in real time.
               </p>
-              {loading && <p className="text-sm font-semibold text-amber-600">Syncing your latest profile data…</p>}
+              {loading && <p className="text-sm font-semibold text-amber-600">Syncing your latest profile data...</p>}
+              {seededFromDashboard && (
+                <p className="text-xs font-semibold text-emerald-600">
+                  Showing your latest dashboard edits while Skill Studio finishes syncing.
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap gap-4 text-sm text-slate-700">
               {heroStats.map((item) => (

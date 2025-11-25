@@ -262,7 +262,15 @@ const Associates = () => {
       try {
         const { items, meta } = await fetchMarketplaceAssociates();
         if (!cancelled) {
-          setAssociates(items);
+          const cleaned = (items || []).filter((associate) => {
+            const title = String(associate?.title || "").toLowerCase();
+            const summary = String(associate?.summary || "");
+            const isDefaultProfile =
+              title === "associate designer" &&
+              summary.includes("Update your Skill Studio profile");
+            return !isDefaultProfile;
+          });
+          setAssociates(cleaned);
           setWeb3Meta(meta?.web3 || null);
         }
       } catch (err) {

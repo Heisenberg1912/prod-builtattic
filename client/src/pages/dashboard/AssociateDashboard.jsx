@@ -236,6 +236,14 @@ const AssociateSidebar = ({
         >
           Update profile
         </Link>
+        <Link
+          to="/skillstudio"
+          state={profile ? { profile } : undefined}
+          className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100"
+          onClick={onNavigate}
+        >
+          Edit tiles & projects
+        </Link>
       </div>
 
       <nav className="space-y-2">
@@ -714,6 +722,29 @@ function AssociateDashboard() {
     });
   }, []);
 
+  const handleProfileUpdate = useCallback(
+    (nextProfile, meta = {}) => {
+      setProfileState((prev) => ({
+        ...prev,
+        loading: false,
+        error: meta.error || null,
+        profile: nextProfile || prev.profile,
+      }));
+      if (meta.origin === "save") {
+        pushActivity({
+          id: createId(),
+          timestamp: new Date().toISOString(),
+          kind: "profile.save",
+          title: "Profile updated",
+          description: "Tiles and projects synced to Skill Studio.",
+          read: false,
+        });
+        refreshDashboard(null, { silent: true });
+      }
+    },
+    [pushActivity, refreshDashboard]
+  );
+
   const handleTrackOpportunity = useCallback(
     (opportunity) => {
       if (!opportunity) return;
@@ -880,17 +911,6 @@ function AssociateDashboard() {
     { label: "Apps", value: applicationsCount, helper: "Tracked" },
     { label: "Alerts", value: alertsCount, helper: "Unread" },
   ];
-  const profileProgress = Math.min(Math.max(Number(profileMeta.completeness) || 0, 0), 100);
-  const profileLastSynced = profileMeta.updatedAt ? formatRelativeTime(profileMeta.updatedAt) : "Never";
-  const profileMissingPreview = (profileMeta.pendingFields || []).slice(0, 3);
-  const profileFieldsTotal =
-    (profileMeta.pendingFields?.length || 0) + (profileMeta.filledFields?.length || 0);
-  const profileStatTiles = [
-    { label: "Hourly rate", value: profileMeta.stats.hourly ? formatCurrency(profileMeta.stats.hourly, currencyCode) : "Add rate" },
-    { label: "Daily rate", value: profileMeta.stats.daily ? formatCurrency(profileMeta.stats.daily, currencyCode) : "Add rate" },
-    { label: "Experience", value: profileMeta.stats.years ? `${profileMeta.stats.years} yrs` : "Add experience" },
-    { label: "Projects", value: profileMeta.stats.projects ? `${profileMeta.stats.projects}` : "Add count" },
-  ];
 
   const formatDateTime = (value, options = { dateStyle: "medium", timeStyle: "short" }) => {
     if (!value) return "Schedule TBA";
@@ -931,7 +951,7 @@ function AssociateDashboard() {
           </div>
         </div>
 
-        <div className="grid gap-12 lg:grid-cols-[380px_1fr]">
+        <div className="grid gap-12 lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)] xl:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
           <div className={sidebarOpen ? "" : "hidden lg:block"}>
             <AssociateSidebar
               profile={profileState.profile}
@@ -954,7 +974,10 @@ function AssociateDashboard() {
               action={renderRefreshButton("overview", "Refresh insights")}
             >
               {renderSectionError("overview", "Some insights might be cached.")}
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div
+                className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+                style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+              >
                 <InsightStat label="Profile completeness" value={`${completenessValue}%`} helper={listingStatus.label} accent={listingStatus.accent} />
                 <InsightStat label="Hourly rate" value={hourlyRateLabel} helper={dailyRateLabel ? `Day rate ${dailyRateLabel}` : "Set your preferred rates"} />
                 <InsightStat label="Active leads" value={leadsCount} helper="Routed matches" />
@@ -1023,7 +1046,10 @@ function AssociateDashboard() {
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div
+                className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
+              >
                 <QuickActionButton label="Upload a plan" helper="Renders, walkthroughs, specs" to="#workspace" onClick={() => setSidebarOpen(false)} />
                 <QuickActionButton
                   label="Preview profile"
@@ -1031,104 +1057,26 @@ function AssociateDashboard() {
                   to="/associateportfolio"
                   state={showcaseState}
                 />
+                <QuickActionButton
+                  label="Edit tiles & projects"
+                  helper="Open Skill Studio workspace"
+                  to="/skillstudio"
+                  state={profileState.profile ? { profile: profileState.profile } : undefined}
+                  onClick={() => setSidebarOpen(false)}
+                />
               </div>
             </SectionShell>
 
-            <div id="profile" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">Profile</p>
-                  <h3 className="text-lg font-semibold text-slate-900">Marketplace profile</h3>
-                  <p className="text-sm text-slate-600">
-                    Edit your listing on the dedicated profile page. This dashboard stays focused on signals and workflow.
-                  </p>
-                  <p className="text-xs text-slate-500">Last synced {profileLastSynced}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    to="/dashboard/associate/edit"
-                    state={showcaseState}
-                    className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                  >
-                    Update profile
-                  </Link>
-                  <Link
-                    to="/dashboard/associate/listing"
-                    state={showcaseState}
-                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400"
-                  >
-                    View listing
-                  </Link>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,1fr)] items-start">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">Status</p>
-                      <p className="text-xl font-semibold text-slate-900">{profileProgress}% complete</p>
-                      <p className="text-xs text-slate-500">
-                        {profileMeta.filledFields?.length || 0} / {profileFieldsTotal || profileMeta.filledFields?.length || 0} fields filled
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        to="/dashboard/associate/edit"
-                        state={showcaseState}
-                        className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-                      >
-                        Keep polishing
-                      </Link>
-                      <Link
-                        to="/associateportfolio"
-                        state={showcaseState}
-                        className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
-                      >
-                        Preview public card
-                      </Link>
-                    </div>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-white">
-                    <div
-                      className="h-2 rounded-full bg-slate-900 transition-all"
-                      style={{ width: `${profileProgress}%` }}
-                    />
-                  </div>
-                  {profileMissingPreview.length ? (
-                    <div className="flex flex-wrap gap-2">
-                      {profileMissingPreview.map((field) => (
-                        <span
-                          key={field}
-                          className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700"
-                        >
-                          {field}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500">All required fields are filled. Add media and links to stay fresh.</p>
-                  )}
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {profileStatTiles.map((stat) => (
-                      <div key={stat.label} className="rounded-xl border border-slate-200 bg-white p-3">
-                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{stat.label}</p>
-                        <p className="mt-1 text-base font-semibold text-slate-900">{stat.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <MarketplacePreview
-                  profile={profileState.profile}
-                  meta={profileMeta}
-                  featuredPlan={profileState.profile?.featuredPlan || null}
-                  loading={profileState.loading}
-                  previewState={showcaseState}
-                  previewPath="/associateportfolio"
-                />
-              </div>
-            </div>
+            <ProfileView
+              id="profile"
+              profile={profileState.profile}
+              meta={profileMeta}
+              onProfileUpdate={handleProfileUpdate}
+              onRefresh={() => refreshProfile()}
+              showHeader={false}
+              previewState={showcaseState}
+              previewPath="/associateportfolio"
+            />
 
             <SectionShell
               id="pipeline"
@@ -1843,6 +1791,7 @@ function MarketplacePreview({ profile, meta, loading, featuredPlan, previewState
 }
 
 function ProfileView({
+  id,
   profile,
   meta,
   onProfileUpdate,
@@ -1865,7 +1814,7 @@ function ProfileView({
   ];
 
   return (
-    <div className="space-y-6">
+    <div id={id} className="space-y-6">
       {showHeader ? (
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ExternalLink, FileText, Film, Image as ImageIcon, Play } from "lucide-react";
+import { normaliseAssetUrl } from "../../utils/studioForm.js";
 
 const MEDIA_EXTENSIONS = {
   image: [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"],
@@ -14,8 +15,10 @@ const detectMediaType = (item = {}) => {
     if (kind.includes("video")) return "video";
     if (kind.includes("doc")) return "document";
   }
-  const url = (item.mediaUrl || "").toLowerCase();
+  const normalized = normaliseAssetUrl(item.mediaUrl || "") || item.mediaUrl || "";
+  const url = normalized.toLowerCase();
   if (!url) return null;
+  if (url.includes("drive.google.com/thumbnail") || url.includes("googleusercontent.com")) return "image";
   if (url.includes("youtube.com") || url.includes("vimeo.com")) return "embed";
   for (const [type, extensions] of Object.entries(MEDIA_EXTENSIONS)) {
     if (extensions.some((ext) => url.endsWith(ext))) return type;
@@ -29,7 +32,7 @@ const normalisePortfolioMedia = (value) => {
     .map((item, index) => ({
       ...item,
       id: item.id || `portfolio-media-${index}`,
-      mediaUrl: item.mediaUrl || item.url || item.image,
+      mediaUrl: normaliseAssetUrl(item.mediaUrl || item.url || item.image) || item.mediaUrl || item.url || item.image,
     }))
     .filter((item) => item.mediaUrl);
 };
@@ -112,7 +115,7 @@ const PortfolioMediaPlayer = ({
   className = "",
   title = "Portfolio media",
   subtitle = "These tiles mirror what Skill Studio buyers can click through.",
-  emptyLabel = "Portfolio coming soon. Upload media inside the editor to power this carousel.",
+  emptyLabel = "No portfolio tiles yet. Upload media inside the editor to power this carousel.",
   showMeta = true,
   showThumbnails = true,
   variant = "card",

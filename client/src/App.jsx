@@ -34,6 +34,7 @@ import AssociatePortal from "./pages/AssociatePortal";
 import AssociateWorkspace from "./pages/AssociateWorkspace.jsx";
 import StudioPortal from "./pages/StudioPortal";
 import StudioWorkspace from "./pages/StudioWorkspace.jsx";
+import SkillStudio from "./pages/SkillStudio.jsx";
 import CurrencyConverter from "./pages/CurrencyConverter";
 import OrderHistory from "./pages/OrderHistory";
 import Buy from "./pages/Buy";
@@ -217,6 +218,8 @@ const App = () => {
               <Route path="/associates/portal" element={wrapWithTransition(<AssociatePortal />)} />
               <Route path="/associates/portal/intro" element={wrapWithTransition(<AssociatePortal />)} />
               <Route path="/portal/associate" element={wrapWithTransition(<AssociateWorkspace />)} />
+              <Route path="/skillstudio" element={wrapWithTransition(<SkillStudio />)} />
+              <Route path="/skill-studio" element={<Navigate to="/skillstudio" replace />} />
               <Route path="/firmportfolio" element={wrapWithTransition(<FirmPortfolio />)} />
               <Route path="/associateportfolio" element={wrapWithTransition(<AssociatePortfolio />)} />
               <Route path="/associateportfolio/:id" element={wrapWithTransition(<AssociatePortfolio />)} />

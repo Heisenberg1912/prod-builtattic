@@ -73,6 +73,45 @@ const buildMailtoLink = (email, subject, body) => {
   return `mailto:${email}${query}`;
 };
 
+const splitList = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean).map((entry) => String(entry).trim()).filter(Boolean);
+  return String(value)
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
+const isUsable = (value) => {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+};
+
+const mergeProfiles = (base = {}, portal = {}) => {
+  if (!portal || typeof portal !== "object") return base;
+  const merged = { ...base };
+  Object.entries(portal).forEach(([key, value]) => {
+    if (!isUsable(value)) return;
+    if (Array.isArray(value)) {
+      merged[key] = value.length ? value : merged[key];
+    } else {
+      merged[key] = value;
+    }
+  });
+
+  // Combine portfolioMedia specifically so portal items show even if marketplace lacks them.
+  const portalMedia = Array.isArray(portal.portfolioMedia) ? portal.portfolioMedia.filter(isUsable) : [];
+  const baseMedia = Array.isArray(base.portfolioMedia) ? base.portfolioMedia.filter(isUsable) : [];
+  if (portalMedia.length || baseMedia.length) {
+    merged.portfolioMedia = [...portalMedia, ...baseMedia];
+  }
+
+  return merged;
+};
+
 
 const AssociatePortfolio = () => {
   const routerLocation = useLocation();
@@ -88,6 +127,8 @@ const AssociatePortfolio = () => {
     error: null,
   }));
   const [actionLoading, setActionLoading] = useState(false);
+  const [selectedWorkspaceCard, setSelectedWorkspaceCard] = useState(null);
+  const [selectedWorkspaceMediaIndex, setSelectedWorkspaceMediaIndex] = useState(0);
 
   useEffect(() => {
     if (initialAssociate) {
@@ -156,7 +197,7 @@ const AssociatePortfolio = () => {
 
   useEffect(() => {
     let cancelled = false;
-    if (dashboardData || id) return undefined;
+    if (dashboardData) return undefined;
     (async () => {
       try {
         const payload = await fetchAssociateDashboard();
@@ -178,7 +219,26 @@ const AssociatePortfolio = () => {
     return () => {
       cancelled = true;
     };
-  }, [dashboardData, id, associate]);
+  }, [dashboardData, associate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetchAssociatePortalProfile({ preferDraft: true });
+        if (cancelled) return;
+        if (response?.profile) {
+          setAssociate((prev) => mergeProfiles(prev || {}, response.profile));
+          setStatus((prev) => (prev.loading ? { loading: false, error: null } : prev));
+        }
+      } catch {
+        // non-blocking
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const { loading, error } = status;
 
@@ -186,8 +246,8 @@ const AssociatePortfolio = () => {
     if (!associate) return null;
 
     const currency = associate.rates?.currency || associate.currency || "USD";
-    const dayRate = associate.rates?.daily;
-    const hourlyRate = associate.rates?.hourly;
+    const dayRate = associate.rates?.daily ?? (associate.dailyRate != null ? Number(associate.dailyRate) : null);
+    const hourlyRate = associate.rates?.hourly ?? (associate.hourlyRate != null ? Number(associate.hourlyRate) : null);
     const primaryRate = dayRate ?? hourlyRate ?? null;
     const priceLabel =
       associate.priceLabel ||
@@ -246,7 +306,12 @@ const AssociatePortfolio = () => {
         "This associate delivers specialised support for Builtattic projects across the network.",
       portfolioMedia:
         Array.isArray(associate.portfolioMedia) && associate.portfolioMedia.length
-          ? associate.portfolioMedia.filter((item) => item?.mediaUrl)
+          ? associate.portfolioMedia
+              .map((item) => ({
+                ...item,
+                mediaUrl: item.mediaUrl || item.url || item.image,
+              }))
+              .filter((item) => item.mediaUrl)
           : (associate.portfolioImages || associate.gallery || []).map((url) => ({ mediaUrl: url })),
       workHistory:
         associate.workHistory && associate.workHistory.length
@@ -259,12 +324,12 @@ const AssociatePortfolio = () => {
           })),
       stats,
       serviceBadges: associate.serviceBadges || [],
-      deliverables: associate.deliverables || [],
-      specialisations: associate.specialisations || [],
-      expertise: associate.expertise || associate.skills || [],
-      softwares: associate.softwares || [],
-      languages: associate.languages || [],
-      certifications: associate.certifications || [],
+      deliverables: splitList(associate.deliverables),
+      specialisations: splitList(associate.specialisations),
+      expertise: splitList(associate.expertise || associate.skills),
+      softwares: splitList(associate.softwares),
+      languages: splitList(associate.languages),
+      certifications: splitList(associate.certifications),
       booking: bookingSummary,
       availability: associate.availability || null,
       availabilityWindows: associate.availabilityWindows || [],
@@ -273,14 +338,130 @@ const AssociatePortfolio = () => {
       warranty: associate.warranty || null,
       prepChecklist: associate.prepChecklist || [],
       contactEmail: associate.user?.email || associate.contactEmail || null,
-      keyProjects: Array.isArray(associate.keyProjects) ? associate.keyProjects : [],
-      portfolioLinks: Array.isArray(associate.portfolioLinks) ? associate.portfolioLinks : [],
+      keyProjects: Array.isArray(associate.keyProjects)
+        ? associate.keyProjects
+        : splitList(associate.keyProjects).map((entry) => ({
+          title: entry.split("|")[0] || entry,
+          scope: entry.split("|")[1] || "",
+          year: entry.split("|")[2] || "",
+          role: entry.split("|")[3] || associate.title || "",
+        })),
+      portfolioLinks: splitList(associate.portfolioLinks),
       serviceBundle: associate.serviceBundle || null,
       workingDrawings: associate.workingDrawings || null,
       servicePack: associate.servicePack || null,
       schedulingMeeting: associate.schedulingMeeting || null,
     };
   }, [associate]);
+
+  const dashboardPlans = Array.isArray(dashboardData?.planUploads) ? dashboardData.planUploads.slice(0, 3) : [];
+  const dashboardPacks = Array.isArray(dashboardData?.servicePacks) ? dashboardData.servicePacks.slice(0, 3) : [];
+  const dashboardMeetings = Array.isArray(dashboardData?.meetings) ? dashboardData.meetings.slice(0, 3) : [];
+  const dashboardDownloads = Array.isArray(dashboardData?.downloads) ? dashboardData.downloads.slice(0, 3) : [];
+  const dashboardChats = Array.isArray(dashboardData?.chats) ? dashboardData.chats.slice(0, 3) : [];
+  const hasWorkspaceExtras =
+    dashboardPlans.length ||
+    dashboardPacks.length ||
+    dashboardMeetings.length ||
+    dashboardDownloads.length ||
+    dashboardChats.length;
+  const isVideoPreview = (url) => typeof url === "string" && /\.(mp4|mov|webm)$/i.test(url);
+  const resolvePreview = (entry) =>
+    entry?.previewUrl ||
+    entry?.mediaUrl ||
+    entry?.image ||
+    entry?.thumbnail ||
+    entry?.link ||
+    entry?.url ||
+    entry?.downloadUrl ||
+    null;
+  const buildMediaEntry = (url) => {
+    if (!url) return null;
+    return { url, type: isVideoPreview(url) ? "video" : "image" };
+  };
+  const dedupeMedia = (items) => {
+    const seen = new Set();
+    return items.filter((item) => {
+      if (!item?.url) return false;
+      const key = item.url;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+  const workspaceCards = useMemo(() => {
+    const cards = [
+      ...dashboardDownloads.map((entry) => {
+        const preview = resolvePreview(entry);
+        const media = dedupeMedia(
+          [
+            buildMediaEntry(preview),
+            buildMediaEntry(entry.fileUrl || entry.downloadUrl || entry.url),
+          ].filter(Boolean)
+        );
+        return {
+          id: entry.id || entry.label,
+          subtype: "Deliverable",
+          title: entry.label || "Deliverable",
+          status: entry.tag || entry.accessLevel || "WD",
+          description: entry.description || "Shared files buyers can pull instantly.",
+          href: entry.url || entry.link || entry.downloadUrl || entry.fileUrl,
+          preview,
+          media,
+        };
+      }),
+      ...dashboardPacks.map((pack) => {
+        const preview = pack.previewUrl || pack.heroImage || pack.image || null;
+        const media = dedupeMedia(
+          [
+            buildMediaEntry(preview),
+            ...(Array.isArray(pack.gallery) ? pack.gallery.map(buildMediaEntry) : []),
+          ].filter(Boolean)
+        );
+        return {
+          id: pack.id || pack.title,
+          subtype: "Service pack",
+          title: pack.title || "Service pack",
+          status: (pack.status || "draft").toUpperCase(),
+          description: pack.summary || "Pre-scoped package ready for review.",
+          href: pack.url || pack.link || pack.checkoutUrl,
+          preview,
+          media,
+        };
+      }),
+      ...dashboardPlans.map((plan) => {
+        const preview =
+          plan.previewUrl || plan.mediaUrl || plan.image || plan.thumbnail || plan.link || plan.downloadUrl || null;
+        const renderImages = Array.isArray(plan.renderImages) ? plan.renderImages : [];
+        const media = dedupeMedia(
+          [
+            buildMediaEntry(preview),
+            ...renderImages.map(buildMediaEntry),
+            buildMediaEntry(plan.walkthrough),
+          ].filter(Boolean)
+        );
+        return {
+          id: plan.id || plan.projectTitle,
+          subtype: "Concept hosting",
+          title: plan.projectTitle || "Concept",
+          status: plan.category || "Plan",
+          description: plan.primaryStyle || "Hosted plan spec ready for buyers.",
+          href: plan.link || plan.url || plan.previewUrl || plan.mediaUrl || plan.walkthrough,
+          preview,
+          media,
+        };
+      }),
+    ];
+    return cards.filter((card) => card.id);
+  }, [dashboardDownloads, dashboardPacks, dashboardPlans]);
+  const handleWorkspaceCardOpen = (card) => {
+    setSelectedWorkspaceMediaIndex(0);
+    setSelectedWorkspaceCard(card);
+  };
+  const closeWorkspaceCard = () => {
+    setSelectedWorkspaceCard(null);
+    setSelectedWorkspaceMediaIndex(0);
+  };
 
   if (!view) {
     return (
@@ -380,17 +561,6 @@ const AssociatePortfolio = () => {
   ].filter(Boolean);
   const projectSpotlights = Array.isArray(keyProjects) ? keyProjects.slice(0, 3) : [];
   const resourceLinks = Array.isArray(portfolioLinks) ? portfolioLinks.filter(Boolean) : [];
-  const dashboardPlans = Array.isArray(dashboardData?.planUploads) ? dashboardData.planUploads.slice(0, 3) : [];
-  const dashboardPacks = Array.isArray(dashboardData?.servicePacks) ? dashboardData.servicePacks.slice(0, 3) : [];
-  const dashboardMeetings = Array.isArray(dashboardData?.meetings) ? dashboardData.meetings.slice(0, 3) : [];
-  const dashboardDownloads = Array.isArray(dashboardData?.downloads) ? dashboardData.downloads.slice(0, 3) : [];
-  const dashboardChats = Array.isArray(dashboardData?.chats) ? dashboardData.chats.slice(0, 3) : [];
-  const hasWorkspaceExtras =
-    dashboardPlans.length ||
-    dashboardPacks.length ||
-    dashboardMeetings.length ||
-    dashboardDownloads.length ||
-    dashboardChats.length;
   const enquiryHref = contactEmail
     ? buildMailtoLink(
       contactEmail,
@@ -603,45 +773,6 @@ const AssociatePortfolio = () => {
             )}
           </div>
 
-          <div className="grid gap-4 rounded-3xl bg-white/80 p-4 shadow-xl ring-1 ring-white/60 backdrop-blur-sm md:grid-cols-3">
-            {quickActions.map((action) => {
-              const disabled = !action.available || actionLoading;
-              const pillLabel = action.id === "buy" ? "Order" : action.id === "schedule" ? "Meet" : "Enquiry";
-              return (
-                <div
-                  key={action.id}
-                  className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100"
-                >
-                  <span
-                    className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] ${action.accent}`}
-                  >
-                    {pillLabel}
-                  </span>
-                  <div className="space-y-1">
-                    <p className="text-base font-semibold text-slate-900">{action.title}</p>
-                    <p className="text-sm text-slate-600">{action.description}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleAction(action.id)}
-                    className={`inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition ${disabled
-                      ? "cursor-not-allowed bg-slate-100 text-slate-400"
-                      : "bg-slate-900 text-white shadow hover:bg-slate-800"
-                      }`}
-                    aria-disabled={disabled}
-                    disabled={disabled}
-                    title={!action.available ? action.fallback : undefined}
-                  >
-                    {action.cta}
-                    <span className="ml-2 text-xs opacity-70">&rarr;</span>
-                  </button>
-                  {!action.available && (
-                    <p className="text-xs text-slate-500">{action.fallback}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         </div>
       </div>
 
@@ -677,52 +808,6 @@ const AssociatePortfolio = () => {
                   ) : null}
                 </div>
               </article>
-
-              <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Get started</p>
-                    <h2 className="text-lg font-semibold text-slate-900">Ways to work together</h2>
-                    <p className="text-sm text-slate-600">
-                      Pick the fastest path to buy, schedule time, or ask a question.
-                    </p>
-                  </div>
-                  {price ? (
-                    <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow">
-                      {price}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {quickActions.map((action) => {
-                    const disabled = !action.available || actionLoading;
-                    return (
-                      <div key={action.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
-                        <p className="text-sm font-semibold text-slate-900">{action.cta}</p>
-                        <p className="mt-1 text-sm text-slate-600">{action.description}</p>
-                        <button
-                          type="button"
-                          onClick={() => handleAction(action.id)}
-                          className={`mt-3 inline-flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${disabled
-                            ? "cursor-not-allowed bg-white text-slate-400 ring-1 ring-slate-100"
-                            : "bg-slate-900 text-white shadow hover:bg-slate-800"
-                            }`}
-                          aria-disabled={disabled}
-                          disabled={disabled}
-                          title={!action.available ? action.fallback : undefined}
-                        >
-                          {action.id === "buy" ? "Purchase or start order" : action.id === "schedule" ? "Schedule time" : "Send enquiry"}
-                          <span className="text-xs opacity-70">&rarr;</span>
-                        </button>
-                        {!action.available && <p className="mt-2 text-xs text-slate-500">{action.fallback}</p>}
-                      </div>
-                    );
-                  })}
-                </div>
-                {availability ? (
-                  <p className="text-xs text-slate-500">Availability right now: {availability}. Ask to hold a slot.</p>
-                ) : null}
-              </section>
 
               {stats.length > 0 && (
                 <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
@@ -930,6 +1015,66 @@ const AssociatePortfolio = () => {
                   <p className="text-sm text-slate-500">No work history available.</p>
                 )}
               </section>
+
+              {hasWorkspaceExtras && workspaceCards.length > 0 && (
+                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold text-slate-900">Workspace services</h3>
+                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Skill Studio</span>
+                  </div>
+                  <div className="overflow-x-auto pb-2">
+                    <div className="flex gap-4 min-w-full">
+                      {workspaceCards.map((card) => {
+                        const href = card.href || card.preview || null;
+                        const isVideo = isVideoPreview(card.preview);
+                        return (
+                          <div
+                            key={card.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleWorkspaceCardOpen(card)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                handleWorkspaceCardOpen(card);
+                              }
+                            }}
+                            className="min-w-[260px] max-w-xs flex-1 cursor-pointer rounded-2xl border border-slate-100 bg-slate-50 p-4 shadow-sm text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300"
+                          >
+                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-slate-500">
+                              <span>{card.subtype}</span>
+                              {card.status ? (
+                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
+                                  {card.status}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="space-y-2 mt-2">
+                              <p className="text-sm font-semibold text-slate-900 line-clamp-2">{card.title}</p>
+                              <p className="text-xs text-slate-600 line-clamp-3">{card.description}</p>
+                            </div>
+                            {card.preview ? (
+                              <div className="mt-3 overflow-hidden rounded-xl border border-slate-100 bg-white">
+                                {isVideo ? (
+                                  <video className="w-full h-32 object-cover" controls>
+                                    <source src={card.preview} />
+                                  </video>
+                                ) : (
+                                  <img src={card.preview} alt={card.title} className="w-full h-32 object-cover" />
+                                )}
+                              </div>
+                            ) : null}
+                            <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                              <span className="font-semibold text-slate-900">View details</span>
+                              {href ? <span className="text-[11px]">Link available</span> : <span>No link provided</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </section>
+              )}
 
               {resourceLinks.length > 0 && (
                 <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
@@ -1147,85 +1292,6 @@ const AssociatePortfolio = () => {
                 </section>
               )}
 
-              {hasWorkspaceExtras && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-slate-900">Workspace highlights</h3>
-                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Dashboard</span>
-                  </div>
-                  {dashboardPlans.length ? (
-                    <div className="space-y-2 text-sm text-slate-700">
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Plan uploads</p>
-                      <ul className="space-y-2">
-                        {dashboardPlans.map((plan) => (
-                          <li key={plan.id || plan.projectTitle} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold text-slate-900">{plan.projectTitle || "Concept"}</p>
-                            <p className="text-[11px] text-slate-500">
-                              {plan.category || "Concept"}{plan.primaryStyle ? ` - ${plan.primaryStyle}` : ""}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {dashboardPacks.length ? (
-                    <div className="space-y-2 text-sm text-slate-700">
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Service packs</p>
-                      <ul className="space-y-2">
-                        {dashboardPacks.map((pack) => (
-                          <li key={pack.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold text-slate-900">{pack.title || "Service pack"}</p>
-                            <p className="text-[11px] text-slate-500">{(pack.status || "draft").toUpperCase()}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {dashboardMeetings.length ? (
-                    <div className="space-y-2 text-sm text-slate-700">
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Meetings</p>
-                      <ul className="space-y-2">
-                        {dashboardMeetings.map((meeting) => (
-                          <li key={meeting.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold text-slate-900">{meeting.title || "Buyer sync"}</p>
-                            <p className="text-[11px] text-slate-500">
-                              {meeting.scheduledFor
-                                ? new Date(meeting.scheduledFor).toLocaleString()
-                                : meeting.status || "Draft"}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {dashboardDownloads.length ? (
-                    <div className="space-y-2 text-sm text-slate-700">
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Downloads</p>
-                      <ul className="space-y-2">
-                        {dashboardDownloads.map((entry) => (
-                          <li key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold text-slate-900">{entry.label || "Deliverable"}</p>
-                            <p className="text-[11px] text-slate-500">{entry.tag || entry.accessLevel || "WD-W3"}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {dashboardChats.length ? (
-                    <div className="space-y-2 text-sm text-slate-700">
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Client chat</p>
-                      <ul className="space-y-2">
-                        {dashboardChats.map((thread) => (
-                          <li key={thread.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                            <p className="font-semibold text-slate-900">{thread.subject || "Workspace thread"}</p>
-                            <p className="text-[11px] text-slate-500">{thread.status || "open"}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </section>
-              )}
 
               {(addons.length > 0 || prepChecklist.length > 0) && (
                 <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-6">
@@ -1287,6 +1353,121 @@ const AssociatePortfolio = () => {
           </div>
         </div>
       </main>
+
+      {selectedWorkspaceCard
+        ? (() => {
+          const mediaList =
+            selectedWorkspaceCard.media?.length
+              ? selectedWorkspaceCard.media
+              : selectedWorkspaceCard.preview
+                ? [{ url: selectedWorkspaceCard.preview, type: isVideoPreview(selectedWorkspaceCard.preview) ? "video" : "image" }]
+                : [];
+          const activeMedia = mediaList[selectedWorkspaceMediaIndex] || mediaList[0] || null;
+
+          return (
+            <div className="fixed inset-0 z-40 flex items-center justify-center px-4">
+              <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={closeWorkspaceCard} />
+              <div
+                role="dialog"
+                aria-modal="true"
+                className="relative z-50 w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-4">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+                      {selectedWorkspaceCard.subtype}
+                    </p>
+                    <h3 className="text-xl font-semibold text-slate-900">{selectedWorkspaceCard.title}</h3>
+                    {selectedWorkspaceCard.description ? (
+                      <p className="text-sm text-slate-600">{selectedWorkspaceCard.description}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    {selectedWorkspaceCard.status ? (
+                      <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white shadow">
+                        {selectedWorkspaceCard.status}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={closeWorkspaceCard}
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+                {activeMedia ? (
+                  <div className="border-b border-slate-100 bg-slate-50 px-6 py-4 space-y-3">
+                    {activeMedia.type === "video" ? (
+                      <video className="w-full max-h-[460px] rounded-2xl border border-slate-200 shadow-sm" controls>
+                        <source src={activeMedia.url} />
+                      </video>
+                    ) : (
+                      <img
+                        src={activeMedia.url}
+                        alt={selectedWorkspaceCard.title}
+                        className="w-full rounded-2xl border border-slate-200 shadow-sm"
+                      />
+                    )}
+                    {mediaList.length > 1 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {mediaList.map((item, index) => (
+                          <button
+                            key={`${selectedWorkspaceCard.id}-media-${index}`}
+                            type="button"
+                            onClick={() => setSelectedWorkspaceMediaIndex(index)}
+                            className={`h-16 w-24 overflow-hidden rounded-lg border ${index === selectedWorkspaceMediaIndex
+                              ? "border-slate-900 ring-1 ring-slate-900/30"
+                              : "border-slate-200 hover:border-slate-300"
+                              }`}
+                            aria-label={`Preview ${index + 1}`}
+                          >
+                            {item.type === "video" ? (
+                              <div className="flex h-full w-full items-center justify-center bg-slate-900/80 text-[11px] font-semibold text-white">
+                                Video
+                              </div>
+                            ) : (
+                              <img src={item.url} alt="" className="h-full w-full object-cover" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+                  <div className="text-xs text-slate-600">
+                    {selectedWorkspaceCard.href
+                      ? "Opens the workspace link in a new tab."
+                      : "No link provided for this item."}
+                  </div>
+                  <div className="flex gap-3">
+                    {selectedWorkspaceCard.href ? (
+                      <a
+                        href={selectedWorkspaceCard.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800"
+                      >
+                        Open link
+                        <span className="ml-2 text-[11px] opacity-80">&rarr;</span>
+                      </a>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={closeWorkspaceCard}
+                      className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()
+        : null}
 
       <Footer />
     </div>

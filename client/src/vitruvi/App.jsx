@@ -1,7 +1,6 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { FILTER_ORDER, FILTER_SETS } from "../constants/designFilters.js";
 import { useVitruviComposer } from "./hooks/useVitruviComposer.js";
-import { useVitruviUsage } from "./hooks/useVitruviUsage.js";
 import Card from "./components/Card.jsx";
 
 
@@ -356,16 +355,9 @@ export default function App() {
   const [materialPalette, setMaterialPalette] = useState([]);
   const [unitEconomy, setUnitEconomy] = useState(null);
   const { composeMutation } = useVitruviComposer();
-  const { usageQuery, creditMutation, updateUsageCache } = useVitruviUsage();
-  const usage = usageQuery.data || null;
-  const usageLoading = usageQuery.isPending || usageQuery.isFetching;
-  const usageError = usageQuery.error ? usageQuery.error.message || "Unable to load usage." : null;
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [quotaDetail, setQuotaDetail] = useState(null);
-  const [billingMessage, setBillingMessage] = useState("");
-  const [billingBusy, setBillingBusy] = useState(false);
   const [insightSource, setInsightSource] = useState(null);
   const [isImageModalOpen, setImageModalOpen] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
   const fileInputRef = useRef(null);
   const voiceTimeoutRef = useRef(null);
   const phaseTimersRef = useRef([]);
@@ -426,39 +418,22 @@ export default function App() {
 
 
   const openBuilt = useMemo(() => computeOpenBuiltFromRooms(roomSplits), [roomSplits]);
-  const usageStats = useMemo(() => {
-    if (!usage) return null;
-    const promptsRemaining = Math.max(0, Math.round((usage.promptAllowance || 0) - (usage.promptsUsed || 0)));
-    const tokensRemaining = Math.max(0, Math.round((usage.tokenAllowance || 0) - (usage.tokensUsed || 0)));
-    return {
-      promptsRemaining,
-      tokensRemaining,
-      promptPct: computePercent(usage.promptsUsed || 0, usage.promptAllowance || 0),
-      tokenPct: computePercent(usage.tokensUsed || 0, usage.tokenAllowance || 0),
-    };
-  }, [usage]);
-  const usagePlanLabel = useMemo(() => {
-    if (!usage?.plan) return "Free tier";
-    return toTitleCase(usage.plan.replace(/_/g, " "));
-  }, [usage]);
-  const usageResetLabel = useMemo(() => {
-    if (!usage?.resetAt) return "Monthly reset";
-    try {
-      return `Resets on ${new Date(usage.resetAt).toLocaleDateString()}`;
-    } catch {
-      return "Monthly reset";
-    }
-  }, [usage]);
-  const quotaSummary = useMemo(() => {
-    if (quotaDetail && typeof quotaDetail === "object") {
-      return quotaDetail;
-    }
-    return usage || null;
-  }, [quotaDetail, usage]);
 
 
   useEffect(() => {
     document.title = "VitruviAI";
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const doc = document.documentElement;
+      const total = doc.scrollHeight - doc.clientHeight;
+      const progress = total > 0 ? Math.min(100, Math.max(0, (doc.scrollTop / total) * 100)) : 0;
+      setScrollProgress(progress);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
 
@@ -472,7 +447,6 @@ export default function App() {
   }, []);
 
 
-  const handleRefreshUsage = () => usageQuery.refetch();
   const handleToggle = (section, opt) => {
     setSelected((prev) => {
       const next = { ...prev, [section]: toggleSet(prev[section], opt) };
@@ -522,9 +496,6 @@ export default function App() {
     setRiskRegister(resolveRiskRegister(result?.riskRegister, normalizedPrompt, promptText));
     setMaterialPalette(resolveMaterialPalette(result?.materialPalette, normalizedPrompt, promptText));
     setUnitEconomy(resolveUnitEconomy(result?.unitEconomy, promptText, Boolean(result?.base64 || result?.imageUrl)));
-    if (result?.usage) {
-      updateUsageCache(result.usage);
-    }
     setImageModalOpen(false);
 
 
@@ -564,7 +535,6 @@ export default function App() {
     setHistory((h) => [entry, ...h]);
 
     setError(null);
-    setQuotaDetail(null);
     setLoading(true);
     startPhaseFlow();
     setImageModalOpen(false);
@@ -585,13 +555,6 @@ export default function App() {
       applyAnalyzeResult(result, annotatedPrompt, snapshot);
       shouldResetComposer = true;
     } catch (err) {
-      if (err?.status === 402) {
-        setError("Usage limit reached. Upgrade your workspace to keep generating.");
-        setQuotaDetail(err?.usage || err?.payload || err?.message);
-        setShowUpgradeModal(true);
-        completePhaseFlow(true);
-        return;
-      }
       setError(String(err?.message || err));
       const fallbackPrompt = simulatePromptAnalysis(annotatedPrompt, snapshot);
       setAnalysis(fallbackPrompt);
@@ -624,21 +587,6 @@ export default function App() {
       }
       setLoading(false);
     }
-  };
-
-
-  const handleRoomSplitChange = (key, rawValue) => {
-    const preset = ROOM_LAYOUT_PRESETS.find((item) => item.key === key);
-    const numeric = Number(rawValue);
-    setRoomSplits((prev) => ({
-      ...prev,
-      [key]: sanitizeRoomValue(Number.isFinite(numeric) ? numeric : prev[key], preset),
-    }));
-  };
-
-
-  const handleResetRooms = () => {
-    setRoomSplits(defaultRoomConfig(analysis));
   };
 
 
@@ -733,33 +681,10 @@ ${snippet}` : snippet));
   const closeModal = () => setModal(null);
 
 
-  const handleUpgradeClick = () => {
-    setBillingMessage("");
-    setShowUpgradeModal(true);
-  };
-
-
-  const handleCloseUpgrade = () => {
-    setShowUpgradeModal(false);
-    setBillingMessage("");
-  };
-
-
-  const handlePurchaseCredits = async () => {
-    setBillingBusy(true);
-    setBillingMessage("");
-    try {
-      const summary = await creditMutation.mutateAsync();
-      if (summary) {
-        updateUsageCache(summary);
-        setQuotaDetail(null);
-        setBillingMessage("Credits added. Keep exploring new schemes.");
-        setShowUpgradeModal(false);
-      }
-    } catch (err) {
-      setBillingMessage(err?.status === 401 ? "Sign in to your workspace to purchase credits." : (err?.message || "Unable to add credits right now."));
-    } finally {
-      setBillingBusy(false);
+  const scrollToSection = (id) => {
+    const target = document.getElementById(id);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   };
 
@@ -866,1159 +791,364 @@ ${snippet}` : snippet));
 
   const modalInfo = modalDetails();
 
+  const navSections = [
+    { id: "canvas", label: "Canvas" },
+    { id: "insights", label: "Insights" },
+    { id: "delivery", label: "Delivery" },
+    { id: "analysis", label: "Analysis" },
+    { id: "compose", label: "Compose" },
+  ];
+  const hasFilters = Object.entries(selected).some(([, set]) => set.size > 0);
+
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-
-
+    <div className="relative min-h-screen bg-gradient-to-b from-white via-slate-50 to-slate-100 text-slate-900 overflow-hidden scroll-smooth">
+      <div className="pointer-events-none fixed inset-x-0 top-0 h-1 bg-slate-200 z-50">
+        <div className="h-1 bg-gradient-to-r from-sky-400 via-emerald-400 to-teal-500 transition-[width] duration-300" style={{ width: `${scrollProgress}%` }} />
+      </div>
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -left-16 top-6 h-64 w-64 rounded-full bg-sky-200/40 blur-3xl" />
+        <div className="absolute right-[-120px] top-1/3 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl" />
+        <div className="absolute bottom-[-140px] left-24 h-72 w-72 rounded-full bg-cyan-200/40 blur-3xl" />
+      </div>
       {modalInfo && (
         <Modal title={modalInfo.title} onClose={closeModal}>
           {modalInfo.content}
         </Modal>
       )}
-
-      {showUpgradeModal && (
-        <Modal title="Upgrade Vitruvi workspace" onClose={handleCloseUpgrade}>
-          <p className="text-sm text-neutral-600">
-            You&apos;ve reached the collaborative free tier (6 prompts / 18k tokens per reset). Add credits or talk to billing to keep generating.
-          </p>
-          {quotaSummary ? (
-            <div className="text-xs text-neutral-600 bg-neutral-100 border border-neutral-200 rounded-2xl px-3 py-2 space-y-1">
-              <div>
-                Prompts used: {quotaSummary.promptsUsed ?? usage?.promptsUsed ?? 0} /{" "}
-                {quotaSummary.promptAllowance ?? usage?.promptAllowance ?? 0}
-              </div>
-              <div>
-                Tokens used: {formatNumber(quotaSummary.tokensUsed ?? usage?.tokensUsed ?? 0)} /{" "}
-                {formatNumber(quotaSummary.tokenAllowance ?? usage?.tokenAllowance ?? 0)}
-              </div>
-            </div>
-          ) : null}
-          {billingMessage && (
-            <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-              {billingMessage}
-            </div>
-          )}
-          <div className="space-y-2">
-            <button
-              onClick={handlePurchaseCredits}
-              disabled={billingBusy}
-              className={`w-full text-sm px-4 py-2 rounded-xl ${
-                billingBusy ? "bg-neutral-300 text-neutral-600" : "bg-neutral-900 text-white hover:bg-neutral-800"
-              }`}
-            >
-              {billingBusy ? "Processing…" : "Add 4k tokens for $12"}
-            </button>
-            <a
-              className="block text-center text-sm px-4 py-2 rounded-xl border border-neutral-300 text-neutral-700 hover:bg-neutral-100"
-              href="mailto:sales@builtattic.com?subject=VitruviAI%20billing"
-            >
-              Email billing
-            </a>
-          </div>
-        </Modal>
-      )}
-
-
       {isImageModalOpen && (imageUrl || imgB64) && (
-
-
         <Modal title="Generated plan preview" onClose={() => setImageModalOpen(false)}>
-
-
           <div className="max-h-[70vh] overflow-auto rounded-2xl border border-neutral-200">
-
-
             <img src={imageUrl || imgB64} alt="Generated plan" className="w-full" />
-
-
           </div>
-
-
-          <div className="flex items-center justify-between text-xs text-neutral-500">
-
-
+          <div className="flex items-center justify-between text-xs text-neutral-600">
             <span>Reference: Floor Plan Training.pdf</span>
-
-
             <button onClick={handleDownloadImage} className="text-xs px-3 py-1 rounded-full bg-neutral-900 text-white hover:bg-neutral-800">Download image</button>
-
-
           </div>
-
-
         </Modal>
-
-
       )}
-
-
-
-
-
-
-      <div className="flex flex-col xl:flex-row xl:items-start gap-6 xl:gap-0 px-4 sm:px-6 pb-10">
-        {/* LEFT FILTERS */}
-        <Suspense
-          fallback={
-            <aside className="order-2 xl:order-1 w-full xl:w-[300px] bg-white/70 border border-neutral-200 rounded-2xl p-4">
-              <div className="animate-pulse space-y-3">
-                <div className="h-8 bg-neutral-100 rounded-xl" />
-                <div className="h-20 bg-neutral-100 rounded-xl" />
+      <div className="relative z-10 max-w-[1400px] mx-auto px-4 sm:px-6 py-8 space-y-6">
+        <header className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-[11px] uppercase tracking-[0.35em] text-sky-600">Vitruvi AI</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl font-semibold text-slate-900">Spatial intelligence for quick concept passes</h1>
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${loading ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-emerald-100 text-emerald-800 border-emerald-200"}`}>
+                  {loading ? "Thinking" : "Ready"}
+                </span>
               </div>
-            </aside>
-          }
-        >
-          <FiltersSidebar
-            Icon={Icon}
-            Section={Section}
-            Collapsible={Collapsible}
-            selected={selected}
-            loading={loading}
-            error={error}
-            onToggle={handleToggle}
-            onClear={handleClearFilters}
-            onApply={handleApplyFilters}
-            onOpenModal={setModal}
-          />
-        </Suspense>
-
-
-
-        {/* CENTER */}
-        <main className="order-1 xl:order-2 flex-1 xl:min-h-[calc(100vh-56px)] xl:overflow-y-auto pt-6 xl:pt-6 pb-20 xl:pb-28">
-          <div className="max-w-5xl mx-auto w-full">
-{loading && <div className="xl:hidden mb-4 text-sm bg-yellow-50 border border-yellow-200/80 text-yellow-900 px-4 py-3 rounded-xl">Processing…</div>}
-{error && <div className="xl:hidden mb-4 text-sm bg-red-50 border border-red-200/80 text-red-800 px-4 py-3 rounded-xl">{String(error)}</div>}
-            {/* Selected Chips preview */}
-            <div className="mb-4 px-1">
-              {Object.entries(selected).some(([, set]) => set.size > 0) ? (
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(selected).map(([k, set]) =>
-                    [...set].map((v) => (
-                      <Chip key={`${k}:${v}`} label={`${k}: ${v}`} onRemove={() => handleToggle(k, v)} />
-                    ))
+              <p className="text-sm text-slate-600 max-w-2xl">Move from intent to plan with guided filters, focused insights, and a calmer canvas that adapts to any screen size.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {navSections.map((item) => (
+                <button key={item.id} onClick={() => scrollToSection(item.id)} className="px-3 py-1.5 rounded-full text-xs border border-slate-200 bg-white hover:bg-slate-50 transition shadow-sm">{item.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[12px] text-slate-700">
+            <button onClick={() => setModal("profile")} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white hover:bg-slate-50 border border-slate-200 shadow-sm"><Icon.User /> Profile</button>
+            <button onClick={() => setModal("settings")} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white hover:bg-slate-50 border border-slate-200 shadow-sm"><Icon.Cog /> Workspace</button>
+            <button onClick={() => setModal("help")} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white hover:bg-slate-50 border border-slate-200 shadow-sm"><Icon.Help /> Help</button>
+          </div>
+        </header>
+        <div className="flex gap-4 overflow-x-auto pb-2 -mx-2 px-2" aria-label="Filters">
+          <div className="w-full">
+            <Suspense fallback={<aside className="w-full bg-white border border-neutral-200 rounded-2xl p-4 shadow-sm"><div className="animate-pulse space-y-3"><div className="h-8 bg-neutral-100 rounded-xl" /><div className="h-20 bg-neutral-100 rounded-xl" /></div></aside>}>
+              <FiltersSidebar Icon={Icon} selected={selected} loading={loading} error={error} onToggle={handleToggle} onClear={handleClearFilters} onApply={handleApplyFilters} onOpenModal={setModal} />
+            </Suspense>
+          </div>
+        </div>
+        <main className="space-y-5">
+          {loading && <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-sm px-4 py-3">Processing your brief...</div>}
+          {error && <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm px-4 py-3">{String(error)}</div>}
+          <div className="bg-white border border-slate-200 rounded-2xl px-3 py-3 shadow-sm">
+            {hasFilters ? (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(selected).map(([k, set]) => [...set].map((v) => <Chip key={`${k}:${v}`} label={`${k}: ${v}`} onRemove={() => handleToggle(k, v)} />))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">No filters selected yet. Pick a typology or style to guide Vitruvi.</p>
+            )}
+          </div>
+          <section id="canvas" className="space-y-4 scroll-mt-24">
+            <Card className="p-0 overflow-hidden bg-white">
+              <div className="grid lg:grid-cols-5">
+                <div className="lg:col-span-3 relative h-[320px] sm:h-[420px] bg-gradient-to-br from-slate-100 via-slate-50 to-white text-slate-800 flex items-center justify-center">
+                  {loading ? <PinterestLoader /> : imageUrl ? <img src={imageUrl} alt="Generated plan" className="w-full h-full object-cover" /> : imgB64 ? <img alt="Generated plan" src={imgB64} className="w-full h-full object-cover" /> : (
+                    <div className="text-center text-slate-500 px-6">
+                      <div className="text-sm">Live canvas</div>
+                      <div className="text-[12px] mt-1">Your generated concept will appear here.</div>
+                      <div className="text-[11px] mt-2 text-slate-400">Guided by Floor Plan Training.pdf symbology.</div>
+                    </div>
+                  )}
+                  <div className="absolute top-4 left-4 flex flex-wrap gap-2 text-[11px]">
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 shadow-sm">Floor Plan Training ready</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 shadow-sm">Open/Built {openBuilt.open}% / {openBuilt.built}%</span>
+                  </div>
+                  {(imageUrl || imgB64) && !loading && (
+                    <div className="absolute top-4 right-4 flex flex-wrap gap-2">
+                      <button onClick={() => setImageModalOpen(true)} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[12px] text-slate-700 hover:bg-slate-50 shadow-sm">Enlarge</button>
+                      <button onClick={handleDownloadImage} className="rounded-full border border-neutral-900 bg-neutral-900 px-3 py-1 text-[12px] text-white hover:bg-neutral-800">Download</button>
+                      <button onClick={handleDownloadDxf} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[12px] text-slate-700 hover:bg-slate-50 shadow-sm">DXF export</button>
+                    </div>
                   )}
                 </div>
-              ) : (
-                <p className="text-xs text-neutral-500">No filters selected yet.</p>
-              )}
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
-              <Card className="col-span-1 xl:col-span-5 p-4">
-                <Section title="Feasibility Snapshot" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Budget cues</span>} />
+                <div className="lg:col-span-2 p-5 space-y-4 bg-white">
+                  <Section title="Program snapshot" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Autobalanced</span>} />
+                  <div className="grid grid-cols-2 gap-3 text-sm text-neutral-800">
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2"><div className="text-xs uppercase tracking-wide text-neutral-500">Program</div><div className="font-semibold text-neutral-900 mt-1">{program.programName}</div></div>
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2"><div className="text-xs uppercase tracking-wide text-neutral-500">Size</div><div className="font-semibold text-neutral-900 mt-1">{program.size}</div></div>
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2"><div className="text-xs uppercase tracking-wide text-neutral-500">Orientation</div><div className="font-semibold text-neutral-900 mt-1">{program.direction}</div></div>
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2"><div className="text-xs uppercase tracking-wide text-neutral-500">Open/Built</div><div className="font-semibold text-neutral-900 mt-1">{openBuilt.open}% / {openBuilt.built}% {openBuilt.ratio ? `(${openBuilt.ratio})` : ""}</div></div>
+                  </div>
+                  {program.notes ? <div className="rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-700 leading-relaxed">{program.notes}</div> : null}
+                  <div className="grid grid-cols-2 gap-3 text-xs text-neutral-600">
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                      <div className="text-[11px] uppercase tracking-wide text-neutral-500">Budget cue</div>
+                      <div className="text-sm font-semibold text-neutral-900">{costEstimates?.capexRange || "Pending prompt"}</div>
+                      <p className="mt-1 leading-relaxed">{costEstimates?.notes?.[0] || "Run a prompt to unpack capex and cost per sq.ft."}</p>
+                    </div>
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                      <div className="text-[11px] uppercase tracking-wide text-neutral-500">Token spend</div>
+                      <div className="text-sm font-semibold text-neutral-900">{unitEconomy?.estimatedCostUsd ? `$${unitEconomy.estimatedCostUsd.toFixed(2)}` : "Waiting"}</div>
+                      <p className="mt-1 leading-relaxed">{unitEconomy?.tokenEstimate ? `${formatNumber(unitEconomy.tokenEstimate)} tokens incl. image` : "Send your brief to see Gemini token split."}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </section>
+          <Card className="p-5 space-y-3 bg-white">
+            <Section title="Delivery signals" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Realtime</span>} />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 space-y-1">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">Feasibility</div>
                 {costEstimates ? (
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-neutral-500">Capex</span>
-                      <span className="font-semibold text-neutral-900">{costEstimates.capexRange || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-neutral-500">Cost / sq.ft</span>
-                      <span className="font-semibold text-neutral-900">{costEstimates.costPerSqft || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-neutral-500">ROI</span>
-                      <span className="font-semibold text-neutral-900">{costEstimates.roi || "—"}</span>
-                    </div>
-                    {Number.isFinite(costEstimates.paybackMonths) && (
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-neutral-500">Payback</span>
-                        <span className="font-semibold text-neutral-900">{costEstimates.paybackMonths} months</span>
-                      </div>
-                    )}
-                    {costEstimates.notes?.length ? (
-                      <ul className="list-disc list-inside text-xs space-y-1 text-neutral-600">
-                        {costEstimates.notes.map((note, index) => (
-                          <li key={index}>{note}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-xs text-neutral-500">Generate a brief to unpack feasibility detail.</p>
-                    )}
-                  </div>
+                  <>
+                    <div className="text-sm font-semibold text-neutral-900">{costEstimates.capexRange || "-"}</div>
+                    <div className="text-xs text-neutral-600">Cost / sq.ft: {costEstimates.costPerSqft || "-"}</div>
+                    <div className="text-xs text-neutral-600">ROI: {costEstimates.roi || "-"}</div>
+                    {Number.isFinite(costEstimates.paybackMonths) && <div className="text-xs text-neutral-600">Payback: {costEstimates.paybackMonths} months</div>}
+                  </>
                 ) : (
-                  <div className="text-sm text-neutral-500">Generate a concept to unlock feasibility signals.</div>
+                  <div className="text-sm text-neutral-500">Generate a concept to see feasibility.</div>
                 )}
-              </Card>
-
-              <Card className="col-span-1 xl:col-span-4 p-4">
-                <Section title="Unit Economics" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Token spend</span>} />
+              </div>
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 space-y-1">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">Unit economics</div>
                 {unitEconomy ? (
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-neutral-500">Token estimate</span>
-                      <span className="font-semibold text-neutral-900">{formatNumber(unitEconomy.tokenEstimate) || "—"} tokens</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-neutral-500">Prompt / Response</span>
-                      <span className="font-semibold text-neutral-900">
-                        {(formatNumber(unitEconomy.promptTokens) || "—")}/{formatNumber(unitEconomy.responseTokens) || "—"}
-                      </span>
-                    </div>
-                    {Number.isFinite(unitEconomy.imageTokens) && (
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-neutral-500">Image render</span>
-                        <span className="font-semibold text-neutral-900">{formatNumber(unitEconomy.imageTokens)} tokens</span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-neutral-500">Est. cost</span>
-                      <span className="font-semibold text-neutral-900">
-                        {unitEconomy.estimatedCostUsd ? `$${unitEconomy.estimatedCostUsd.toFixed(2)}` : "—"}
-                      </span>
-                    </div>
-                    {unitEconomy.notes?.length ? (
-                      <ul className="text-xs list-disc list-inside text-neutral-600 space-y-1">
-                        {unitEconomy.notes.map((note, index) => (
-                          <li key={index}>{note}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-xs text-neutral-500">Run a prompt to see the Gemini cost split.</p>
-                    )}
-                  </div>
+                  <>
+                    <div className="text-sm font-semibold text-neutral-900">{formatNumber(unitEconomy.tokenEstimate)} tokens</div>
+                    <div className="text-xs text-neutral-600">Prompt/Response: {(formatNumber(unitEconomy.promptTokens) || "-")}/{formatNumber(unitEconomy.responseTokens) || "-"}</div>
+                    {Number.isFinite(unitEconomy.imageTokens) && <div className="text-xs text-neutral-600">Image render: {formatNumber(unitEconomy.imageTokens)} tokens</div>}
+                    <div className="text-xs text-neutral-600">Est. cost: {unitEconomy.estimatedCostUsd ? `$${unitEconomy.estimatedCostUsd.toFixed(2)}` : "-"}</div>
+                  </>
                 ) : (
-                  <div className="text-sm text-neutral-500">Send a prompt to reveal token economics.</div>
+                  <div className="text-sm text-neutral-500">Tokens + cost show up after the first send.</div>
                 )}
-              </Card>
-
-              <Card className="col-span-1 xl:col-span-3 p-4">
-                <Section title="Phasing Playbook" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Timeline</span>} />
+              </div>
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 space-y-2">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">Phasing</div>
                 {phasingPlan.length ? (
-                  <ol className="space-y-3 text-sm">
-                    {phasingPlan.map((phase) => (
-                      <li key={phase.id} className="border border-neutral-200 rounded-2xl px-3 py-2 bg-white/80">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="font-semibold text-neutral-900">{phase.phase}</span>
-                          {Number.isFinite(phase.durationWeeks) && (
-                            <span className="text-xs text-neutral-500">{phase.durationWeeks} wk</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{phase.focus}</p>
-                      </li>
+                  <ol className="space-y-1 text-sm text-neutral-700">
+                    {phasingPlan.slice(0, 3).map((phase) => (
+                      <li key={phase.id} className="flex items-center justify-between gap-2"><span>{phase.phase}</span>{Number.isFinite(phase.durationWeeks) && <span className="text-[11px] text-neutral-500">{phase.durationWeeks} wk</span>}</li>
                     ))}
+                    {phasingPlan.length > 3 && <li className="text-xs text-neutral-500">+{phasingPlan.length - 3} more steps</li>}
                   </ol>
                 ) : (
-                  <div className="text-sm text-neutral-500">Generate to pull in the execution plan.</div>
+                  <div className="text-sm text-neutral-500">Generate to pull in the execution rhythm.</div>
                 )}
-              </Card>
+              </div>
             </div>
-
-            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
-              <Card className="col-span-1 xl:col-span-5 p-4">
-                <Section title="Material Palette" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Finish strategy</span>} />
-                {materialPalette.length ? (
-                  <div className="space-y-3">
-                    {materialPalette.map((material) => (
-                      <div key={material.id} className="rounded-2xl border border-neutral-200 px-3 py-2 bg-white/80">
-                        <div className="text-sm font-semibold text-neutral-900">{material.name}</div>
-                        {material.finish && <div className="text-xs text-neutral-600">{material.finish}</div>}
-                        {material.sustainability && (
-                          <div className="text-[11px] text-emerald-600">{material.sustainability}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-neutral-500">Generate to see the curated material stack.</div>
-                )}
-              </Card>
-
-              <Card className="col-span-1 xl:col-span-7 p-4">
-                <Section title="Risk Register" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Mitigations</span>} />
-                {riskRegister.length ? (
-                  <div className="space-y-3">
-                    {riskRegister.map((risk) => (
-                      <div key={risk.id} className="border border-neutral-200 rounded-2xl px-3 py-2 bg-white/80">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-neutral-900">{risk.risk}</span>
-                          {risk.impact && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                              {risk.impact}
-                            </span>
-                          )}
-                        </div>
-                        {risk.mitigation && <p className="text-xs text-neutral-600 mt-1">{risk.mitigation}</p>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-neutral-500">Run Gemini to pull risk + mitigation cues.</div>
-                )}
-              </Card>
-            </div>
-
-            {(usageLoading || usage || usageError) && (
-
-              <Suspense
-
-                fallback={
-
-                  <Card className="mb-4 p-4 space-y-4">
-
-                    <div className="flex justify-between">
-
-                      <span className="text-sm font-semibold text-neutral-700">Usage & Billing</span>
-
-                      <span className="text-xs text-neutral-500">Loading…</span>
-
-                    </div>
-
-                    <div className="h-2 w-full bg-neutral-100 rounded-full overflow-hidden">
-
-                      <div className="h-full w-1/2 bg-neutral-200 animate-pulse" />
-
-                    </div>
-
-                  </Card>
-
-                }
-
-              >
-
-                <UsagePanel
-
-                  usage={usage}
-
-                  usageLoading={usageLoading}
-
-                  usageError={usageError}
-
-                  usagePlanLabel={usagePlanLabel}
-
-                  usageResetLabel={usageResetLabel}
-
-                  usageStats={usageStats}
-
-                  onUpgrade={handleUpgradeClick}
-
-                  onRefresh={handleRefreshUsage}
-
-                />
-
-              </Suspense>
-
-            )}
-
-            {/* Top grid: Image + Suggested Design */}
+          </Card>
+          <section id="insights" className="space-y-4 scroll-mt-24">
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-
-
-              <Card className="col-span-1 xl:col-span-8 h-64 sm:h-80 xl:h-[420px] relative overflow-hidden flex">
-
-
-                <div className="relative w-full h-full flex items-center justify-center">
-
-
-                  {loading ? (
-
-
-                    <PinterestLoader />
-
-
-                  ) : imageUrl ? (
-
-
-                    <img src={imageUrl} alt="Generated plan" className="w-full h-full object-cover rounded-2xl" />
-
-
-                  ) : imgB64 ? (
-
-
-                    <img alt="Generated plan" src={imgB64} className="w-full h-full object-cover rounded-2xl border" />
-
-
-                  ) : (
-
-
-                    <div className="text-center text-neutral-500 px-6">
-
-
-                      <div className="text-sm">Image Preview</div>
-
-
-                      <div className="text-[12px] mt-1">Your generated concept will appear here.</div>
-
-
-                      <div className="text-[11px] mt-2 text-neutral-400">Guided by Floor Plan Training.pdf symbology.</div>
-
-
-                    </div>
-
-
-                  )}
-
-
-                  {loading && (
-
-
-                    <div className="absolute bottom-3 left-3 text-[11px] uppercase tracking-wide bg-white/80 border border-neutral-200 rounded-full px-3 py-1 text-neutral-600">
-
-
-                      Preparing render
-
-
-                    </div>
-
-
-                  )}
-
-
-                  {(imageUrl || imgB64) && !loading && (
-
-
-                    <div className="absolute top-3 right-3 flex gap-2">
-
-
-                      <button
-
-
-                        onClick={() => setImageModalOpen(true)}
-
-
-                        className="rounded-full border border-neutral-200 bg-white/90 px-3 py-1 text-[12px] text-neutral-700 hover:bg-white"
-
-
-                      >
-
-
-                        Enlarge
-
-
-                      </button>
-
-
-                      <button
-
-
-                        onClick={handleDownloadImage}
-
-
-                        className="rounded-full border border-neutral-900 bg-neutral-900 px-3 py-1 text-[12px] text-white hover:bg-neutral-800"
-
-
-                      >
-
-
-                        Download
-
-
-                      </button>
-
-
-                      <button
-
-
-                        onClick={handleDownloadDxf}
-
-
-                        className="rounded-full border border-neutral-200 bg-white/90 px-3 py-1 text-[12px] text-neutral-700 hover:bg-white"
-
-
-                      >
-
-
-                        Download DXF
-
-
-                      </button>
-
-
-                    </div>
-
-
-                  )}
-
-
-                </div>
-
-
-              </Card>
-
-
-
-
-
-
-              <Card className="col-span-1 xl:col-span-4 p-4">
-
-
-                <Section title="Suggested Design" />
-
-
-                <div className="space-y-3 text-sm">
-
-
-                  <div className="flex items-center justify-between gap-4"><span className="text-neutral-500">Program</span><span className="font-medium text-right">{program.programName}</span></div>
-
-
-                  <div className="flex items-center justify-between gap-4"><span className="text-neutral-500">Size</span><span className="font-medium text-right">{program.size}</span></div>
-
-
-                  <div className="flex items-center justify-between gap-4"><span className="text-neutral-500">Orientation</span><span className="font-medium text-right">{program.direction}</span></div>
-
-
-                  <div className="flex items-center justify-between gap-4"><span className="text-neutral-500">Open/Built</span><span className="font-medium text-right">{openBuilt.open}% / {openBuilt.built}%</span></div>
-
-
-                </div>
-
-
-
-
-
-
-                {program.notes ? (
-                  <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600 leading-relaxed">
-                    {program.notes}
-                  </div>
-                ) : null}
-
-                <div className="mt-4 text-[12px] text-neutral-500 leading-relaxed">Adjust proportions below or explore alternates to rebalance the scheme before exporting.</div>
-
-
-              </Card>
-
-
-            </div>
-
-
-
-
-
-
-            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
-
-
-              <Card className="col-span-1 xl:col-span-8 p-4">
-
-
-                <Section
-                  title="Prompt Intelligence"
-                  right={
-                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-neutral-500">
-                      <span>Detailed NLP</span>
-                      {insightSource === "gemini" ? (
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
-                          Gemini
-                        </span>
-                      ) : null}
-                    </div>
-                  }
-                />
-
-
+              <Card className="col-span-1 xl:col-span-8 p-5 bg-white">
+                <Section title="Prompt Intelligence" right={<div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-neutral-500"><span>Detailed NLP</span>{insightSource === "gemini" ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">Gemini</span> : null}</div>} />
                 {nlpBreakdown ? (
-
-
                   <div className="space-y-4 text-sm">
-
-
                     <p className="text-neutral-700 leading-relaxed">{nlpBreakdown.summary}</p>
-
-
                     <div className="flex flex-wrap gap-3 text-[12px] text-neutral-500">
-
-
                       <span>Words: {nlpBreakdown.wordCount}</span>
-
-
                       <span>Tone: {nlpBreakdown.tone}</span>
-
-
                       <span>Open/Built: {openBuilt.open}% / {openBuilt.built}%</span>
-
-
                       <span>Ratio: {openBuilt.ratio ?? "N/A"}</span>
-
-
                     </div>
-
-
                     {nlpBreakdown.keywords?.length ? (
-
-
                       <div>
-
-
                         <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Keywords</div>
-
-
-                        <div className="flex flex-wrap gap-2">
-
-
-                          {nlpBreakdown.keywords.map((token) => (
-
-
-                            <span key={token} className="px-2 py-1 rounded-full bg-neutral-100 text-neutral-700 text-xs">{token}</span>
-
-
-                          ))}
-
-
-                        </div>
-
-
+                        <div className="flex flex-wrap gap-2">{nlpBreakdown.keywords.map((token) => <span key={token} className="px-2 py-1 rounded-full bg-neutral-100 text-neutral-700 text-xs">{token}</span>)}</div>
                       </div>
-
-
                     ) : null}
-
-
                     {nlpBreakdown.spaces?.length ? (
-
-
                       <div>
-
-
                         <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Spaces flagged</div>
-
-
-                        <div className="flex flex-wrap gap-2 text-xs text-neutral-600">
-
-
-                          {nlpBreakdown.spaces.map((space) => (
-
-
-                            <span key={space} className="px-2 py-1 rounded-full border border-neutral-200 bg-white">{space}</span>
-
-
-                          ))}
-
-
-                        </div>
-
-
+                        <div className="flex flex-wrap gap-2 text-xs text-neutral-600">{nlpBreakdown.spaces.map((space) => <span key={space} className="px-2 py-1 rounded-full border border-neutral-200 bg-white">{space}</span>)}</div>
                       </div>
-
-
                     ) : null}
-
-
                     {nlpBreakdown.compliance?.length ? (
-
-
                       <div>
-
-
                         <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Compliance notes</div>
-
-
-                        <ul className="list-disc list-inside text-xs text-neutral-600 space-y-1">
-
-
-                          {nlpBreakdown.compliance.map((note, idx) => (
-
-
-                            <li key={idx}>{note}</li>
-
-
-                          ))}
-
-
-                        </ul>
-
-
+                        <ul className="list-disc list-inside text-xs text-neutral-600 space-y-1">{nlpBreakdown.compliance.map((note, idx) => <li key={idx}>{note}</li>)}</ul>
                       </div>
-
-
                     ) : null}
-
-
                   </div>
-
-
                 ) : (
-
-
                   <div className="text-sm text-neutral-500">Send a prompt to unlock NLP insights, compliance cues, and open-to-built diagnostics.</div>
-
-
                 )}
-
-
               </Card>
-
-
-
-
-
-
-              <Card className="col-span-1 xl:col-span-4 p-4">
-
-
+              <Card className="col-span-1 xl:col-span-4 p-5 bg-white">
                 <Section title="Generation Phases" right={<span className={`text-[10px] uppercase tracking-wide ${loading ? "text-amber-600" : "text-emerald-600"}`}>{loading ? "In progress" : "Ready"}</span>} />
-
-
                 <div className="space-y-3">
-
-
                   {phaseStates.map((phase, index) => {
-
-
                     const isComplete = phase.status === "complete";
-
-
                     const isError = phase.status === "error";
-
-
                     const isIdle = phase.status === "idle";
-
-
                     const statusLabel = isComplete ? "Ready" : isError ? "Review" : "Preparing";
-
-
-                    const badgeClass = isComplete
-
-
-                      ? "border border-emerald-200 bg-emerald-50 text-emerald-600"
-
-
-                      : isError
-
-
-                      ? "border border-red-200 bg-red-50 text-red-600"
-
-
-                      : isIdle
-
-
-                      ? "border border-neutral-200 bg-neutral-100 text-neutral-500"
-
-
-                      : "border border-amber-200 bg-amber-50 text-amber-600";
-
-
+                    const badgeClass = isComplete ? "border border-emerald-200 bg-emerald-50 text-emerald-600" : isError ? "border border-red-200 bg-red-50 text-red-600" : isIdle ? "border border-neutral-200 bg-neutral-100 text-neutral-500" : "border border-amber-200 bg-amber-50 text-amber-600";
                     const dotClass = isComplete ? "bg-emerald-500" : isError ? "bg-red-500 animate-pulse" : isIdle ? "bg-neutral-400" : "bg-amber-500 animate-pulse";
-
-
                     return (
-
-
                       <div key={phase.key} className="border border-neutral-200 rounded-xl px-3 py-2 bg-white/80">
-
-
                         <div className="flex items-start gap-3">
-
-
                           <span className={`mt-1 h-2.5 w-2.5 rounded-full ${dotClass}`} />
-
-
                           <div className="flex-1 space-y-1">
-
-
                             <div className="flex items-center justify-between text-sm font-medium text-neutral-800">
-
-
                               <span>{index + 1}. {phase.label}</span>
-
-
                               <span className={`${badgeClass} text-[11px] px-2 py-0.5 rounded-full`}>{statusLabel}</span>
-
-
                             </div>
-
-
                             <p className="text-xs text-neutral-500 leading-relaxed">{phase.description}</p>
-
-
                           </div>
-
-
                         </div>
-
-
                       </div>
-
-
                     );
-
-
                   })}
-
-
                 </div>
-
-
                 <div className="mt-4 text-[11px] text-neutral-500 leading-relaxed">Steps mirror the spans detailed in Floor Plan Training.pdf so annotations stay consistent across exports.</div>
-
-
               </Card>
-
-
             </div>
-
-
-
-
-
-
-            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
-
-
-              <Card className="col-span-1 xl:col-span-8 p-4">
-
-
-                <Section title="Built Area Controls" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Adjust proportions</span>} />
-
-
-                <div className="space-y-4">
-
-
-                  {ROOM_LAYOUT_PRESETS.map((preset) => (
-
-
-                    <div key={preset.key} className="space-y-1">
-
-
-                      <div className="flex items-center justify-between text-sm text-neutral-700">
-
-
-                        <span>{preset.label}</span>
-
-
-                        <span className="text-xs text-neutral-500">{roomSplits[preset.key] ?? preset.defaultValue}%</span>
-
-
-                      </div>
-
-
-                      <input
-
-
-                        type="range"
-
-
-                        min={preset.min}
-
-
-                        max={preset.max}
-
-
-                        step={1}
-
-
-                        value={roomSplits[preset.key] ?? preset.defaultValue}
-
-
-                        onChange={(e) => handleRoomSplitChange(preset.key, e.target.value)}
-
-
-                        className="w-full"
-
-
-                      />
-
-
+          </section>
+          <section id="delivery" className="space-y-4 scroll-mt-24">
+            <Card className="p-5 bg-white">
+              <Section title="Alternate Concepts" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Variations</span>} />
+              {variationIdeas.length ? (
+                <div className="space-y-3">
+                  {variationIdeas.map((idea) => (
+                    <div key={idea.id} className="border border-neutral-200 rounded-xl px-3 py-2 bg-white/80">
+                      <div className="text-sm font-medium text-neutral-800">{idea.title}</div>
+                      <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{idea.summary}</p>
+                      <div className="mt-2 flex gap-2"><button onClick={() => handleAdoptVariation(idea)} className="text-xs px-3 py-1 rounded-full bg-neutral-900 text-white hover:bg-neutral-800">Use variation</button></div>
                     </div>
-
-
                   ))}
-
-
                 </div>
-
-
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-
-
-                  <span>Built: {openBuilt.built}%</span>
-
-
-                  <span>Open: {openBuilt.open}%</span>
-
-
-                  <span>Ratio: {openBuilt.ratio ?? "N/A"}</span>
-
-
-                  <button onClick={handleResetRooms} className="px-3 py-1 rounded-full border border-neutral-300 hover:bg-neutral-100">Reset</button>
-
-
+              ) : (
+                <div className="text-sm text-neutral-500">Generate a design to unlock alternates aligned with the brief.</div>
+              )}
+              <div className="mt-3 text-[11px] text-neutral-500 leading-relaxed">Alternates reinterpret the same training cues so you can compare before locking the final plan.</div>
+            </Card>
+            <Card className="p-5 space-y-4 bg-white">
+              <Section title="Material + Risk" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Site ready</span>} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-3">
+                  {materialPalette.length ? materialPalette.map((material) => (
+                    <div key={material.id} className="rounded-2xl border border-neutral-200 px-3 py-2 bg-white/80">
+                      <div className="text-sm font-semibold text-neutral-900">{material.name}</div>
+                      {material.finish && <div className="text-xs text-neutral-600">{material.finish}</div>}
+                      {material.sustainability && <div className="text-[11px] text-emerald-600">{material.sustainability}</div>}
+                    </div>
+                  )) : <div className="text-sm text-neutral-500">Generate to see the curated material stack.</div>}
                 </div>
-
-
-                <div className="mt-2 text-[12px] text-neutral-500 leading-relaxed">Use the sliders to tune furniture-ready zones inside the built footprint while keeping outdoor areas responsive.</div>
-
-
-              </Card>
-
-
-
-
-
-
-              <Card className="col-span-1 xl:col-span-4 p-4">
-
-
-                <Section title="Alternate Concepts" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Variations</span>} />
-
-
-                {variationIdeas.length ? (
-
-
-                  <div className="space-y-3">
-
-
-                    {variationIdeas.map((idea) => (
-
-
-                      <div key={idea.id} className="border border-neutral-200 rounded-xl px-3 py-2 bg-white/80">
-
-
-                        <div className="text-sm font-medium text-neutral-800">{idea.title}</div>
-
-
-                        <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{idea.summary}</p>
-
-
-                        <div className="mt-2 flex gap-2">
-
-
-                          <button onClick={() => handleAdoptVariation(idea)} className="text-xs px-3 py-1 rounded-full bg-neutral-900 text-white hover:bg-neutral-800">Use variation</button>
-
-
-                        </div>
-
-
+                <div className="space-y-3">
+                  {riskRegister.length ? riskRegister.map((risk) => (
+                    <div key={risk.id} className="border border-neutral-200 rounded-2xl px-3 py-2 bg-white/80">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-neutral-900">{risk.risk}</span>
+                        {risk.impact && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{risk.impact}</span>}
                       </div>
-
-
-                    ))}
-
-
-                  </div>
-
-
-                ) : (
-
-
-                  <div className="text-sm text-neutral-500">Generate a design to unlock alternates aligned with the brief.</div>
-
-
-                )}
-
-
-                <div className="mt-3 text-[11px] text-neutral-500 leading-relaxed">Alternates reinterpret the same training cues so you can compare before locking the final plan.</div>
-
-
-              </Card>
-
-
-            </div>
-
-
-
-
-
-
-            <div className="mt-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
-
-
-
-              <Card className="col-span-1 xl:col-span-12 p-4">
-
-
-
-                <Section
-                  title="Action Checklist"
-                  right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Pre-issue tasks</span>}
-                />
-
-
-
-                {actionChecklist.length ? (
-
-
-
-                  <ul className="mt-3 space-y-2 text-sm text-neutral-700">
-
-
-
-                    {actionChecklist.map((item) => (
-
-
-
-                      <li key={item.id} className="flex items-start gap-3">
-
-
-
-                        <span className="mt-1 h-2 w-2 rounded-full bg-neutral-400" />
-
-
-
-                        <span>{item.text}</span>
-
-
-
-                      </li>
-
-
-
-                    ))}
-
-
-
-                  </ul>
-
-
-
-                ) : (
-
-
-
-                  <div className="text-sm text-neutral-500">Generate a brief to surface coordination tasks.</div>
-
-
-
-                )}
-
-
-
-                <div className="mt-3 text-[11px] text-neutral-500 leading-relaxed">
-                  {insightSource === "gemini"
-                    ? "Gemini highlights these coordination checkpoints so nothing slips before DD issue."
-                    : "Use these checkpoints to steer coordination when AI enrichment is unavailable."}
+                      {risk.mitigation && <p className="text-xs text-neutral-600 mt-1">{risk.mitigation}</p>}
+                    </div>
+                  )) : <div className="text-sm text-neutral-500">Run Gemini to pull risk + mitigation cues.</div>}
                 </div>
-
-
-
-              </Card>
-
-
-
-            </div>
-
-
-
-            {/* Analysis Table */}
-            <Card className="mt-4">
-              <div className="p-4">
-                <Section title="Prompt → Analyzed Categories" />
+              </div>
+            </Card>
+            <Card className="p-5 space-y-3 bg-white">
+              <Section title="Action Checklist" right={<span className="text-[10px] uppercase tracking-wide text-neutral-500">Pre-issue tasks</span>} />
+              {actionChecklist.length ? (
+                <ul className="mt-3 space-y-2 text-sm text-neutral-700">{actionChecklist.map((item) => <li key={item.id} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 rounded-full bg-neutral-400" /><span>{item.text}</span></li>)}
+                </ul>
+              ) : (
+                <div className="text-sm text-neutral-500">Generate a brief to surface coordination tasks.</div>
+              )}
+              <div className="mt-3 text-[11px] text-neutral-500 leading-relaxed">{insightSource === "gemini" ? "Gemini highlights these coordination checkpoints so nothing slips before DD issue." : "Use these checkpoints to steer coordination when AI enrichment is unavailable."}</div>
+            </Card>
+          </section>
+          <section id="analysis" className="space-y-4 scroll-mt-24">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <Card className="p-5 bg-white">
+                <Section title="Prompt - Analyzed Categories" />
                 {analysis ? (
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead>
-                        <tr className="text-left text-neutral-500 border-b">
-                          <th className="py-2 pr-4">Category Title</th>
-                          <th className="py-2">Detected Option</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {FILTER_ORDER.map((row) => (
-                        <tr key={row} className="border-b last:border-b-0">
-                          <td className="py-2 pr-4 font-medium text-neutral-800">{row}</td>
-                          <td className="py-2 text-neutral-700">{analysis[row]}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-sm text-neutral-500">Send a prompt to see the analyzed table.</div>
-              )}
-            </div>
-          </Card>
-
-
-            {/* Output Evaluation */}
-            <Card className="mt-4">
-              <div className="p-4">
-                <Section title="Design Output → Evaluation" />
+                        <tr className="text-left text-neutral-500 border-b"><th className="py-2 pr-4">Category Title</th><th className="py-2">Detected Option</th></tr>
+                      </thead>
+                      <tbody>
+                        {FILTER_ORDER.map((row) => (
+                          <tr key={row} className="border-b last:border-b-0"><td className="py-2 pr-4 font-medium text-neutral-800">{row}</td><td className="py-2 text-neutral-700">{analysis[row]}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-sm text-neutral-500">Send a prompt to see the analyzed table.</div>
+                )}
+              </Card>
+              <Card className="p-5 bg-white">
+                <Section title="Design Output - Evaluation" />
                 {designAnalysis ? (
                   <div className="space-y-3 text-sm">
                     {Object.entries(designAnalysis).map(([label, detail]) => (
-                      <div key={label} className="border border-neutral-200 rounded-xl px-3 py-2 bg-white/70 backdrop-blur-sm">
-                        <div className="text-neutral-600 text-xs uppercase tracking-wide">{label}</div>
-                        <div className="text-neutral-800 mt-1 leading-relaxed">{detail}</div>
-                      </div>
+                      <div key={label} className="border border-neutral-200 rounded-xl px-3 py-2 bg-white/70 backdrop-blur-sm"><div className="text-neutral-600 text-xs uppercase tracking-wide">{label}</div><div className="text-neutral-800 mt-1 leading-relaxed">{detail}</div></div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-sm text-neutral-500">Generate a design to review the output evaluation.</div>
                 )}
-              </div>
-            </Card>
-
-
-            {/* Chat Composer (sticky bottom of center) */}
-            <div className="mt-6 xl:sticky xl:bottom-0">
-              <Card className="p-4 space-y-3">
-                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={handleFileChange} />
-                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                  <div className="flex gap-2 flex-wrap sm:flex-nowrap">
-                    <button
-                      onClick={handleAttachClick}
-                      className={`rounded-xl border p-2 transition ${attachment ? "bg-neutral-900 text-white border-neutral-900" : "border-neutral-300 hover:bg-neutral-100"}`}
-                      title="Attach reference file"
-                    >
-                      <Icon.Paperclip />
-                    </button>
-                    <button
-                      onClick={handleMicClick}
-                      className={`rounded-xl border p-2 transition flex items-center gap-1 ${listening ? "border-red-500 bg-red-500/10 text-red-600" : "border-neutral-300 hover:bg-neutral-100"}`}
-                      title="Voice dictation (prototype)"
-                    >
-                      <span className={`h-2 w-2 rounded-full ${listening ? "bg-red-500 animate-ping" : "bg-neutral-400"}`} />
-                      <Icon.Mic />
-                    </button>
-                  </div>
-                  <div className="flex-1 w-full">
-                    <textarea
-                      className="w-full resize-none rounded-xl border border-neutral-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-neutral-300 text-sm"
-                      rows={2}
-                      placeholder={"Describe the brief… e.g., 'Generate a 3 BHK duplex in hot & dry climate with open plan'"}
-                      value={promptDraft}
-                      onChange={(e) => setPromptDraft(e.target.value)}
-                    />
-                  </div>
-                  <button
-                    onClick={handleSend}
-                    disabled={loading}
-                    className={`rounded-xl px-4 py-2 text-sm flex items-center justify-center gap-2 w-full sm:w-auto ${loading ? "bg-neutral-400 cursor-not-allowed text-white" : "bg-neutral-900 text-white hover:bg-neutral-800"}`}
-                  >
-                    <Icon.Send /> Send
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {attachment && (
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-100 px-3 py-2 text-xs text-neutral-700">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-neutral-800">{attachment.name}</span>
-                        <span className="text-neutral-500">{formatBytes(attachment.size)}</span>
-                      </div>
-                      <button onClick={handleRemoveAttachment} className="text-neutral-500 hover:text-neutral-900">
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                  {voiceHint && <div className="text-[12px] text-neutral-600 bg-yellow-50 border border-yellow-200 rounded-xl px-3 py-2">{voiceHint}</div>}
-                  {!!chips && <div className="text-[12px] text-neutral-600 whitespace-pre-wrap">{chips}</div>}
-                </div>
               </Card>
             </div>
-          </div>
+          </section>
+          <section id="compose" className="space-y-3 scroll-mt-24">
+            <Card className="p-5 space-y-4 bg-white">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div className="flex gap-2 flex-wrap sm:flex-nowrap">
+                  <button onClick={handleAttachClick} className={`rounded-xl border p-2 transition ${attachment ? "bg-neutral-900 text-white border-neutral-900" : "border-neutral-300 hover:bg-neutral-100 bg-white"}`} title="Attach reference file"><Icon.Paperclip /></button>
+                  <button onClick={handleMicClick} className={`rounded-xl border p-2 transition flex items-center gap-1 ${listening ? "border-red-500 bg-red-50 text-red-600" : "border-neutral-300 hover:bg-neutral-100 bg-white"}`} title="Voice dictation (prototype)"><span className={`h-2 w-2 rounded-full ${listening ? "bg-red-500 animate-ping" : "bg-neutral-400"}`} /><Icon.Mic /></button>
+                </div>
+                <div className="flex-1 w-full">
+                  <textarea className="w-full resize-none rounded-xl border border-neutral-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-slate-200 text-sm" rows={2} placeholder={"Describe the brief. e.g., 'Generate a 3 BHK duplex in hot & dry climate with open plan'"} value={promptDraft} onChange={(e) => setPromptDraft(e.target.value)} />
+                </div>
+                <button onClick={handleSend} disabled={loading} className={`rounded-xl px-4 py-2 text-sm flex items-center justify-center gap-2 w-full sm:w-auto ${loading ? "bg-neutral-400 cursor-not-allowed text-white" : "bg-neutral-900 text-white hover:bg-neutral-800"}`}><Icon.Send /> Send</button>
+              </div>
+              <div className="space-y-2">
+                {attachment && (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+                    <div className="flex flex-col"><span className="font-medium text-neutral-800">{attachment.name}</span><span className="text-neutral-500">{formatBytes(attachment.size)}</span></div>
+                    <button onClick={handleRemoveAttachment} className="text-neutral-500 hover:text-neutral-900">Remove</button>
+                  </div>
+                )}
+                {voiceHint && <div className="text-[12px] text-neutral-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">{voiceHint}</div>}
+                {!!chips && <div className="text-[12px] text-neutral-600 whitespace-pre-wrap">{chips}</div>}
+              </div>
+            </Card>
+          </section>
+
+          <section id="history" className="scroll-mt-24">
+            <Suspense fallback={<Card className="p-4 space-y-2"><div className="text-xs uppercase tracking-wide text-neutral-500">Prompt History</div><div className="text-sm text-neutral-600">Loading history...</div></Card>}>
+              <HistoryPanel Icon={Icon} Section={Section} history={history} onSelect={handleHistorySelect} onClear={handleClearHistory} truncate={truncate} expanded />
+            </Suspense>
+          </section>
         </main>
-
-
-        {/* RIGHT: PROMPT HISTORY */}
-        <Suspense
-          fallback={
-            <aside className="order-3 w-full xl:w-[320px] bg-white/70 border border-neutral-200 rounded-2xl p-4 mt-6">
-              <div className="h-24 bg-neutral-100 rounded-xl animate-pulse" />
-            </aside>
-          }
-        >
-          <HistoryPanel
-            Icon={Icon}
-            Section={Section}
-            history={history}
-            onSelect={handleHistorySelect}
-            onClear={handleClearHistory}
-            truncate={truncate}
-          />
-        </Suspense>
       </div>
     </div>
   );
@@ -2875,7 +2005,6 @@ function formatBytes(bytes) {
   }
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
-
 
 
 
