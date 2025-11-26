@@ -81,7 +81,7 @@ const ProductSchema = new mongoose.Schema(
   {
     firm: { type: mongoose.Types.ObjectId, ref: "Firm", index: true },
     title: { type: String, index: "text" },
-    slug: { type: String, unique: true },
+    slug: { type: String, index: true },
     kind: {
       type: String,
       enum: ["studio", "material", "service"],

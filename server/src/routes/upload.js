@@ -47,9 +47,16 @@ router.post('/', upload.single('file'), async (req, res) => {
     const file = req.file;
     if (!file) return res.status(400).json({ ok: false, error: 'File missing' });
 
-    const { productId: rawProductId, orderId: rawOrderId, kind: rawKind = 'deliverable', secure } = req.body || {};
+    const {
+      productId: rawProductId,
+      orderId: rawOrderId,
+      planUploadId: rawPlanUploadId,
+      kind: rawKind = 'deliverable',
+      secure,
+    } = req.body || {};
     const productId = asObjectId(rawProductId);
     const orderId = asObjectId(rawOrderId);
+    const planUploadId = asObjectId(rawPlanUploadId);
     const kind = normalizeKind(rawKind);
     const isSecure = normalizeBoolean(secure, true);
     let targetDriveFolderId;
@@ -80,6 +87,7 @@ router.post('/', upload.single('file'), async (req, res) => {
       uploader: req.user?._id,
       product: productId,
       order: orderId,
+      planUpload: planUploadId,
       kind,
       status: 'ready',
       driveFileId: storageResult.driveFileId,

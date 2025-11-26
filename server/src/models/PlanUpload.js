@@ -41,6 +41,27 @@ const PlanUploadSchema = new Schema(
       type: [String],
       default: [],
     },
+    status: {
+      type: String,
+      enum: ['draft', 'published'],
+      default: 'draft',
+      index: true,
+    },
+    publishedAt: Date,
+    coverImage: { type: String, trim: true },
+    media: [
+      {
+        asset: { type: Schema.Types.ObjectId, ref: 'Asset' },
+        url: String,
+        thumbnail: String,
+        kind: { type: String, default: 'render' },
+        title: String,
+        sizeBytes: Number,
+        mimeType: String,
+        driveFileId: String,
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
     metadata: Schema.Types.Mixed,
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
@@ -48,6 +69,6 @@ const PlanUploadSchema = new Schema(
 );
 
 PlanUploadSchema.index({ ownerType: 1, ownerId: 1, updatedAt: -1 });
+PlanUploadSchema.index({ ownerType: 1, status: 1, updatedAt: -1 });
 
 export default mongoose.model('PlanUpload', PlanUploadSchema);
-

@@ -15,7 +15,6 @@ import {
 } from "react-icons/hi2";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
-import { fetchProductBySlug } from "../services/marketplace.js";
 import { recordRecentView } from "../utils/productDiscovery.js";
 import { productCatalog } from "../data/products.js";
 
@@ -95,12 +94,17 @@ const ProductDetail = () => {
       setLoading(true);
       setError(null);
       try {
-        const remote = await fetchProductBySlug(id);
-        const fallback = productCatalog.find((entry) => entry.slug === id);
-        const matched = remote || fallback || null;
+        const matched =
+          productCatalog.find(
+            (entry) =>
+              entry._id === id ||
+              entry.id === id ||
+              entry.slug === id ||
+              String(entry._id) === String(id)
+          ) || null;
         if (!cancelled) {
           if (!matched) {
-            setError("Product not found");
+            setError("Product lookup by slug is disabled and no local record was found.");
             setProduct(null);
             return;
           }
@@ -112,7 +116,7 @@ const ProductDetail = () => {
           setSelectedOfferId(offer?.id || null);
           setQuantity(defaultVariation?.minQty || matched.pricing?.minQuantity || 1);
           recordRecentView({
-            slug: matched.slug || matched._id,
+            slug: matched._id || matched.id || matched.slug,
             title: matched.title,
             heroImage: matched.heroImage,
             price: defaultVariation?.price || matched.pricing?.basePrice || 0,
@@ -135,7 +139,7 @@ const ProductDetail = () => {
   }, [id]);
   useEffect(() => {
     setActiveImageIndex(0);
-  }, [product?.slug]);
+  }, [product?._id]);
   const selectedVariation = useMemo(() => {
     if (!product) return null;
     return product.variations?.find((variation) => variation.id === selectedVariationId) || getDefaultVariation(product);
@@ -1143,4 +1147,3 @@ const ProductDetail = () => {
 };
 
 export default ProductDetail;
-

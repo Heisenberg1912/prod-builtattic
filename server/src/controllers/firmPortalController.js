@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import Firm from '../models/Firm.js';
-import { resolveFirmId } from '../utils/firmAccess.js';
+import { resolveFirmIdAsync } from '../utils/firmAccess.js';
 
 const httpError = (status, message, details) => Object.assign(new Error(message), { statusCode: status, details });
 
@@ -107,7 +107,7 @@ const enrichFirmWithProfile = (firm, profile) => {
 
 export const getFirmProfile = async (req, res, next) => {
   try {
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmIdAsync(req, undefined, { provisionIfMissing: true, allowedRoles: ['owner', 'admin', 'vendor'] });
     const firm = await Firm.findById(firmId).lean();
     if (!firm) {
       throw httpError(404, 'Firm not found');
@@ -125,7 +125,7 @@ export const getFirmProfile = async (req, res, next) => {
 
 export const upsertFirmProfile = async (req, res, next) => {
   try {
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmIdAsync(req, undefined, { provisionIfMissing: true, allowedRoles: ['owner', 'admin', 'vendor'] });
     const parsed = profileInputSchema.parse(req.body || {});
     const cleaned = compactObject(parsed);
     cleaned.updatedAt = new Date().toISOString();

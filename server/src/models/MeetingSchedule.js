@@ -58,7 +58,20 @@ const MeetingScheduleSchema = new Schema(
       enum: ['scheduled', 'completed', 'cancelled'],
       default: 'scheduled',
     },
+    type: {
+      type: String,
+      enum: ['consultation', 'review', 'handover', 'site', 'check-in', 'other'],
+      default: 'consultation',
+    },
+    location: {
+      type: String,
+      trim: true,
+    },
     meetingLink: {
+      type: String,
+      trim: true,
+    },
+    recordingUrl: {
       type: String,
       trim: true,
     },
@@ -78,6 +91,6 @@ const MeetingScheduleSchema = new Schema(
 
 MeetingScheduleSchema.index({ ownerId: 1, scheduledFor: 1 });
 MeetingScheduleSchema.index({ ownerType: 1, status: 1 });
+MeetingScheduleSchema.index({ ownerType: 1, type: 1, scheduledFor: 1 });
 
 export default mongoose.model('MeetingSchedule', MeetingScheduleSchema);
-

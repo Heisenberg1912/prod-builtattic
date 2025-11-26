@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 const AssociateProfileSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Types.ObjectId, ref: 'User', required: true, unique: true },
+    fullName: { type: String, trim: true },
+    firmName: { type: String, trim: true },
     title: String,
     location: String,
     hourlyRate: Number,
@@ -30,6 +32,7 @@ const AssociateProfileSchema = new mongoose.Schema(
     completedProjects: Number,
     heroImage: String,
     profileImage: String,
+    coverImage: String,
     contactEmail: String,
     serviceBadges: [String],
     deliverables: [String],
@@ -40,6 +43,7 @@ const AssociateProfileSchema = new mongoose.Schema(
     summary: String,
     certifications: [String],
     portfolioLinks: [String],
+    toolset: [String],
     portfolioMedia: [
       {
         title: String,
@@ -56,6 +60,30 @@ const AssociateProfileSchema = new mongoose.Schema(
         role: String,
       },
     ],
+    workHistory: [
+      {
+        company: String,
+        role: String,
+        duration: String,
+        summary: String,
+      },
+    ],
+    registrationId: { type: String, trim: true },
+    verificationDoc: { type: String, trim: true },
+    firmType: { type: String, trim: true },
+    teamSize: Number,
+    primaryCategories: [String],
+    primaryStyles: [String],
+    avgDesignRate: Number,
+    servicesOffered: [String],
+    portfolioLink: { type: String, trim: true },
+    portfolioUpload: { type: String, trim: true },
+    contact: {
+      email: String,
+      phone: String,
+      website: String,
+      calendly: String,
+    },
     serviceBundle: String,
     workingDrawings: String,
     servicePack: String,
@@ -69,4 +97,3 @@ AssociateProfileSchema.index({ location: 1 });
 AssociateProfileSchema.index({ timezone: 1 });
 
 export default mongoose.model('AssociateProfile', AssociateProfileSchema);
-

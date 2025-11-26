@@ -37,12 +37,6 @@ const uniqueList = (value) => {
 
 const normaliseString = (value) => (typeof value === "string" ? value.trim() : "");
 const normaliseId = (value) => normaliseString(value).toLowerCase();
-const normaliseSlug = (value) => normaliseString(value).toLowerCase();
-const slugify = (value) => {
-  const text = normaliseString(value).toLowerCase();
-  if (!text) return "";
-  return text.replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)+/g, "");
-};
 
 const parsePrice = (value) => {
   if (value == null || value === "") return null;
@@ -104,8 +98,7 @@ const parseLegacyFirmFromQuery = (params) => {
   const idParam = params.get("id") || params.get("firmId");
 
   return {
-    _id: idParam || slugify(title),
-    slug: slugify(title),
+    _id: idParam || title || undefined,
     name: title,
     tagline: params.get("tagline") || params.get("description") || "",
     summary: params.get("description") || "",
@@ -125,15 +118,15 @@ const parseLegacyFirmFromQuery = (params) => {
   };
 };
 
-const findFirmMatch = (items, { slug, id, name }) => {
-  const targetSlug = normaliseSlug(slug || name);
+const findFirmMatch = (items, { id, name }) => {
   const targetId = normaliseId(id);
+  const targetName = normaliseId(name);
   return (
     items.find((candidate) => {
       const candidateId = normaliseId(candidate?._id || candidate?.id);
-      const candidateSlug = normaliseSlug(candidate?.slug || candidate?.handle || candidate?.name);
+      const candidateName = normaliseId(candidate?.name);
       if (targetId && candidateId === targetId) return true;
-      if (targetSlug && candidateSlug === targetSlug) return true;
+      if (targetName && candidateName === targetName) return true;
       return false;
     }) || null
   );
@@ -202,7 +195,7 @@ const uniqueImages = (firm) => {
 
 const buildWishlistItem = (firm, image) => {
   if (!firm) return null;
-  const identifier = firm._id || firm.id || firm.slug || `firm-${slugify(firm.name)}`;
+  const identifier = firm._id || firm.id || firm.name || "firm";
   if (!identifier) return null;
   return {
     id: identifier,
@@ -216,17 +209,17 @@ const buildWishlistItem = (firm, image) => {
 
 const heroActions = [
   { label: "Manage studios", href: "/portal/studio" },
-  { label: "Open dashboard", href: "/dashboard/firm" },
+  { label: "Open portal", href: "/portal/studio" },
 ];
 
 const FirmPortfolio = () => {
   const location = useLocation();
   const routerFirm = location.state?.firm || null;
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const slugParam = params.get("slug") || params.get("firm");
+  const slugParam = null;
   const idParam = params.get("id") || params.get("firmId");
   const sharedFirm = useMemo(() => parseLegacyFirmFromQuery(params), [params]);
-  const requiresLookup = Boolean(slugParam || idParam);
+  const requiresLookup = Boolean(idParam);
   const [firm, setFirm] = useState(routerFirm || sharedFirm || null);
   const [loading, setLoading] = useState(!routerFirm && requiresLookup);
   const [error, setError] = useState(null);
@@ -261,10 +254,10 @@ const FirmPortfolio = () => {
     (async () => {
       setLoading(true);
       try {
-        const query = slugParam ? { slug: slugParam } : idParam ? { id: idParam } : {};
+        const query = idParam ? { id: idParam } : {};
         const { items } = await fetchMarketplaceFirms(query);
         if (cancelled) return;
-        const match = findFirmMatch(items || [], { slug: slugParam, id: idParam, name: params.get("title") });
+        const match = findFirmMatch(items || [], { id: idParam, name: params.get("title") });
         if (match) {
           setFirm(match);
           setError(null);
@@ -315,7 +308,7 @@ const FirmPortfolio = () => {
   const website = firm?.contact?.website || firm?.profile?.website || firm?.website || null;
   const lastUpdated = formatTimestamp(firm?.profileUpdatedAt || firm?.profile?.updatedAt || firm?.updatedAt);
   const foundedYear = firm?.foundedYear || firm?.profile?.foundedYear || null;
-  const portfolioLink = firm?.slug ? `/firmportfolio?slug=${encodeURIComponent(firm.slug)}` : "/firmportfolio";
+  const portfolioLink = firm?._id ? `/firmportfolio?id=${encodeURIComponent(firm._id)}` : "/firmportfolio";
 
   const wishlistItem = useMemo(() => buildWishlistItem(firm, heroImage), [firm, heroImage]);
   const isSaved = wishlistItem ? isInWishlist(wishlistItem) : false;
@@ -328,21 +321,13 @@ const FirmPortfolio = () => {
         .filter(Boolean),
     [viewer],
   );
-  const viewerFirmSlugs = useMemo(
-    () =>
-      ensureArray(viewer?.memberships)
-        .map((membership) => normaliseSlug(membership?.firm?.slug || membership?.firmSlug || membership?.slug))
-        .filter(Boolean),
-    [viewer],
-  );
+  const viewerFirmSlugs = useMemo(() => [], []);
   const canEditFirm = useMemo(() => {
     if (!viewer || !firm) return false;
     if (viewerRole === "admin" || viewerRole === "superadmin") return true;
     const firmId = normaliseId(firm._id || firm.id || firm.firmId);
-    const firmSlug = normaliseSlug(firm.slug);
     const idMatch = firmId && viewerFirmIds.includes(firmId);
-    const slugMatch = firmSlug && viewerFirmSlugs.includes(firmSlug);
-    return Boolean(idMatch || slugMatch);
+    return Boolean(idMatch);
   }, [firm, viewer, viewerRole, viewerFirmIds, viewerFirmSlugs]);
 
   const handleWishlistToggle = async () => {
@@ -487,7 +472,7 @@ const FirmPortfolio = () => {
               {[
                 { label: "Firm profile", detail: "Tagline, summary, hero media.", href: "/portal/studio#firm-profile" },
                 { label: "Publishes & bundles", detail: "Studios, pricing, CTA copy.", href: "/portal/studio" },
-                { label: "Dashboard", detail: "Metrics, workflow queue.", href: "/dashboard/firm" },
+                { label: "Portal", detail: "Workspace tools and queue.", href: "/portal/studio" },
               ].map((shortcut) => (
                 <Link
                   key={shortcut.href}

@@ -13,7 +13,8 @@
     "seed:marketplace": "npm --prefix server run seed:marketplace",
     "seed:users": "npm --prefix server run seed:users",
     "seed:superadmin": "npm --prefix server run seed:superadmin",
-    "cleanup:demo-data": "npm --prefix server run cleanup:demo"
+    "cleanup:demo-data": "npm --prefix server run cleanup:demo",
+    "cleanup:workspaces": "npm --prefix server run cleanup:workspaces"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

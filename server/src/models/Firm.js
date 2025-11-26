@@ -43,7 +43,7 @@ const FirmProfileSchema = new mongoose.Schema(
 const FirmSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    slug: { type: String, unique: true, index: true },
+    slug: { type: String, index: true },
     approved: { type: Boolean, default: false },
     ownerUserId: { type: mongoose.Types.ObjectId, ref: 'User' },
     tagline: String,

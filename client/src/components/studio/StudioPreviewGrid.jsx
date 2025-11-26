@@ -61,7 +61,7 @@ const StudioPreviewGrid = ({ studios = [], hostingTiles }) => {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       {studios.map((studio) => {
-        const slug = studio.slug || studio._id || studio.id;
+        const slug = studio._id || studio.id || null;
         const href = slug ? `/studio/${slug}` : "/studio";
         const editHref = slug ? `/portal/studio?edit=${encodeURIComponent(slug)}` : '/portal/studio';
         const overlays = resolveOverlayTokens(studio).slice(0, 3);
@@ -77,7 +77,7 @@ const StudioPreviewGrid = ({ studios = [], hostingTiles }) => {
 
         return (
           <article
-            key={studio._id || studio.id || studio.slug}
+            key={studio._id || studio.id}
             className="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
           >
             <div className="relative aspect-[4/3] w-full overflow-hidden">
@@ -91,7 +91,7 @@ const StudioPreviewGrid = ({ studios = [], hostingTiles }) => {
                 <div className="absolute left-4 top-4 flex flex-wrap gap-2">
                   {overlays.map((label, index) => (
                     <span
-                      key={`overlay-${slug}-${index}`}
+                      key={`overlay-${slug || 'studio'}-${index}`}
                       className="rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white shadow"
                     >
                       {label}
@@ -122,7 +122,7 @@ const StudioPreviewGrid = ({ studios = [], hostingTiles }) => {
                 <div className="flex flex-wrap gap-2">
                   {chips.map((chip, index) => (
                     <span
-                      key={`chip-${slug}-${index}`}
+                      key={`chip-${slug || 'studio'}-${index}`}
                       className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
                     >
                       {chip}

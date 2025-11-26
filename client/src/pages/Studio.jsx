@@ -19,8 +19,7 @@ import Footer from "../components/Footer";
 import RatingModal from "../components/RatingModal.jsx";
 import { createEmptyFilterState } from "../constants/designFilters.js";
 import { marketplaceFeatures } from "../data/marketplace.js";
-import { fetchStudios, fetchDesignStudioHosting, buildStudioSlug } from "../services/marketplace.js";
-import { fetchFirmDashboard } from "../services/dashboard.js";
+import { fetchStudios, fetchDesignStudioHosting } from "../services/marketplace.js";
 import { analyzeImage } from "../utils/imageSearch.js";
 import {
   applyFallback,
@@ -118,26 +117,6 @@ const DEFAULT_CATEGORY_IMG = CATEGORY_IMAGE_MAP.All || null;
 const EMPTY_HOSTING_TILES = { summary: "", services: [], products: [] };
 const motionCreate = typeof motion.create === "function" ? motion.create : motion;
 const MotionArticle = motionCreate("article");
-
-const normalizeWorkspaceStudio = (studio = {}, firm = null) => {
-  const galleryArray = Array.isArray(studio.gallery) ? studio.gallery.filter(Boolean) : [];
-  const heroCandidate =
-    studio.heroImage ||
-    studio.hero_image ||
-    studio.image ||
-    galleryArray[0] ||
-    null;
-  const gallery = heroCandidate
-    ? [heroCandidate, ...galleryArray.filter((img) => img !== heroCandidate)]
-    : galleryArray;
-  return {
-    ...studio,
-    firm: studio.firm || firm || null,
-    slug: buildStudioSlug({ ...studio, firm: studio.firm || firm }),
-    heroImage: heroCandidate,
-    gallery,
-  };
-};
 
 const CATEGORY_DISPLAY_ORDER = [
   "All",
@@ -423,7 +402,6 @@ const Studio = () => {
   const [query, setQuery] = useState(() => location.state?.search || "");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [studios, setStudios] = useState([]);
-  const [workspaceState, setWorkspaceState] = useState({ loading: true, error: null, items: [], meta: null, fallback: false, lastUpdated: null });
   const [marketplaceState, setMarketplaceState] = useState({ loading: true, error: null, items: [], meta: null, web3: null, fallback: false });
 
   // Reverse image search
@@ -458,10 +436,9 @@ const Studio = () => {
   const [floorsSel, setFloorsSel] = useState([0, 0]);
   const [programsSel, setProgramsSel] = useState([0, 0]);
   const [hostingTiles, setHostingTiles] = useState(EMPTY_HOSTING_TILES);
-  const [activeSource, setActiveSource] = useState("workspace");
-  const loading = activeSource === "workspace" ? workspaceState.loading : marketplaceState.loading;
-  const error = activeSource === "workspace" ? workspaceState.error : marketplaceState.error;
-  const web3Meta = activeSource === "workspace" ? null : marketplaceState.web3;
+  const loading = marketplaceState.loading;
+  const error = marketplaceState.error;
+  const web3Meta = marketplaceState.web3;
 
   // Client-side pagination (no backend change)
   const PAGE_SIZE = 9;
@@ -500,6 +477,7 @@ const Studio = () => {
             web3: meta?.web3 || null,
             fallback: false,
           });
+          setStudios(items || []);
         }
       } catch (err) {
         if (!cancelled) {
@@ -509,52 +487,13 @@ const Studio = () => {
             error: err?.message || "Unable to load studios right now.",
             fallback: false,
           }));
+          setStudios([]);
         }
       }
     }
     loadStudios();
     return () => { cancelled = true; };
   }, [selectedCategory, debouncedQuery]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadWorkspaceStudios() {
-      setWorkspaceState((prev) => ({ ...prev, loading: true, error: null }));
-      try {
-        const response = await fetchFirmDashboard();
-        if (cancelled) return;
-        const firm = response?.firm || {};
-        const isFallback = Boolean(response?.fallback);
-        const items = Array.isArray(response?.studios)
-          ? response.studios.map((entry) => normalizeWorkspaceStudio(entry, firm))
-          : [];
-        const publishedCount = items.filter((item) => item.status === "published").length;
-        const draftCount = items.length - publishedCount;
-        setWorkspaceState({
-          loading: false,
-          error: null,
-          items,
-          meta: { total: items.length, publishedCount, draftCount },
-          fallback: isFallback,
-          lastUpdated: response?.metrics?.lastUpdated || response?.firm?.updatedAt || null,
-        });
-      } catch (err) {
-        if (cancelled) return;
-        setWorkspaceState({
-          loading: false,
-          error: err?.message || "Unable to sync workspace",
-          items: [],
-          meta: { total: 0, publishedCount: 0, draftCount: 0 },
-          fallback: true,
-          lastUpdated: null,
-        });
-      }
-    }
-    loadWorkspaceStudios();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -582,23 +521,8 @@ const Studio = () => {
   }, []);
 
   useEffect(() => {
-    const sourceItems = activeSource === "workspace" ? workspaceState.items : marketplaceState.items;
-    setStudios(sourceItems);
-  }, [activeSource, marketplaceState.items, workspaceState.items]);
-
-  useEffect(() => {
-    if (!workspaceState.loading && workspaceState.items.length) {
-      setActiveSource("workspace");
-      return;
-    }
-    if (!marketplaceState.loading && marketplaceState.items.length) {
-      setActiveSource("marketplace");
-      return;
-    }
-    if (!workspaceState.loading && !workspaceState.items.length && !marketplaceState.loading) {
-      setActiveSource("marketplace");
-    }
-  }, [workspaceState.loading, workspaceState.items.length, marketplaceState.loading, marketplaceState.items.length]);
+    setStudios(Array.isArray(marketplaceState.items) ? marketplaceState.items : []);
+  }, [marketplaceState.items]);
 
   // helpers
   const resolvePrice = (studio) => {
@@ -1416,7 +1340,7 @@ const Studio = () => {
               </section>
             )}
 
-            {!loading && activeSource === "marketplace" && web3Meta && !marketplaceState.fallback && (
+            {!loading && web3Meta && !marketplaceState.fallback && (
               <div className={`${listingsContainerClass} rounded-2xl border border-indigo-200 bg-indigo-900/95 px-6 py-5 text-indigo-100 shadow-sm`}>
                 <p className="text-[11px] uppercase tracking-[0.35em] text-indigo-300">
                   On-chain studio proofs
@@ -1438,9 +1362,7 @@ const Studio = () => {
             {!loading && (
               <section className={`${listingsContainerClass} ${listingsGridClass}`}>
                 {displayStudios.slice(0, visibleCount).map((studio) => {
-                  const href = studio.slug
-                    ? `/studio/${studio.slug}`
-                    : `/studio/${encodeURIComponent(studio.id)}`;
+                  const href = `/studio/${encodeURIComponent(studio.id || "")}`;
 
                   const priceLabel =
                     studio.priceSqft ?? studio.pricing?.basePrice ?? studio.price ?? null;
@@ -1542,7 +1464,7 @@ const Studio = () => {
 
                   return (
                     <MotionArticle
-                      key={studio._id || studio.slug || studio.id}
+                      key={studio._id || studio.id}
                       initial={initialAnim}
                       animate={inViewAnim}
                       className="group flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
@@ -1578,7 +1500,7 @@ const Studio = () => {
                           <div className="absolute left-3 top-3 flex max-w-[90%] flex-wrap gap-2">
                             {overlayTiles.map((tile, index) => (
                               <span
-                                key={`overlay-${studio.slug || studio.id}-${tile.id || index}`}
+                                key={`overlay-${studio.id || studio._id || index}-${tile.id || index}`}
                                 className="rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm"
                               >
                                 {tile.label}
@@ -1590,7 +1512,7 @@ const Studio = () => {
                           <div className="absolute bottom-3 left-3 flex max-w-[90%] flex-wrap gap-2">
                             {studio.highlights.slice(0, 2).map((highlight, index) => (
                               <span
-                                key={`highlight-${studio.slug || studio.id}-${index}`}
+                                key={`highlight-${studio.id || studio._id || index}`}
                                 className="rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm"
                               >
                                 {highlight}
@@ -1664,7 +1586,7 @@ const Studio = () => {
                             <div className="flex flex-wrap gap-2">
                               {practiseBadges.slice(0, 4).map((badge, index) => (
                                 <span
-                                  key={`practise-${studio.slug || studio.id}-${badge}-${index}`}
+                                  key={`practise-${studio.id || studio._id || index}-${badge}-${index}`}
                                   className="inline-flex items-center gap-1 rounded-full bg-slate-900/10 px-2.5 py-1 text-[11px] font-semibold text-slate-800"
                                 >
                                   <span className="h-1.5 w-1.5 rounded-full bg-slate-800" aria-hidden="true" />
@@ -1678,7 +1600,7 @@ const Studio = () => {
                             <div className="flex flex-wrap gap-2">
                               {bodyTiles.map((tile, index) => (
                                 <span
-                                  key={`hosting-chip-${studio.slug || studio.id}-${tile.id || index}`}
+                                  key={`hosting-chip-${studio.id || studio._id || index}-${tile.id || index}`}
                                   className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
                                 >
                                   {tile.label}
@@ -1691,7 +1613,7 @@ const Studio = () => {
                             <div className="flex flex-wrap gap-2">
                               {metaPills.map((pill) => (
                                 <span
-                                  key={`meta-${studio.slug || studio.id}-${pill.id}`}
+                                  key={`meta-${studio.id || studio._id || index}-${pill.id}`}
                                   className="inline-flex min-w-[110px] flex-col rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"
                                 >
                                   <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
@@ -1719,7 +1641,7 @@ const Studio = () => {
                                     : service?._id || service?.title || service?.name || index;
                                 return (
                                   <span
-                                    key={`service-${studio.slug || studio.id}-${serviceKey}`}
+                                    key={`service-${studio.id || studio._id || index}-${serviceKey}`}
                                     className="rounded-full bg-slate-900/10 px-2.5 py-1 text-xs font-medium text-slate-600"
                                   >
                                     {serviceLabel}
@@ -1740,7 +1662,7 @@ const Studio = () => {
                                     : "border-slate-200 bg-slate-50 text-slate-700";
                                 return (
                                   <span
-                                    key={`readiness-${studio.slug || studio.id}-${flag.id}`}
+                                    key={`readiness-${studio.id || studio._id || index}-${flag.id}`}
                                     className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${toneClass}`}
                                   >
                                     <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />

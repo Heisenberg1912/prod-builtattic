@@ -76,8 +76,8 @@ const QuickActionList = ({ onCreateStudio }) => {
     {
       type: "link",
       label: "Manage plan uploads",
-      helper: "Push renders and plan packs from the dashboard.",
-      to: "/dashboard/firm",
+      helper: "Push renders and plan packs from the workspace.",
+      to: "/portal/studio",
     },
     {
       type: "link",

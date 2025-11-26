@@ -1,1477 +1,400 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useParams } from "react-router-dom";
+import { toast } from "react-hot-toast";
 import Footer from "../components/Footer.jsx";
 import PortfolioMediaPlayer from "../components/associate/PortfolioMediaPlayer.jsx";
-import { fetchMarketplaceAssociateProfile } from "../services/marketplace.js";
-import { fetchAssociateDashboard } from "../services/dashboard.js";
-import { fetchAssociatePortalProfile } from "../services/portal.js";
-import { toast } from "react-hot-toast";
+import { fetchMarketplaceAssociateProfile, requestAssociateConsultation } from "../services/marketplace.js";
+import { getAssociateAvatar, getAssociateFallback } from "../utils/imageFallbacks.js";
 
-const formatCurrency = (value, currency) => {
-  if (!Number.isFinite(Number(value))) return null;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currency || "USD",
-      maximumFractionDigits: 0,
-    }).format(value);
-  } catch {
-    return `${currency || "USD"} ${value}`;
-  }
-};
+const Section = ({ title, children, anchorRef }) => (
+  <section ref={anchorRef} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+    {children}
+  </section>
+);
 
-const dayLabelMap = {
-  mon: "Mon",
-  tue: "Tue",
-  wed: "Wed",
-  thu: "Thu",
-  fri: "Fri",
-  sat: "Sat",
-  sun: "Sun",
-};
+const Pill = ({ children }) => (
+  <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
+    {children}
+  </span>
+);
 
-const formatAvailabilityWindow = (availabilityWindow) => {
-  if (!availabilityWindow) return null;
-  const rawDay = typeof availabilityWindow.day === "string" ? availabilityWindow.day.toLowerCase() : "";
-  const label = dayLabelMap[rawDay] || availabilityWindow.day;
-  if (!label) return null;
-  if (!availabilityWindow.from || !availabilityWindow.to) return label;
-  return `${label}: ${availabilityWindow.from} - ${availabilityWindow.to}`;
-};
+const Stat = ({ label, value }) => (
+  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <p className="text-2xl font-semibold text-slate-900">{value}</p>
+    <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p>
+  </div>
+);
 
-const formatSlotWindow = (slot) => {
-  if (!slot?.date || !slot?.start || !slot?.end) return null;
-  const type = slot.type ? slot.type.replace(/_/g, " ") : null;
-  const typeLabel = type ? ` (${type})` : "";
-  return `${slot.date}: ${slot.start} - ${slot.end}${typeLabel}`;
-};
-
-const formatAddonPrice = (addon, fallbackCurrency) => {
-  if (!Number.isFinite(Number(addon?.price))) return null;
-  return (
-    formatCurrency(addon.price, addon.currency || fallbackCurrency) ||
-    `${addon.currency || fallbackCurrency || "USD"} ${addon.price}`
-  );
-};
-
-const formatLinkLabel = (url) => {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname?.replace(/^www\./, "") || parsed.href;
-  } catch {
-    return url.replace(/^https?:\/\//i, "");
-  }
-};
-
-const buildMailtoLink = (email, subject, body) => {
-  if (!email) return null;
-  const params = [];
-  if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
-  if (body) params.push(`body=${encodeURIComponent(body)}`);
-  const query = params.length ? `?${params.join("&")}` : "";
-  return `mailto:${email}${query}`;
-};
-
-const splitList = (value) => {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.filter(Boolean).map((entry) => String(entry).trim()).filter(Boolean);
-  return String(value)
-    .split(/[,\n]/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-};
-
-const isUsable = (value) => {
-  if (value == null) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-};
-
-const mergeProfiles = (base = {}, portal = {}) => {
-  if (!portal || typeof portal !== "object") return base;
-  const merged = { ...base };
-  Object.entries(portal).forEach(([key, value]) => {
-    if (!isUsable(value)) return;
-    if (Array.isArray(value)) {
-      merged[key] = value.length ? value : merged[key];
-    } else {
-      merged[key] = value;
-    }
-  });
-
-  // Combine portfolioMedia specifically so portal items show even if marketplace lacks them.
-  const portalMedia = Array.isArray(portal.portfolioMedia) ? portal.portfolioMedia.filter(isUsable) : [];
-  const baseMedia = Array.isArray(base.portfolioMedia) ? base.portfolioMedia.filter(isUsable) : [];
-  if (portalMedia.length || baseMedia.length) {
-    merged.portfolioMedia = [...portalMedia, ...baseMedia];
-  }
-
-  return merged;
-};
-
-
-const AssociatePortfolio = () => {
-  const routerLocation = useLocation();
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const state = routerLocation.state;
-  const initialAssociate = useMemo(() => state?.associate ?? state?.profile ?? state ?? null, [state]);
-  const initialDashboard = useMemo(() => state?.dashboard ?? null, [state]);
-  const [associate, setAssociate] = useState(initialAssociate);
-  const [dashboardData, setDashboardData] = useState(initialDashboard);
-  const [status, setStatus] = useState(() => ({
-    loading: !initialAssociate,
-    error: null,
-  }));
-  const [actionLoading, setActionLoading] = useState(false);
-  const [selectedWorkspaceCard, setSelectedWorkspaceCard] = useState(null);
-  const [selectedWorkspaceMediaIndex, setSelectedWorkspaceMediaIndex] = useState(0);
-
-  useEffect(() => {
-    if (initialAssociate) {
-      setAssociate(initialAssociate);
-      setStatus((prev) => (prev.loading ? { loading: false, error: prev.error } : prev));
-    }
-  }, [initialAssociate]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!id) return undefined;
-    setStatus((prev) => ({ ...prev, loading: true, error: null }));
-    (async () => {
-      try {
-        const item = await fetchMarketplaceAssociateProfile(id);
-        if (cancelled) return;
-        if (item) {
-          setAssociate(item);
-          setStatus({ loading: false, error: null });
-        } else if (!initialAssociate) {
-          setAssociate(null);
-          setStatus({ loading: false, error: "not_found" });
-        } else {
-          setStatus({ loading: false, error: null });
-        }
-      } catch (error) {
-        if (cancelled) return;
-        const statusCode = error?.response?.status;
-        setStatus({
-          loading: false,
-          error: statusCode === 404 ? "not_found" : error?.message || "Unable to load profile",
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, initialAssociate]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (id || associate) return undefined;
-    setStatus((prev) => ({ ...prev, loading: true, error: null }));
-    (async () => {
-      try {
-        const response = await fetchAssociatePortalProfile({ preferDraft: true });
-        if (cancelled) return;
-        if (response?.profile) {
-          setAssociate(response.profile);
-          setStatus({ loading: false, error: null });
-        } else {
-          setStatus({ loading: false, error: response?.error?.message || response?.error || null });
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setStatus({
-          loading: false,
-          error: error?.message || "Unable to load profile",
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, associate]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (dashboardData) return undefined;
-    (async () => {
-      try {
-        const payload = await fetchAssociateDashboard();
-        if (cancelled) return;
-        setDashboardData(payload);
-        if (!associate && payload?.profile) {
-          setAssociate(payload.profile);
-          setStatus({ loading: false, error: null });
-        } else if (!associate) {
-          setStatus((prev) => (prev.loading ? { loading: false, error: prev.error } : prev));
-        }
-      } catch (error) {
-        if (cancelled) return;
-        if (!associate) {
-          setStatus((prev) => (prev.loading ? { loading: false, error: error?.message || prev.error } : prev));
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [dashboardData, associate]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const response = await fetchAssociatePortalProfile({ preferDraft: true });
-        if (cancelled) return;
-        if (response?.profile) {
-          setAssociate((prev) => mergeProfiles(prev || {}, response.profile));
-          setStatus((prev) => (prev.loading ? { loading: false, error: null } : prev));
-        }
-      } catch {
-        // non-blocking
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const { loading, error } = status;
-
-  const view = useMemo(() => {
-    if (!associate) return null;
-
-    const currency = associate.rates?.currency || associate.currency || "USD";
-    const dayRate = associate.rates?.daily ?? (associate.dailyRate != null ? Number(associate.dailyRate) : null);
-    const hourlyRate = associate.rates?.hourly ?? (associate.hourlyRate != null ? Number(associate.hourlyRate) : null);
-    const primaryRate = dayRate ?? hourlyRate ?? null;
-    const priceLabel =
-      associate.priceLabel ||
-      (primaryRate != null ? formatCurrency(primaryRate, currency) : null);
-
-    const stats = [
-      associate.experienceYears
-        ? { label: "Experience", value: `${associate.experienceYears}+ yrs` }
-        : null,
-      Number.isFinite(associate.completedProjects)
-        ? { label: "Projects", value: `${associate.completedProjects}` }
-        : null,
-      associate.rating
-        ? { label: "Rating", value: `${Number(associate.rating).toFixed(1)} / 5` }
-        : null,
-      primaryRate != null
-        ? { label: "Primary rate", value: priceLabel }
-        : null,
-      associate.availability
-        ? { label: "Availability", value: associate.availability }
-        : null,
-      associate.timezone
-        ? { label: "Timezone", value: associate.timezone }
-        : null,
-    ].filter(Boolean);
-
-    const bookingSummary = associate.booking
-      ? {
-        leadTimeHours: associate.booking.leadTimeHours || null,
-        rescheduleWindowHours: associate.booking.rescheduleWindowHours || null,
-        cancelWindowHours: associate.booking.cancelWindowHours || null,
-        bufferMinutes: associate.booking.bufferMinutes || null,
-        timezones: associate.booking.timezones || [],
-        slots: (associate.booking.slots || []).slice(0, 3),
-        etaStages: associate.booking.etaStages || [],
-        communications: associate.booking.communications || null,
-      }
-      : null;
-
-    return {
-      title: associate.title || "Associate",
-      cover:
-        associate.heroImage ||
-        associate.coverImage ||
-        associate.cover ||
-        associate.banner ||
-        associate.avatar,
-      profile: associate.profileImage || associate.profile || associate.avatar,
-      type: associate.type || associate.specialisations?.[0] || "Consultant",
-      location: associate.location || "",
-      price: priceLabel,
-      currency,
-      bio:
-        associate.bio ||
-        associate.summary ||
-        "This associate delivers specialised support for Builtattic projects across the network.",
-      portfolioMedia:
-        Array.isArray(associate.portfolioMedia) && associate.portfolioMedia.length
-          ? associate.portfolioMedia
-              .map((item) => ({
-                ...item,
-                mediaUrl: item.mediaUrl || item.url || item.image,
-              }))
-              .filter((item) => item.mediaUrl)
-          : (associate.portfolioImages || associate.gallery || []).map((url) => ({ mediaUrl: url })),
-      workHistory:
-        associate.workHistory && associate.workHistory.length
-          ? associate.workHistory
-          : (associate.keyProjects || []).map((project) => ({
-            role: project.role || associate.title,
-            company: project.title,
-            duration: project.year ? String(project.year) : "",
-            description: project.scope,
-          })),
-      stats,
-      serviceBadges: associate.serviceBadges || [],
-      deliverables: splitList(associate.deliverables),
-      specialisations: splitList(associate.specialisations),
-      expertise: splitList(associate.expertise || associate.skills),
-      softwares: splitList(associate.softwares),
-      languages: splitList(associate.languages),
-      certifications: splitList(associate.certifications),
-      booking: bookingSummary,
-      availability: associate.availability || null,
-      availabilityWindows: associate.availabilityWindows || [],
-      timezone: associate.timezone || null,
-      addons: associate.addons || [],
-      warranty: associate.warranty || null,
-      prepChecklist: associate.prepChecklist || [],
-      contactEmail: associate.user?.email || associate.contactEmail || null,
-      keyProjects: Array.isArray(associate.keyProjects)
-        ? associate.keyProjects
-        : splitList(associate.keyProjects).map((entry) => ({
-          title: entry.split("|")[0] || entry,
-          scope: entry.split("|")[1] || "",
-          year: entry.split("|")[2] || "",
-          role: entry.split("|")[3] || associate.title || "",
-        })),
-      portfolioLinks: splitList(associate.portfolioLinks),
-      serviceBundle: associate.serviceBundle || null,
-      workingDrawings: associate.workingDrawings || null,
-      servicePack: associate.servicePack || null,
-      schedulingMeeting: associate.schedulingMeeting || null,
-    };
-  }, [associate]);
-
-  const dashboardPlans = Array.isArray(dashboardData?.planUploads) ? dashboardData.planUploads.slice(0, 3) : [];
-  const dashboardPacks = Array.isArray(dashboardData?.servicePacks) ? dashboardData.servicePacks.slice(0, 3) : [];
-  const dashboardMeetings = Array.isArray(dashboardData?.meetings) ? dashboardData.meetings.slice(0, 3) : [];
-  const dashboardDownloads = Array.isArray(dashboardData?.downloads) ? dashboardData.downloads.slice(0, 3) : [];
-  const dashboardChats = Array.isArray(dashboardData?.chats) ? dashboardData.chats.slice(0, 3) : [];
-  const hasWorkspaceExtras =
-    dashboardPlans.length ||
-    dashboardPacks.length ||
-    dashboardMeetings.length ||
-    dashboardDownloads.length ||
-    dashboardChats.length;
-  const isVideoPreview = (url) => typeof url === "string" && /\.(mp4|mov|webm)$/i.test(url);
-  const resolvePreview = (entry) =>
-    entry?.previewUrl ||
-    entry?.mediaUrl ||
-    entry?.image ||
-    entry?.thumbnail ||
-    entry?.link ||
-    entry?.url ||
-    entry?.downloadUrl ||
-    null;
-  const buildMediaEntry = (url) => {
-    if (!url) return null;
-    return { url, type: isVideoPreview(url) ? "video" : "image" };
-  };
-  const dedupeMedia = (items) => {
-    const seen = new Set();
-    return items.filter((item) => {
-      if (!item?.url) return false;
-      const key = item.url;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  };
-  const workspaceCards = useMemo(() => {
-    const cards = [
-      ...dashboardDownloads.map((entry) => {
-        const preview = resolvePreview(entry);
-        const media = dedupeMedia(
-          [
-            buildMediaEntry(preview),
-            buildMediaEntry(entry.fileUrl || entry.downloadUrl || entry.url),
-          ].filter(Boolean)
-        );
-        return {
-          id: entry.id || entry.label,
-          subtype: "Deliverable",
-          title: entry.label || "Deliverable",
-          status: entry.tag || entry.accessLevel || "WD",
-          description: entry.description || "Shared files buyers can pull instantly.",
-          href: entry.url || entry.link || entry.downloadUrl || entry.fileUrl,
-          preview,
-          media,
-        };
-      }),
-      ...dashboardPacks.map((pack) => {
-        const preview = pack.previewUrl || pack.heroImage || pack.image || null;
-        const media = dedupeMedia(
-          [
-            buildMediaEntry(preview),
-            ...(Array.isArray(pack.gallery) ? pack.gallery.map(buildMediaEntry) : []),
-          ].filter(Boolean)
-        );
-        return {
-          id: pack.id || pack.title,
-          subtype: "Service pack",
-          title: pack.title || "Service pack",
-          status: (pack.status || "draft").toUpperCase(),
-          description: pack.summary || "Pre-scoped package ready for review.",
-          href: pack.url || pack.link || pack.checkoutUrl,
-          preview,
-          media,
-        };
-      }),
-      ...dashboardPlans.map((plan) => {
-        const preview =
-          plan.previewUrl || plan.mediaUrl || plan.image || plan.thumbnail || plan.link || plan.downloadUrl || null;
-        const renderImages = Array.isArray(plan.renderImages) ? plan.renderImages : [];
-        const media = dedupeMedia(
-          [
-            buildMediaEntry(preview),
-            ...renderImages.map(buildMediaEntry),
-            buildMediaEntry(plan.walkthrough),
-          ].filter(Boolean)
-        );
-        return {
-          id: plan.id || plan.projectTitle,
-          subtype: "Concept hosting",
-          title: plan.projectTitle || "Concept",
-          status: plan.category || "Plan",
-          description: plan.primaryStyle || "Hosted plan spec ready for buyers.",
-          href: plan.link || plan.url || plan.previewUrl || plan.mediaUrl || plan.walkthrough,
-          preview,
-          media,
-        };
-      }),
-    ];
-    return cards.filter((card) => card.id);
-  }, [dashboardDownloads, dashboardPacks, dashboardPlans]);
-  const handleWorkspaceCardOpen = (card) => {
-    setSelectedWorkspaceMediaIndex(0);
-    setSelectedWorkspaceCard(card);
-  };
-  const closeWorkspaceCard = () => {
-    setSelectedWorkspaceCard(null);
-    setSelectedWorkspaceMediaIndex(0);
-  };
-
-  if (!view) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white flex flex-col">
-        <div className="flex-1 flex items-center justify-center px-4">
-          <div
-            className={`w-full max-w-xl rounded-2xl border p-8 text-center text-sm font-medium shadow-sm ${loading
-                ? "border-slate-200 bg-white text-slate-600"
-                : error === "not_found"
-                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700"
-              }`}
-          >
-            {loading
-              ? "Loading associate profile..."
-              : error === "not_found"
-                ? "We couldn’t find this associate profile."
-                : error || "Associate profile is unavailable right now."}
-          </div>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
-  const {
-    title,
-    cover,
-    profile,
-    type,
-    location,
-    price,
+const formatRate = (value, currency = "USD") => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "Set rate";
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
     currency,
-    bio,
-    portfolioMedia,
-    workHistory,
-    stats,
-    serviceBadges,
-    deliverables,
-    specialisations,
-    expertise,
-    softwares,
-    languages,
-    certifications,
-    booking,
-    availability,
-    availabilityWindows,
-    timezone,
-    addons,
-    warranty,
-    prepChecklist,
-    contactEmail,
-    keyProjects,
-    portfolioLinks,
-    serviceBundle,
-    workingDrawings,
-    servicePack,
-    schedulingMeeting,
-  } = view;
+    maximumFractionDigits: 0,
+  }).format(numeric);
+};
 
-  const renderChipGroup = (label, items) => {
-    if (!items?.length) return null;
-    return (
-      <div className="space-y-2">
-        <p className="text-sm font-semibold text-stone-600">{label}</p>
-        <div className="flex flex-wrap gap-2">
-          {items.map((item, index) => (
-            <span
-              key={`${label}-${item}-${index}`}
-              className="rounded-full bg-stone-100 text-stone-700 px-3 py-1 text-xs font-medium"
-            >
-              {item}
-            </span>
-          ))}
-        </div>
-      </div>
-    );
-  };
+export default function AssociatePortfolio() {
+  const { id } = useParams();
+  const location = useLocation();
+  const consultRef = useRef(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [consultForm, setConsultForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    scheduledFor: "",
+    message: "",
+  });
+  const [consultState, setConsultState] = useState({ submitting: false, success: false });
 
-  const hasCapabilities = [
-    specialisations,
-    expertise,
-    softwares,
-    languages,
-    certifications,
-  ].some((group) => group && group.length);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchMarketplaceAssociateProfile(id);
+        if (!cancelled) setProfile(data);
+      } catch (err) {
+        if (!cancelled) setError(err?.message || "Unable to load associate");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
-  const bookingHighlights = [
-    booking?.leadTimeHours ? `${booking.leadTimeHours} hr lead time` : null,
-    booking?.rescheduleWindowHours
-      ? `${booking.rescheduleWindowHours} hr reschedule window`
-      : null,
-    booking?.cancelWindowHours
-      ? `${booking.cancelWindowHours} hr cancel window`
-      : null,
-    booking?.bufferMinutes ? `${booking.bufferMinutes} min buffer` : null,
-  ].filter(Boolean);
-  const projectSpotlights = Array.isArray(keyProjects) ? keyProjects.slice(0, 3) : [];
-  const resourceLinks = Array.isArray(portfolioLinks) ? portfolioLinks.filter(Boolean) : [];
-  const enquiryHref = contactEmail
-    ? buildMailtoLink(
-      contactEmail,
-      `Enquiry about ${title} | Skill Studio`,
-      `Hi ${title || "team"},\nI would like to learn more about your availability and scope.\n\nProject notes:`
-    )
-    : null;
-  const meetingHref =
-    schedulingMeeting ||
-    (contactEmail
-      ? buildMailtoLink(
-        contactEmail,
-        `Schedule time with ${title}`,
-        "Hi, can we book a quick intro to review fit and next steps?"
-      )
-      : null);
-  const buyHref =
-    servicePack ||
-    workingDrawings ||
-    serviceBundle ||
-    enquiryHref;
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const focusConsult = location.state?.focus === "consult" || params.get("consult") === "1";
+    if (focusConsult && consultRef.current) {
+      setTimeout(() => consultRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+    }
+  }, [location]);
 
-  const quickActions = [
-    {
-      id: "buy",
-      title: price ? `Start from ${price}` : "Buy services",
-      description:
-        servicePack || serviceBundle
-          ? "Check out with the scoped pack or bundle."
-          : "Share a brief and get a scoped quote fast.",
-      href: buyHref,
-      cta: servicePack || serviceBundle ? "Buy / view scope" : "Start order",
-      accent: "bg-emerald-50 text-emerald-700 border-emerald-100",
-      available: true,
-      fallback: "Open the order form to proceed.",
-    },
-    {
-      id: "schedule",
-      title: bookingHighlights[0] || "Book a meeting",
-      description: schedulingMeeting
-        ? "Pick a slot that works for you."
-        : "Request a time to align on fit and next steps.",
-      href: meetingHref,
-      cta: schedulingMeeting ? "Schedule intro" : "Request intro",
-      accent: "bg-indigo-50 text-indigo-700 border-indigo-100",
-      available: true,
-      fallback: meetingHref
-        ? "Opens the scheduling link."
-        : "Use the request form to pick a time slot.",
-    },
-    {
-      id: "enquiry",
-      title: "Raise an enquiry",
-      description: "Ask about scope, capacity, or project fit.",
-      href: enquiryHref,
-      cta: "Send enquiry",
-      accent: "bg-amber-50 text-amber-800 border-amber-100",
-      available: true,
-      fallback: enquiryHref
-        ? "Opens your email client to send an enquiry."
-        : "Fill the enquiry form so we can route your request.",
-    },
-  ];
+  const contactEmail = profile?.contactEmail || profile?.contact?.email;
+  const contactPhone = profile?.contact?.phone;
+  const contactWebsite = profile?.contact?.website;
+  const languages = Array.isArray(profile?.languages) ? profile.languages : [];
+  const tools = Array.isArray(profile?.toolset) ? profile.toolset : [];
+  const specialisations = Array.isArray(profile?.specialisations) ? profile.specialisations : [];
+  const deliverables = Array.isArray(profile?.deliverables) ? profile.deliverables : [];
+  const workHistory = Array.isArray(profile?.workHistory) ? profile.workHistory : [];
+  const services = Array.isArray(profile?.services) ? profile.services : [];
+  const planTiles = Array.isArray(profile?.planUploads) ? profile.planUploads : [];
+  const hourly = profile?.rates?.hourly ?? profile?.hourlyRate ?? null;
+  const currency = profile?.rates?.currency || "USD";
+  const rateLabel = `${formatRate(hourly, currency)} / hr`;
+  const portfolioMedia = useMemo(() => profile?.portfolioMedia || [], [profile]);
+  const avatar =
+    profile?.profileImage ||
+    profile?.avatar ||
+    getAssociateAvatar(profile) ||
+    getAssociateFallback();
+  const cover = profile?.heroImage || profile?.coverImage || portfolioMedia[0]?.mediaUrl;
 
-  const isHttpLink = (url) => /^https?:\/\//i.test(url);
-  const isMailLink = (url) => /^mailto:/i.test(url);
-  const isTelLink = (url) => /^tel:/i.test(url);
-
-  const openHttpLink = (url) => {
-    if (!url || typeof url !== "string" || !isHttpLink(url)) return false;
+  const handleConsultSubmit = async () => {
+    if (!consultForm.name.trim() || !consultForm.email.trim()) {
+      toast.error("Name and email are required");
+      return;
+    }
+    setConsultState({ submitting: true, success: false });
     try {
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      return true;
-    } catch (error) {
-      console.error("link_open_failed", error);
-      return false;
+      await requestAssociateConsultation(id, consultForm);
+      toast.success("Consultation request sent. The associate and workspace will be notified.");
+      setConsultState({ submitting: false, success: true });
+      setConsultForm({ name: "", email: "", phone: "", scheduledFor: "", message: "" });
+    } catch (err) {
+      setConsultState({ submitting: false, success: false });
+      toast.error(err?.message || "Unable to book a consultation");
     }
   };
 
-  const openMailLink = (url) => {
-    if (!url || typeof url !== "string" || (!isMailLink(url) && !isTelLink(url))) return false;
-    try {
-      window.location.href = url;
-      return true;
-    } catch (error) {
-      console.error("mailto_open_failed", error);
-      return false;
-    }
-  };
-
-  const handleAction = async (actionId) => {
-    if (actionLoading) return;
-    setActionLoading(true);
-    try {
-      if (actionId === "buy") {
-        if (buyHref && isHttpLink(buyHref)) {
-          openHttpLink(buyHref);
-          toast.success("Opening service pack / bundle");
-        }
-        if (buyHref && (isMailLink(buyHref) || isTelLink(buyHref))) {
-          openMailLink(buyHref);
-          toast("Send your scope via email/phone");
-        }
-        navigate("/associate/order" + (id ? `/${id}` : ""), {
-          state: { associate, price, currency, cover, profile, buyHref, contactEmail },
-        });
-        toast("Finish order via the form");
-        return;
-      }
-
-      if (actionId === "schedule") {
-        if (meetingHref && isHttpLink(meetingHref)) {
-          openHttpLink(meetingHref);
-          toast.success("Opening scheduling link");
-        }
-        if (meetingHref && (isMailLink(meetingHref) || isTelLink(meetingHref))) {
-          openMailLink(meetingHref);
-          toast("Request a slot via email/phone");
-        }
-        if (enquiryHref && (isMailLink(enquiryHref) || isTelLink(enquiryHref))) {
-          openMailLink(enquiryHref);
-          toast("Request a slot via email");
-        }
-        navigate("/associate/schedule" + (id ? `/${id}` : ""), {
-          state: { associate, meetingHref, contactEmail, title, availability, timezone },
-        });
-        toast("Pick a slot via the schedule form");
-        return;
-      }
-
-      if (actionId === "enquiry") {
-        if (enquiryHref && isHttpLink(enquiryHref)) {
-          openHttpLink(enquiryHref);
-          toast.success("Opening enquiry link");
-        }
-        if (enquiryHref && (isMailLink(enquiryHref) || isTelLink(enquiryHref))) {
-          openMailLink(enquiryHref);
-          toast.success("Open your email client to send an enquiry");
-        }
-        navigate("/associate/enquiry" + (id ? `/${id}` : ""), {
-          state: { associate, contactEmail, title, price, currency },
-        });
-        toast("Use the enquiry form to submit details.");
-        return;
-      }
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  if (loading) {
+    return <p className="p-6 text-sm text-slate-600">Loading associate...</p>;
+  }
+  if (error) {
+    return <p className="p-6 text-sm text-rose-600">{error}</p>;
+  }
+  if (!profile) {
+    return <p className="p-6 text-sm text-slate-600">No associate found.</p>;
+  }
 
   return (
-    <div className="bg-gradient-to-b from-white via-slate-50 to-white min-h-screen flex flex-col text-slate-900">
-      <div className="relative isolate">
-        <div className="absolute inset-0">
-          <img src={cover} alt={title} className="h-[360px] w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-white/80 to-white" />
-        </div>
-        <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-24 text-slate-900 space-y-10">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:gap-10">
-            <img
-              src={profile}
-              alt={`${title} avatar`}
-              className="h-28 w-28 rounded-2xl border-4 border-white object-cover shadow-2xl md:h-36 md:w-36 bg-white"
-            />
-            <div className="flex-1 space-y-4">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Skill Studio associate</p>
-                <h1 className="text-3xl font-semibold md:text-5xl text-slate-900">{title}</h1>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-12">
+        <header className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="relative h-64 w-full bg-slate-100">
+            {cover ? <img src={cover} alt="Cover" className="h-full w-full object-cover" /> : null}
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 to-transparent" />
+            <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-center gap-4">
+              <img
+                src={avatar}
+                alt={profile.name}
+                className="h-20 w-20 rounded-full border-4 border-white shadow-lg object-cover bg-white"
+              />
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/80">Skill Studio</p>
+                <h1 className="text-3xl font-bold text-white drop-shadow">{profile.name || profile.title || "Associate"}</h1>
+                <p className="text-white/90">
+                  {profile.firmName || "Independent"} {profile.location ? ` / ${profile.location}` : ""}
+                </p>
               </div>
-              <div className="flex flex-wrap gap-2 text-sm">
-                {[type, location, price].filter(Boolean).map((chip) => (
-                  <span
-                    key={chip}
-                    className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-semibold tracking-wide uppercase text-slate-600"
+              <div className="ml-auto flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => consultRef.current?.scrollIntoView({ behavior: "smooth" })}
+                  className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow hover:bg-slate-100"
+                >
+                  Book consultation
+                </button>
+                {contactEmail ? (
+                  <a
+                    href={`mailto:${contactEmail}`}
+                    className="rounded-full border border-white/60 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
                   >
-                    {chip}
-                  </span>
-                ))}
+                    Email
+                  </a>
+                ) : null}
               </div>
-              <p className="max-w-3xl text-base text-slate-700 leading-relaxed">{bio}</p>
-              {serviceBadges.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {serviceBadges.map((badge, index) => (
-                    <span
-                      key={`${badge}-${index}`}
-                      className="rounded-full bg-slate-900/5 px-3 py-1 text-xs font-semibold text-slate-800"
-                    >
-                      {badge}
-                    </span>
+            </div>
+          </div>
+          <div className="p-6 md:p-8 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {specialisations.slice(0, 4).map((spec) => (
+                <Pill key={spec}>{spec}</Pill>
+              ))}
+              {languages.slice(0, 3).map((lang) => (
+                <Pill key={lang}>{lang}</Pill>
+              ))}
+            </div>
+            {profile.summary ? <p className="text-slate-700 text-base">{profile.summary}</p> : null}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Stat label="Rate" value={rateLabel} />
+              <Stat label="Experience" value={profile.experienceYears ? `${profile.experienceYears} yrs` : "Add years"} />
+              <Stat label="Timezone" value={profile.timezone || "Set timezone"} />
+            </div>
+          </div>
+        </header>
+
+        <div className="grid gap-10 lg:grid-cols-[2fr_1fr]">
+          <div className="space-y-10">
+            <Section title="Portfolio">
+              {portfolioMedia.length ? (
+                <PortfolioMediaPlayer items={portfolioMedia} title="" subtitle="" />
+              ) : (
+                <p className="text-sm text-slate-600">No portfolio items yet.</p>
+              )}
+            </Section>
+
+            <Section title="Toolset & Software">
+              {tools.length ? (
+                <div className="flex flex-wrap gap-2">{tools.map((tool) => <Pill key={tool}>{tool}</Pill>)}</div>
+              ) : (
+                <p className="text-sm text-slate-600">No tools listed.</p>
+              )}
+            </Section>
+
+            <Section title="Service packs & deliverables">
+              {services.length ? (
+                <div className="space-y-3">
+                  {services.map((svc) => (
+                    <div key={svc._id || svc.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                      <p className="text-sm font-semibold text-slate-900">{svc.title}</p>
+                      {svc.summary ? <p className="text-sm text-slate-600 mt-1">{svc.summary}</p> : null}
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
+                        {svc.deliverables?.map((d) => (
+                          <Pill key={d}>{d}</Pill>
+                        ))}
+                      </div>
+                      {svc.price != null ? (
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {new Intl.NumberFormat(undefined, {
+                            style: "currency",
+                            currency: svc.currency || "USD",
+                            maximumFractionDigits: 0,
+                          }).format(Number(svc.price))}
+                        </p>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-600">No published services yet.</p>
+                  {deliverables.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {deliverables.map((d) => (
+                        <Pill key={d}>{d}</Pill>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               )}
-            </div>
-            {contactEmail && (
-              <div className="flex flex-col gap-2">
-                <a
-                  href={`mailto:${contactEmail}`}
-                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:bg-slate-800"
-                >
-                  Email {title.split(" ")[0] || "associate"}
-                </a>
-                <p className="text-xs text-slate-500">Expect a reply within 24 hours.</p>
-              </div>
-            )}
+            </Section>
+
+            <Section title="Plan tiles">
+              {planTiles.length ? (
+                <div className="space-y-3">
+                  {planTiles.map((plan) => (
+                    <div key={plan.id || plan.projectTitle} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-2">
+                      <div className="flex items-start gap-3">
+                        {plan.coverImage ? (
+                          <img src={plan.coverImage} alt={plan.projectTitle} className="h-16 w-20 rounded-lg object-cover border border-slate-200" />
+                        ) : null}
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-slate-900">{plan.projectTitle}</p>
+                          <p className="text-xs text-slate-600">{plan.category || plan.primaryStyle || "Concept"}</p>
+                        </div>
+                        <span className="ml-auto rounded-full border border-slate-200 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+                          {plan.status || "draft"}
+                        </span>
+                      </div>
+                      {plan.description ? <p className="text-sm text-slate-700">{plan.description}</p> : null}
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                        {plan.primaryStyle ? <Pill>{plan.primaryStyle}</Pill> : null}
+                        {(plan.tags || []).map((tag) => (
+                          <Pill key={tag}>{tag}</Pill>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-600">No plan tiles published yet.</p>
+              )}
+            </Section>
+
+            <Section title="Work history">
+              {workHistory.length ? (
+                <div className="space-y-3">
+                  {workHistory.map((entry, idx) => (
+                    <div key={`${entry.company}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="text-sm font-semibold text-slate-900">{entry.company}</p>
+                      <p className="text-xs text-slate-600">
+                        {entry.role || "Contributor"} {entry.duration ? ` / ${entry.duration}` : ""}
+                      </p>
+                      {entry.summary ? <p className="mt-2 text-sm text-slate-700">{entry.summary}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-600">No work history listed.</p>
+              )}
+            </Section>
           </div>
 
-        </div>
-      </div>
-
-      <main className="relative z-10 -mt-12 pb-20">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,2.1fr)_minmax(360px,1fr)]">
-            <section className="space-y-6">
-              <article className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                <div className="flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                  {type ? <span>{type}</span> : null}
-                  {location ? <span>{location}</span> : null}
-                  {price ? <span>{price}</span> : null}
-                </div>
-                <p className="text-base leading-relaxed text-slate-700">{bio}</p>
-                <div className="flex flex-wrap gap-6 text-sm text-slate-500">
-                  {availability ? (
-                    <div>
-                      <p className="font-semibold text-slate-900">Availability</p>
-                      <p>{availability}</p>
-                    </div>
-                  ) : null}
-                  {timezone ? (
-                    <div>
-                      <p className="font-semibold text-slate-900">Timezone</p>
-                      <p>{timezone}</p>
-                    </div>
-                  ) : null}
-                  {currency ? (
-                    <div>
-                      <p className="font-semibold text-slate-900">Currency</p>
-                      <p>{currency}</p>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-
-              {stats.length > 0 && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Snapshot</p>
-                      <h2 className="text-lg font-semibold text-slate-900">Signals buyers review first</h2>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {stats.map((stat) => (
-                      <div key={stat.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                        <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{stat.label}</p>
-                        <p className="mt-2 text-lg font-semibold text-slate-900">{stat.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {hasCapabilities && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-lg font-semibold text-slate-900">Capabilities & Toolset</h2>
-                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
-                      Skill Studio
-                    </span>
-                  </div>
-                  <div className="grid gap-6 md:grid-cols-2">
-                    {renderChipGroup("Specialisations", specialisations)}
-                    {renderChipGroup("Expertise & Focus", expertise)}
-                    {renderChipGroup("Design Software", softwares)}
-                    {renderChipGroup("Languages", languages)}
-                    {renderChipGroup("Certifications", certifications)}
-                  </div>
-                </section>
-              )}
-
-              <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-slate-900">Portfolio</h2>
-                  {portfolioMedia.length > 0 ? (
-                    <span className="text-xs font-semibold text-slate-500">{portfolioMedia.length} media</span>
-                  ) : null}
-                </div>
-                <PortfolioMediaPlayer
-                  items={portfolioMedia}
-                  title={null}
-                  subtitle={null}
-                  className="p-0 border-none shadow-none bg-transparent"
-                  variant="bare"
-                />
-              </section>
-
-              {(serviceBundle || workingDrawings || servicePack || schedulingMeeting) && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Packages</p>
-                      <h2 className="text-lg font-semibold text-slate-900">Service offerings</h2>
-                      <p className="text-sm text-slate-600">
-                        Ready-made scopes, bundles, and meeting links you can act on immediately.
-                      </p>
-                    </div>
-                    {price ? (
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200">
-                        from {price}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {servicePack && (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Service pack</p>
-                        <p className="text-sm text-slate-700">
-                          Pre-scoped deliverables and pricing ready for checkout.
-                        </p>
-                        <a
-                          href={servicePack}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800 transition"
-                        >
-                          Buy the pack
-                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
-                        </a>
-                      </div>
-                    )}
-                    {serviceBundle && (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Bundle</p>
-                        <p className="text-sm text-slate-700">{serviceBundle}</p>
-                        <a
-                          href={buyHref || enquiryHref || undefined}
-                          onClick={(event) => {
-                            if (!(buyHref || enquiryHref)) event.preventDefault();
-                          }}
-                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
-                        >
-                          Purchase bundle
-                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
-                        </a>
-                      </div>
-                    )}
-                    {workingDrawings && (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Working drawings</p>
-                        <p className="text-sm text-slate-700">Review the drawing set shared with buyers.</p>
-                        <a
-                          href={workingDrawings}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50 transition"
-                        >
-                          View drawings
-                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
-                        </a>
-                      </div>
-                    )}
-                    {schedulingMeeting && (
-                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700">Schedule</p>
-                        <p className="text-sm text-emerald-900">
-                          Use the live calendar to book a discovery call.
-                        </p>
-                        <a
-                          href={schedulingMeeting}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
-                        >
-                          Book a meeting
-                          <span className="ml-2 text-xs opacity-80">&rarr;</span>
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {deliverables.length > 0 && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
-                  <h2 className="text-lg font-semibold text-slate-900 mb-4">Key Deliverables</h2>
-                  <ul className="space-y-2 text-sm text-slate-700">
-                    {deliverables.map((item, index) => (
-                      <li key={`${item}-${index}`} className="flex items-start gap-2">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {projectSpotlights.length > 0 && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-slate-900">Project spotlights</h2>
-                    <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                      Case studies
-                    </span>
-                  </div>
-                  <div className="space-y-4">
-                    {projectSpotlights.map((project, index) => (
-                      <article
-                        key={`${project.title || "project"}-${project.year || index}`}
-                        className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-base font-semibold text-slate-900">{project.title || "Project"}</p>
-                          {project.year ? (
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              {project.year}
-                            </span>
-                          ) : null}
-                        </div>
-                        {project.scope ? <p className="text-sm text-slate-600">{project.scope}</p> : null}
-                        <div className="flex flex-wrap gap-3 text-xs text-slate-500">
-                          {project.role ? <span>Role: {project.role}</span> : null}
-                          {project.category ? <span>{project.category}</span> : null}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-slate-900">Work History</h2>
-                  <span className="text-xs uppercase tracking-[0.35em] text-slate-400">Experience</span>
-                </div>
-                {workHistory && workHistory.length > 0 ? (
-                  <ul className="space-y-4">
-                    {workHistory.map((item, idx) => (
-                      <li key={idx} className="rounded-2xl border border-slate-100 bg-slate-50 p-4 shadow-sm space-y-1">
-                        <div className="text-base font-semibold text-slate-900">{item.role}</div>
-                        <div className="text-sm text-slate-600">{item.company}</div>
-                        <div className="text-xs text-slate-500 uppercase tracking-wide">{item.duration}</div>
-                        {item.description ? <p className="text-sm text-slate-600">{item.description}</p> : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-slate-500">No work history available.</p>
-                )}
-              </section>
-
-              {hasWorkspaceExtras && workspaceCards.length > 0 && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-slate-900">Workspace services</h3>
-                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Skill Studio</span>
-                  </div>
-                  <div className="overflow-x-auto pb-2">
-                    <div className="flex gap-4 min-w-full">
-                      {workspaceCards.map((card) => {
-                        const href = card.href || card.preview || null;
-                        const isVideo = isVideoPreview(card.preview);
-                        return (
-                          <div
-                            key={card.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => handleWorkspaceCardOpen(card)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                handleWorkspaceCardOpen(card);
-                              }
-                            }}
-                            className="min-w-[260px] max-w-xs flex-1 cursor-pointer rounded-2xl border border-slate-100 bg-slate-50 p-4 shadow-sm text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300"
-                          >
-                            <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-slate-500">
-                              <span>{card.subtype}</span>
-                              {card.status ? (
-                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
-                                  {card.status}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="space-y-2 mt-2">
-                              <p className="text-sm font-semibold text-slate-900 line-clamp-2">{card.title}</p>
-                              <p className="text-xs text-slate-600 line-clamp-3">{card.description}</p>
-                            </div>
-                            {card.preview ? (
-                              <div className="mt-3 overflow-hidden rounded-xl border border-slate-100 bg-white">
-                                {isVideo ? (
-                                  <video className="w-full h-32 object-cover" controls>
-                                    <source src={card.preview} />
-                                  </video>
-                                ) : (
-                                  <img src={card.preview} alt={card.title} className="w-full h-32 object-cover" />
-                                )}
-                              </div>
-                            ) : null}
-                            <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                              <span className="font-semibold text-slate-900">View details</span>
-                              {href ? <span className="text-[11px]">Link available</span> : <span>No link provided</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {resourceLinks.length > 0 && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100">
-                  <h2 className="text-lg font-semibold text-slate-900 mb-4">Reference links</h2>
-                  <ul className="space-y-3">
-                    {resourceLinks.map((link, index) => (
-                      <li key={`${link}-${index}`}>
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 hover:border-slate-200"
-                        >
-                          <span>{formatLinkLabel(link)}</span>
-                          <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                            Visit
-                          </span>
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </section>
-
-            <aside className="space-y-6 lg:sticky lg:top-8 h-fit">
-              <section className="rounded-3xl bg-gradient-to-br from-white via-slate-50 to-white text-slate-900 p-6 shadow-2xl ring-1 ring-slate-100 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Action center</p>
-                    <h3 className="text-lg font-semibold">Engage {title}</h3>
-                    <p className="text-sm text-slate-600">
-                      {availability ? `Availability: ${availability}` : "Replies within 1 business day."}
+          <div className="space-y-8">
+            <Section title="Consultation & Contact" anchorRef={consultRef}>
+              <div className="space-y-3">
+                <div className="space-y-2 text-sm text-slate-700">
+                  {contactEmail ? (
+                    <p>
+                      <span className="font-semibold">Email:</span>{" "}
+                      <a className="text-slate-900 underline" href={`mailto:${contactEmail}`}>
+                        {contactEmail}
+                      </a>
                     </p>
-                  </div>
-                  {price ? (
-                    <span className="rounded-full bg-slate-900 text-white px-3 py-1 text-xs font-semibold shadow ring-1 ring-slate-900/10">
-                      {price}
-                    </span>
+                  ) : null}
+                  {contactPhone ? (
+                    <p>
+                      <span className="font-semibold">Phone:</span> {contactPhone}
+                    </p>
+                  ) : null}
+                  {contactWebsite ? (
+                    <p>
+                      <span className="font-semibold">Website:</span>{" "}
+                      <a className="text-slate-900 underline" href={contactWebsite}>
+                        {contactWebsite}
+                      </a>
+                    </p>
                   ) : null}
                 </div>
                 <div className="space-y-2">
-                  {quickActions.map((action) => {
-                    const disabled = !action.available || actionLoading;
-                    const href = action.available ? action.href : undefined;
-                    return (
-                      <button
-                        type="button"
-                        key={`action-${action.id}`}
-                        onClick={() => handleAction(action.id)}
-                        className={`flex items-center justify-between rounded-2xl px-3 py-3 text-sm font-semibold transition ${disabled
-                          ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-100"
-                          : "bg-slate-900 text-white hover:bg-slate-800 shadow"
-                          }`}
-                        aria-disabled={disabled}
-                        disabled={disabled}
-                        title={!href ? action.fallback : undefined}
-                      >
-                        <span>{action.cta}</span>
-                        <span className="text-xs opacity-80">&rarr;</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="rounded-2xl bg-slate-100 p-3 text-xs text-slate-700 space-y-1 ring-1 ring-slate-200">
-                  <p>
-                    {contactEmail
-                      ? `Prefer email? ${contactEmail}`
-                      : "Add a contact email so enquiries can be routed directly."}
-                  </p>
-                  {timezone ? <p>Timezone: {timezone}</p> : null}
-                </div>
-              </section>
-
-              {(contactEmail || availability || timezone) && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-4">
-                  <h3 className="text-base font-semibold text-slate-900">Buyer playbook</h3>
-                  <div className="space-y-3 text-sm text-slate-600">
-                    {contactEmail ? (
-                      <p>
-                        Contact:{" "}
-                        <a href={`mailto:${contactEmail}`} className="font-semibold text-slate-900 underline">
-                          {contactEmail}
-                        </a>
-                      </p>
-                    ) : null}
-                    {timezone ? (
-                      <p>
-                        Primary timezone: <span className="font-semibold text-slate-900">{timezone}</span>
-                      </p>
-                    ) : null}
-                    {availability ? (
-                      <p>
-                        Availability: <span className="font-semibold text-slate-900">{availability}</span>
-                      </p>
-                    ) : null}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="text-xs text-slate-600">
+                      Your name
+                      <input
+                        value={consultForm.name}
+                        onChange={(e) => setConsultForm({ ...consultForm, name: e.target.value })}
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                        placeholder="Client name"
+                      />
+                    </label>
+                    <label className="text-xs text-slate-600">
+                      Email
+                      <input
+                        type="email"
+                        value={consultForm.email}
+                        onChange={(e) => setConsultForm({ ...consultForm, email: e.target.value })}
+                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                        placeholder="you@example.com"
+                      />
+                    </label>
                   </div>
-                </section>
-              )}
-
-              {(booking || availabilityWindows.length > 0) && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold text-slate-900">Booking Playbook</h3>
-                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Operations</span>
-                  </div>
-                  {bookingHighlights.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {bookingHighlights.map((item) => (
-                        <span
-                          key={item}
-                          className="rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 text-xs font-semibold"
-                        >
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {booking?.timezones?.length ? (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                        Supported timezones
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {booking.timezones.map((zone) => (
-                          <span
-                            key={zone}
-                            className="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs font-medium"
-                          >
-                            {zone}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {availabilityWindows.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                        Weekly windows
-                      </p>
-                      <ul className="space-y-2 text-sm text-slate-700">
-                        {availabilityWindows.map((availabilityWindow, index) => {
-                          const label = formatAvailabilityWindow(availabilityWindow);
-                          if (!label) return null;
-                          return (
-                            <li
-                              key={`${availabilityWindow.day}-${index}`}
-                              className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2"
-                            >
-                              {label}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )}
-                  {booking?.slots?.length ? (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                        Upcoming slots
-                      </p>
-                      <ul className="space-y-2 text-sm text-slate-700">
-                        {booking.slots.map((slot, index) => {
-                          const label = formatSlotWindow(slot);
-                          if (!label) return null;
-                          return (
-                            <li
-                              key={`${slot.date}-${slot.start}-${index}`}
-                              className="rounded-2xl border border-slate-100 px-3 py-2"
-                            >
-                              {label}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {booking?.etaStages?.length ? (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                        Engagement stages
-                      </p>
-                      <ol className="space-y-2 text-sm text-slate-700">
-                        {booking.etaStages.map((stage, index) => (
-                          <li key={`${stage.label || stage.stage}-${index}`} className="flex gap-3">
-                            <span className="text-xs font-semibold text-slate-400">{index + 1}.</span>
-                            <span>
-                              {stage.label || stage.stage}
-                              {stage.minutes ? ` - ${stage.minutes} min` : null}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  ) : null}
-                  {booking?.communications && (
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">
-                        Communication modes
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {Object.entries(booking.communications)
-                          .filter(([, enabled]) => enabled)
-                          .map(([mode]) => (
-                            <span
-                              key={mode}
-                              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
-                            >
-                              {mode}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </section>
-              )}
-
-
-              {(addons.length > 0 || prepChecklist.length > 0) && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-6">
-                  {addons.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400 mb-3">
-                        Optional add-ons
-                      </h3>
-                      <ul className="space-y-3 text-sm text-slate-700">
-                        {addons.map((addon) => (
-                          <li key={addon.id} className="rounded-2xl border border-slate-100 p-3">
-                            <p className="font-semibold text-slate-900">{addon.name}</p>
-                            {Number.isFinite(Number(addon.price)) && (
-                              <p className="text-xs text-slate-500">{formatAddonPrice(addon, currency)}</p>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {prepChecklist.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400 mb-3">
-                        Prep checklist
-                      </h3>
-                      <ul className="space-y-2 text-sm text-slate-700">
-                        {prepChecklist.map((item, index) => (
-                          <li key={`${item}-${index}`} className="flex gap-2">
-                            <span className="text-emerald-500">-</span>
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </section>
-              )}
-
-              {warranty && (
-                <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-100 space-y-3">
-                  <h3 className="text-base font-semibold text-slate-900">Warranty & Support</h3>
-                  {warranty.durationDays ? (
-                    <p className="text-sm text-slate-700">
-                      Coverage duration: <span className="font-semibold text-slate-900">{warranty.durationDays} days</span>
+                  <label className="text-xs text-slate-600">
+                    Phone (optional)
+                    <input
+                      value={consultForm.phone}
+                      onChange={(e) => setConsultForm({ ...consultForm, phone: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                      placeholder="Include country code"
+                    />
+                  </label>
+                  <label className="text-xs text-slate-600">
+                    Preferred date & time
+                    <input
+                      type="datetime-local"
+                      value={consultForm.scheduledFor}
+                      onChange={(e) => setConsultForm({ ...consultForm, scheduledFor: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                    />
+                  </label>
+                  <label className="text-xs text-slate-600">
+                    Project summary
+                    <textarea
+                      value={consultForm.message}
+                      onChange={(e) => setConsultForm({ ...consultForm, message: e.target.value })}
+                      rows={3}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none"
+                      placeholder="What do you need help with?"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleConsultSubmit}
+                    disabled={consultState.submitting}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    {consultState.submitting ? "Sending..." : "Book consultation"}
+                  </button>
+                  {consultState.success ? (
+                    <p className="text-xs font-semibold text-emerald-600">
+                      Request logged. The associate and studio dashboard will see this instantly.
                     </p>
                   ) : null}
-                  {warranty.coverage ? <p className="text-sm text-slate-700">{warranty.coverage}</p> : null}
-                  {warranty.contact ? (
-                    <a
-                      href={`mailto:${warranty.contact}`}
-                      className="inline-flex text-sm font-semibold text-slate-900 underline decoration-dotted"
-                    >
-                      Warranty contact: {warranty.contact}
-                    </a>
-                  ) : null}
-                </section>
+                </div>
+              </div>
+            </Section>
+
+            <Section title="Deliverables">
+              {deliverables.length ? (
+                <div className="flex flex-wrap gap-2">{deliverables.map((d) => <Pill key={d}>{d}</Pill>)}</div>
+              ) : (
+                <p className="text-sm text-slate-600">No deliverables provided.</p>
               )}
-            </aside>
+            </Section>
           </div>
         </div>
       </main>
-
-      {selectedWorkspaceCard
-        ? (() => {
-          const mediaList =
-            selectedWorkspaceCard.media?.length
-              ? selectedWorkspaceCard.media
-              : selectedWorkspaceCard.preview
-                ? [{ url: selectedWorkspaceCard.preview, type: isVideoPreview(selectedWorkspaceCard.preview) ? "video" : "image" }]
-                : [];
-          const activeMedia = mediaList[selectedWorkspaceMediaIndex] || mediaList[0] || null;
-
-          return (
-            <div className="fixed inset-0 z-40 flex items-center justify-center px-4">
-              <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={closeWorkspaceCard} />
-              <div
-                role="dialog"
-                aria-modal="true"
-                className="relative z-50 w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200"
-              >
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-4">
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-slate-400">
-                      {selectedWorkspaceCard.subtype}
-                    </p>
-                    <h3 className="text-xl font-semibold text-slate-900">{selectedWorkspaceCard.title}</h3>
-                    {selectedWorkspaceCard.description ? (
-                      <p className="text-sm text-slate-600">{selectedWorkspaceCard.description}</p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    {selectedWorkspaceCard.status ? (
-                      <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white shadow">
-                        {selectedWorkspaceCard.status}
-                      </span>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={closeWorkspaceCard}
-                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-                {activeMedia ? (
-                  <div className="border-b border-slate-100 bg-slate-50 px-6 py-4 space-y-3">
-                    {activeMedia.type === "video" ? (
-                      <video className="w-full max-h-[460px] rounded-2xl border border-slate-200 shadow-sm" controls>
-                        <source src={activeMedia.url} />
-                      </video>
-                    ) : (
-                      <img
-                        src={activeMedia.url}
-                        alt={selectedWorkspaceCard.title}
-                        className="w-full rounded-2xl border border-slate-200 shadow-sm"
-                      />
-                    )}
-                    {mediaList.length > 1 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {mediaList.map((item, index) => (
-                          <button
-                            key={`${selectedWorkspaceCard.id}-media-${index}`}
-                            type="button"
-                            onClick={() => setSelectedWorkspaceMediaIndex(index)}
-                            className={`h-16 w-24 overflow-hidden rounded-lg border ${index === selectedWorkspaceMediaIndex
-                              ? "border-slate-900 ring-1 ring-slate-900/30"
-                              : "border-slate-200 hover:border-slate-300"
-                              }`}
-                            aria-label={`Preview ${index + 1}`}
-                          >
-                            {item.type === "video" ? (
-                              <div className="flex h-full w-full items-center justify-center bg-slate-900/80 text-[11px] font-semibold text-white">
-                                Video
-                              </div>
-                            ) : (
-                              <img src={item.url} alt="" className="h-full w-full object-cover" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
-                  <div className="text-xs text-slate-600">
-                    {selectedWorkspaceCard.href
-                      ? "Opens the workspace link in a new tab."
-                      : "No link provided for this item."}
-                  </div>
-                  <div className="flex gap-3">
-                    {selectedWorkspaceCard.href ? (
-                      <a
-                        href={selectedWorkspaceCard.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800"
-                      >
-                        Open link
-                        <span className="ml-2 text-[11px] opacity-80">&rarr;</span>
-                      </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={closeWorkspaceCard}
-                      className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()
-        : null}
-
       <Footer />
     </div>
   );
-};
-
-export default AssociatePortfolio;
+}

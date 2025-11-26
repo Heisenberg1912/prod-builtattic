@@ -82,7 +82,7 @@ const AssociateSchedule = () => {
       if (meetingHref) {
         window.open(meetingHref, "_blank", "noopener,noreferrer");
       }
-      navigate("/dashboard/associate");
+      navigate("/portal/associate");
     } catch (error) {
       console.error("associate_schedule_failed", error);
       toast.error(error?.message || "Could not request a meeting");

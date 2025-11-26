@@ -25,6 +25,7 @@ const AssetSchema = new mongoose.Schema(
     uploader: { type: mongoose.Types.ObjectId, ref: 'User' },
     product: { type: mongoose.Types.ObjectId, ref: 'Product', index: true },
     order: { type: mongoose.Types.ObjectId, ref: 'Order', index: true },
+    planUpload: { type: mongoose.Types.ObjectId, ref: 'PlanUpload', index: true },
     kind: {
       type: String,
       default: 'preview',

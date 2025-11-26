@@ -43,18 +43,17 @@ import Settings from "./pages/Settings";
 import SupportChatWidget from "./components/SupportChatWidget";
 import SuperAdminDashboard from "./pages/dashboard/SuperAdminDashboard";
 import UserDashboard from "./pages/dashboard/UserDashboard";
-import AssociateDashboard from "./pages/dashboard/AssociateDashboard";
-import AssociateListing from "./pages/dashboard/AssociateListing.jsx";
-import AssociateProfileEdit from "./pages/dashboard/AssociateProfileEdit.jsx";
-import FirmDashboard from "./pages/dashboard/FirmDashboard";
 import ClientDashboard from "./pages/dashboard/ClientDashboard";
 import VendorDashboard from "./pages/dashboard/SaleDashboard";
 import AdminDashboard from "./pages/dashboard/AdminDashboard";
+import StudioHubDashboard from "./pages/dashboard/StudioHubDashboard";
 import StudioDetail from "./pages/StudioDetail";
 import RegistrStrip from "./components/registrstrip";
 import { readStoredAuth } from "./services/auth.js";
 import VendorPortal from "./pages/VendorPortal.jsx";
 import Faqs from "./pages/Faqs.jsx";
+import StudioServicesWorkspace from "./pages/StudioServicesWorkspace.jsx";
+import DesignWorkspace from "./pages/DesignWorkspace.jsx";
 
 const ScrollToTop = () => {
   const location = useLocation();
@@ -240,13 +239,12 @@ const App = () => {
               <Route path="/orders" element={wrapWithTransition(<OrderHistory />)} />
               <Route path="/dashboard/super-admin" element={wrapWithTransition(<SuperAdminDashboard />)} />
               <Route path="/dashboard/admin" element={wrapWithTransition(<AdminDashboard />)} />
+              <Route path="/dashboard/studio-hub" element={wrapWithTransition(<StudioHubDashboard />)} />
               <Route path="/dashboard/user" element={wrapWithTransition(<UserDashboard />)} />
-              <Route path="/dashboard/associate" element={wrapWithTransition(<AssociateDashboard />)} />
-              <Route path="/dashboard/associate/listing" element={wrapWithTransition(<AssociateListing />)} />
-              <Route path="/dashboard/associate/edit" element={wrapWithTransition(<AssociateProfileEdit />)} />
-              <Route path="/dashboard/firm" element={wrapWithTransition(<FirmDashboard />)} />
               <Route path="/dashboard/client" element={wrapWithTransition(<ClientDashboard />)} />
               <Route path="/dashboard/vendor" element={wrapWithTransition(<VendorDashboard />)} />
+              <Route path="/workspace/studio" element={wrapWithTransition(<StudioServicesWorkspace />)} />
+              <Route path="/workspace/design" element={wrapWithTransition(<DesignWorkspace />)} />
               <Route path="/studioDetail" element={wrapWithTransition(<StudioDetail />)} />
               <Route path="/studio/:id" element={wrapWithTransition(<StudioDetail />)} />
               <Route path="/faqs" element={wrapWithTransition(<Faqs />)} />

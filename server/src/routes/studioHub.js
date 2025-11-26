@@ -1,15 +1,8 @@
 import { Router } from 'express';
-import multer from 'multer';
 
 import * as auth from '../middleware/auth.js';
 import { ROLES } from '../config/constants.js';
-import {
-  listPlanUploads,
-  createPlanUpload,
-  updatePlanUpload,
-  deletePlanUpload,
-  attachPlanMedia,
-} from '../controllers/planUploadController.js';
+import { getStudioHub } from '../controllers/studioHubController.js';
 
 const safeMiddleware = (fn) => (typeof fn === 'function' ? fn : (_req, _res, next) => next());
 const safeFactory = (factory, ...args) =>
@@ -20,19 +13,14 @@ const authorizeWorkspace = safeFactory(
   auth.authorizeRoles,
   ROLES.ASSOCIATE,
   ROLES.FIRM,
-  ROLES.VENDOR,
   ROLES.ADMIN,
   ROLES.SUPER_ADMIN,
+  ROLES.VENDOR,
 );
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 75 * 1024 * 1024 } });
 router.use(authenticateJWT, authorizeWorkspace);
 
-router.get('/', listPlanUploads);
-router.post('/', createPlanUpload);
-router.patch('/:id', updatePlanUpload);
-router.delete('/:id', deletePlanUpload);
-router.post('/:id/media', upload.single('file'), attachPlanMedia);
+router.get('/', getStudioHub);
 
 export default router;

@@ -1,8 +1,8 @@
 import mongoose from "mongoose";
 import { z } from "zod";
 import Product from "../models/Product.js";
-import { ensureFirmMembership } from "../services/roleProvisioning.js";
 import { ensureUniqueSlug } from "../utils/slugify.js";
+import { resolveFirmIdAsync } from "../utils/firmAccess.js";
 
 const OBJECT_ID = z
   .string({ invalid_type_error: "firmId must be a string" })
@@ -103,48 +103,11 @@ const studioPayloadSchema = z
 
 const httpError = (status, message, details) => Object.assign(new Error(message), { statusCode: status, details });
 
-const isGlobalAdmin = (user) => {
-  const primary = String(user?.role || "").toLowerCase();
-  if (primary === "superadmin" || primary === "admin") return true;
-  const globals = (user?.rolesGlobal || []).map((role) => String(role).toLowerCase());
-  return globals.includes("superadmin") || globals.includes("admin");
-};
-
-const resolveFirmId = async (req, explicitFirmId) => {
-  const memberships = (req.user?.memberships || []).map((membership) => ({
-    firm: membership.firm?.toString(),
-    role: String(membership.role || "").toLowerCase(),
-  }));
-  const global = isGlobalAdmin(req.user);
-
-  let firmId = explicitFirmId || req.params.firmId || req.query.firmId;
-  if (!firmId && memberships.length === 1) {
-    firmId = memberships[0].firm;
-  }
-
-  if (!firmId) {
-    if (!global) {
-      const provisioned = await ensureFirmMembership(req.user, ["owner", "admin"]);
-      if (provisioned?.firm) return provisioned.firm;
-    }
-    if (global) {
-      throw httpError(400, "firmId is required for admin users");
-    }
-    throw httpError(403, "No firm membership found for user");
-  }
-
-  if (!mongoose.isValidObjectId(firmId)) {
-    throw httpError(400, "Invalid firmId provided");
-  }
-
-  if (global) return firmId;
-
-  const membership = memberships.find((item) => item.firm === firmId);
-  if (!membership) {
-    throw httpError(403, "You are not linked to this firm");
-  }
-  return membership.firm;
-};
+const resolveFirmId = (req, explicitFirmId) =>
+  resolveFirmIdAsync(req, explicitFirmId, {
+    provisionIfMissing: true,
+    allowedRoles: ["owner", "admin", "vendor", "associate"],
+  });
 
 const sanitiseArray = (value) => {
   if (!Array.isArray(value)) return undefined;

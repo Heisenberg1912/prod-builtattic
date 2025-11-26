@@ -41,6 +41,7 @@
 - Google OAuth is enabled by setting `GOOGLE_CLIENT_ID` (backend) and `VITE_GOOGLE_CLIENT_ID` (frontend). Use the same Web Client ID you create inside Google Cloud Console so `/auth/google` and the login page can exchange tokens.
 - In Google Cloud Console, add every environment you use to **Authorized JavaScript origins** (for example `http://localhost:5173`, `http://localhost:4173`, `http://localhost:4000`, `https://builtattic.com`, `https://app.builtattic.com`, `https://dashboard.builtattic.com`, and any staging domains). For completeness you can also register callback URLs such as `https://app.builtattic.com/auth/google/callback` even though the current popup flow does not hit them.
 - `npm run reset:data` removes every non-super-admin account plus related carts/orders/threads. Add `ALLOW_DATA_RESET=true` if you ever need to run it against a production database; otherwise it will refuse to execute. Follow up with the seed scripts (`npm run seed:superadmin`, `npm run seed:users`, etc.) to repopulate fixtures.
+- `npm run cleanup:workspaces` purges firm + associate dashboards and Design Studio data (firms, studio products, packs, meetings, uploads, downloads, chats, ratings, and the associated user accounts/memberships). Set `ALLOW_WORKSPACE_PURGE=true` before running to confirm the destructive wipe.
 
 Main entry: `src/index.js`
 

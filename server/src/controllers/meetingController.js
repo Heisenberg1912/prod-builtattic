@@ -4,6 +4,7 @@ import MeetingSchedule from '../models/MeetingSchedule.js';
 import { determineOwnerScope, OWNER_TYPES } from '../utils/ownerScope.js';
 
 const MEETING_STATUSES = new Set(['scheduled', 'completed', 'cancelled']);
+const MEETING_TYPES = new Set(['consultation', 'review', 'handover', 'site', 'check-in', 'other']);
 
 const httpError = (status, message, details) =>
   Object.assign(new Error(message), { statusCode: status, details });
@@ -33,6 +34,11 @@ const toDate = (value) => {
 const pickStatus = (value, fallback = 'scheduled') => {
   const normalized = String(value || '').toLowerCase();
   return MEETING_STATUSES.has(normalized) ? normalized : fallback;
+};
+
+const pickType = (value, fallback = 'consultation') => {
+  const normalized = String(value || '').toLowerCase();
+  return MEETING_TYPES.has(normalized) ? normalized : fallback;
 };
 
 const normaliseAttendees = (attendees) => {
@@ -66,7 +72,10 @@ const mapMeeting = (meeting) => ({
   scheduledFor: meeting.scheduledFor,
   durationMinutes: meeting.durationMinutes ?? null,
   status: meeting.status,
+  type: meeting.type || 'consultation',
+  location: meeting.location || '',
   meetingLink: meeting.meetingLink || '',
+  recordingUrl: meeting.recordingUrl || '',
   attendees: Array.isArray(meeting.attendees) ? meeting.attendees : [],
   createdAt: meeting.createdAt,
   updatedAt: meeting.updatedAt,
@@ -77,6 +86,7 @@ export const listMeetings = async (req, res, next) => {
     const scope = await resolveScopeOrThrow(req.user, req.query.ownerType);
     const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
     const statusQuery = String(req.query.status || '').toLowerCase();
+    const typeQuery = String(req.query.type || '').toLowerCase();
     const filters = {
       ownerType: scope.ownerType,
       ownerId: scope.ownerId,
@@ -88,6 +98,9 @@ export const listMeetings = async (req, res, next) => {
     } else {
       filters.status = 'scheduled';
       filters.scheduledFor = { $gte: new Date() };
+    }
+    if (MEETING_TYPES.has(typeQuery)) {
+      filters.type = typeQuery;
     }
 
     const meetings = await MeetingSchedule.find(filters).sort({ scheduledFor: 1 }).limit(limit).lean();
@@ -119,7 +132,10 @@ export const scheduleMeeting = async (req, res, next) => {
       scheduledFor,
       durationMinutes: toNumber(req.body?.durationMinutes, 30),
       status: pickStatus(req.body?.status, 'scheduled'),
+      type: pickType(req.body?.type, 'consultation'),
+      location: String(req.body?.location || '').trim(),
       meetingLink: String(req.body?.meetingLink || '').trim(),
+      recordingUrl: String(req.body?.recordingUrl || '').trim(),
       attendees,
       createdBy: req.user?._id ? new mongoose.Types.ObjectId(req.user._id) : undefined,
     });
@@ -168,8 +184,17 @@ export const updateMeeting = async (req, res, next) => {
     if (req.body?.status !== undefined) {
       meeting.status = pickStatus(req.body.status, meeting.status);
     }
+    if (req.body?.type !== undefined) {
+      meeting.type = pickType(req.body.type, meeting.type);
+    }
+    if (req.body?.location !== undefined) {
+      meeting.location = String(req.body.location || '').trim();
+    }
     if (req.body?.meetingLink !== undefined) {
       meeting.meetingLink = String(req.body.meetingLink || '').trim();
+    }
+    if (req.body?.recordingUrl !== undefined) {
+      meeting.recordingUrl = String(req.body.recordingUrl || '').trim();
     }
     if (req.body?.attendees !== undefined) {
       meeting.attendees = normaliseAttendees(req.body.attendees);
@@ -214,4 +239,3 @@ export default {
   updateMeeting,
   deleteMeeting,
 };
-

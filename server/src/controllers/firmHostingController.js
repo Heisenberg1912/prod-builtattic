@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import Firm from '../models/Firm.js';
 import StudioRequest from '../models/StudioRequest.js';
-import { resolveFirmId } from '../utils/firmAccess.js';
+import { resolveFirmIdAsync } from '../utils/firmAccess.js';
 import Product from '../models/Product.js';
 
 const DEFAULT_SERVICE_SUMMARY =
@@ -36,7 +36,7 @@ const normaliseTile = (tile, type, index = 0) => ({
 
 export const getHostingConfig = async (req, res, next) => {
   try {
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmIdAsync(req, undefined, { provisionIfMissing: true, allowedRoles: ['owner', 'admin', 'vendor'] });
     const firm = await Firm.findById(firmId).select('hosting name slug').lean();
     if (!firm) {
       return res.status(404).json({ ok: false, error: 'Firm not found' });
@@ -49,7 +49,7 @@ export const getHostingConfig = async (req, res, next) => {
 
 export const upsertHostingConfig = async (req, res, next) => {
   try {
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmIdAsync(req, undefined, { provisionIfMissing: true, allowedRoles: ['owner', 'admin', 'vendor'] });
     const parsed = hostingSchema.parse(req.body || {});
     const payload = {
       enabled: parsed.enabled ?? true,
@@ -74,7 +74,7 @@ export const upsertHostingConfig = async (req, res, next) => {
 
 export const listStudioRequests = async (req, res, next) => {
   try {
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmIdAsync(req, undefined, { provisionIfMissing: true, allowedRoles: ['owner', 'admin', 'vendor'] });
     const filter = { firm: firmId };
     if (req.query.status) filter.status = req.query.status;
     const requests = await StudioRequest.find(filter)
@@ -89,7 +89,7 @@ export const listStudioRequests = async (req, res, next) => {
 
 export const updateStudioRequestStatus = async (req, res, next) => {
   try {
-    const firmId = resolveFirmId(req);
+    const firmId = await resolveFirmIdAsync(req, undefined, { provisionIfMissing: true, allowedRoles: ['owner', 'admin', 'vendor'] });
     const status = requestStatusSchema.parse(req.body?.status);
     const request = await StudioRequest.findOneAndUpdate(
       { _id: req.params.id, firm: firmId },

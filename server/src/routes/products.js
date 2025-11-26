@@ -173,23 +173,8 @@ router.post(
   }
 );
 
-router.get('/catalog/:slug', async (req, res) => {
-  try {
-    const item = await Product.findOne({
-      slug: req.params.slug,
-      status: 'published',
-    })
-      .populate('firm', 'name slug tagline coverImage rating category styles services contact')
-      .lean();
-
-    if (!item) {
-      return res.status(404).json({ ok: false, error: 'Catalog item not found' });
-    }
-
-    res.json({ ok: true, item });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
-  }
+router.get('/catalog/:slug', async (_req, res) => {
+  res.status(410).json({ ok: false, error: 'Catalog slug routes are disabled while we rebuild.' });
 });
 
 export default router;

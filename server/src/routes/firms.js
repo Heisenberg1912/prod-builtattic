@@ -6,15 +6,9 @@ import { requireAuth, requireFirmRole } from '../rbac/guards.js';
 const r = Router();
 
 r.post('/vendor/apply', requireAuth, async (req, res) => {
-  const { name, slug } = req.body || {};
-  const exists = await Firm.findOne({ slug });
-  if (exists) {
-    return res.status(409).json({ ok: false, error: 'slug exists' });
-  }
-
+  const { name } = req.body || {};
   const firm = await Firm.create({
     name,
-    slug,
     ownerUserId: req.user._id,
     approved: false,
   });

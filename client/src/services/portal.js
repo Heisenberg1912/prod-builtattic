@@ -1,6 +1,6 @@
 import client from "../config/axios.jsx";
 import { ASSOCIATE_PORTAL_FALLBACK, VENDOR_PORTAL_FALLBACK, FIRM_PORTAL_FALLBACK } from "../data/portalFallbacks.js";
-import { VENDOR_DASHBOARD_FALLBACK, FIRM_DASHBOARD_FALLBACK } from "../data/dashboardFallbacks.js";
+import { FIRM_DASHBOARD_FALLBACK } from "../data/dashboardFallbacks.js";
 import { normaliseAssetUrl, buildDriveImageUrl } from "../utils/studioForm.js";
 
 export const ASSOCIATE_PROFILE_DRAFT_KEY = "associate_portal_profile_draft";
@@ -9,6 +9,7 @@ const ASSOCIATE_PROFILE_DRAFT_EVENT = "associate-profile-draft";
 const ASSOCIATE_PROFILE_CHANNEL = "associate_profile_draft";
 const FIRM_PROFILE_DRAFT_KEY = "firm_portal_profile_draft";
 const FIRM_STUDIOS_STORAGE_KEY = "firm_portal_studios_mock";
+const VENDOR_DASHBOARD_FALLBACK = {};
 
 const okOrThrow = (response, fallbackMessage) => {
   if (response?.ok === false) {
@@ -34,6 +35,40 @@ const portalApiEnabled = (import.meta?.env?.VITE_ENABLE_PORTAL_API || "true").to
 let portalMockMode = portalApiEnabled ? false : true;
 const shouldMockPortalApi = () => portalMockMode;
 const draftsEnabled = () => shouldMockPortalApi();
+const hasAuthToken = () => {
+  if (typeof window === "undefined") return false;
+  const raw = localStorage.getItem("auth_token");
+  return Boolean(raw && raw !== "null" && raw !== "undefined");
+};
+export const hasAssociateAccess = () => {
+  if (!hasAuthToken()) return false;
+  if (typeof window === "undefined") return false;
+  const role = (localStorage.getItem("role") || "").toLowerCase();
+  return role === "associate" || role === "firm" || role === "admin" || role === "super_admin";
+};
+const ASSOCIATE_PORTAL_BLOCK_KEY = "associate_portal_block_until";
+let associateAuthBlockedUntil = 0;
+
+const loadBlockUntil = () => {
+  if (associateAuthBlockedUntil) return associateAuthBlockedUntil;
+  if (typeof window === "undefined") return 0;
+  const stored = Number(localStorage.getItem(ASSOCIATE_PORTAL_BLOCK_KEY));
+  if (Number.isFinite(stored)) {
+    associateAuthBlockedUntil = stored;
+  }
+  return associateAuthBlockedUntil;
+};
+
+const setBlockUntil = (timestampMs) => {
+  associateAuthBlockedUntil = timestampMs;
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(ASSOCIATE_PORTAL_BLOCK_KEY, String(timestampMs));
+    } catch {
+      /* ignore */
+    }
+  }
+};
 
 const isPortalNetworkError = (error) => !error?.response;
 const AUTH_ERROR_STATUSES = new Set([401, 403, 419]);
@@ -407,6 +442,26 @@ export async function fetchAssociatePortalProfile(options = {}) {
   if (options.preferDraft && draft) {
     return { ok: true, profile: draft, source: "draft", stale: false };
   }
+  const now = Date.now();
+  const blockedUntil = loadBlockUntil();
+  if (blockedUntil && now < blockedUntil) {
+    return {
+      ok: false,
+      authRequired: true,
+      profile: draft || getLocalAssociateProfile("fallback").profile || ASSOCIATE_PORTAL_FALLBACK,
+      source: draft ? "draft" : "fallback",
+      error: "Sign in to manage your Skill Studio profile",
+    };
+  }
+  if (!hasAuthToken()) {
+    return {
+      ok: false,
+      authRequired: true,
+      profile: draft || getLocalAssociateProfile("fallback").profile || ASSOCIATE_PORTAL_FALLBACK,
+      source: draft ? "draft" : "fallback",
+      error: "Sign in to manage your Skill Studio profile",
+    };
+  }
   if (shouldMockPortalApi()) {
     const local = getLocalAssociateProfile("mock");
     return { ok: true, profile: local.profile, source: local.source, stale: local.source !== "remote" };
@@ -422,6 +477,17 @@ export async function fetchAssociatePortalProfile(options = {}) {
     }
     return { ok: true, profile, source: "remote" };
   } catch (error) {
+    if (isPortalAuthError(error)) {
+      setBlockUntil(Date.now() + 15 * 60 * 1000);
+      const fallbackProfile = draft || getLocalAssociateProfile("fallback").profile || ASSOCIATE_PORTAL_FALLBACK;
+      return {
+        ok: false,
+        authRequired: true,
+        profile: fallbackProfile,
+        source: draft ? "draft" : "fallback",
+        error: error?.response?.data?.error || error.message || "Sign in to manage your Skill Studio profile",
+      };
+    }
     if (handlePortalNetworkFailure(error)) {
       const local = draft ? { profile: draft, source: "draft" } : getLocalAssociateProfile("fallback");
       return {

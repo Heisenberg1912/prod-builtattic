@@ -3,8 +3,8 @@ import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import Firm from '../models/Firm.js';
 import AssociateProfile from '../models/AssociateProfile.js';
-import PlanUpload from '../models/PlanUpload.js';
 import ServicePack from '../models/ServicePack.js';
+import PlanUpload from '../models/PlanUpload.js';
 import DummyCatalogEntry from '../models/DummyCatalogEntry.js';
 import { attachWeb3Proof, createWeb3Proof, summariseProofs } from '../services/web3ProofService.js';
 import { mapCatalogEntry } from '../utils/dummyCatalog.js';
@@ -155,6 +155,18 @@ async function fetchCatalog(kind, query, { includeFirm = true, defaultLimit = 12
 
   const match = { status: 'published', kind };
 
+  const limitInput = Number(limit);
+  const unlimited = limitInput === 0;
+  const maxLimit = 500;
+  const limitNum = unlimited
+    ? 0
+    : Math.min(
+        Number.isFinite(limitInput) && limitInput > 0 ? Math.floor(limitInput) : defaultLimit,
+        maxLimit,
+      );
+  const pageNum = unlimited ? 1 : Math.max(Number(page) || 1, 1);
+  const skip = unlimited ? 0 : (pageNum - 1) * limitNum;
+
   if (firmId) {
     match.firm = firmId;
   }
@@ -166,7 +178,7 @@ async function fetchCatalog(kind, query, { includeFirm = true, defaultLimit = 12
         meta: {
           total: 0,
           page: 1,
-          pageSize: Number(limit) || defaultLimit,
+          pageSize: unlimited ? 0 : limitNum || defaultLimit,
           facets: {},
           web3: summariseProofs(),
         },
@@ -188,15 +200,14 @@ async function fetchCatalog(kind, query, { includeFirm = true, defaultLimit = 12
     if (maxPrice) match['pricing.basePrice'].$lte = Number(maxPrice);
   }
 
-  const limitNum = Math.min(Number(limit) || defaultLimit, 60);
-  const pageNum = Math.max(Number(page) || 1, 1);
-  const skip = (pageNum - 1) * limitNum;
-
   const queryExec = Product.find(match)
     .sort({ createdAt: -1 })
     .skip(skip)
-    .limit(limitNum)
     .lean();
+
+  if (!unlimited && limitNum > 0) {
+    queryExec.limit(limitNum);
+  }
 
   if (includeFirm) {
     queryExec.populate(
@@ -242,7 +253,7 @@ async function fetchCatalog(kind, query, { includeFirm = true, defaultLimit = 12
     meta: {
       total,
       page: pageNum,
-      pageSize: limitNum,
+      pageSize: unlimited ? total : limitNum,
       facets: {
         categories: facetsDoc.categories?.map((c) => ({ name: c._id, count: c.count })) || [],
         tags: facetsDoc.tags?.map((t) => ({ name: t._id, count: t.count })) || [],
@@ -274,52 +285,8 @@ router.get('/studios', marketplaceCache(), async (req, res) => {
   }
 });
 
-router.get('/studios/:slug', async (req, res) => {
-  try {
-    const { slug: idOrSlug } = req.params;
-    const query = {
-      status: 'published',
-      kind: 'studio',
-      $or: [{ slug: idOrSlug }],
-    };
-
-    if (mongoose.Types.ObjectId.isValid(idOrSlug)) {
-      query.$or.push({ _id: idOrSlug });
-    }
-
-    const item = await Product.findOne(query)
-      .populate('firm', 'name slug tagline coverImage rating ratingsCount category styles services contact hosting')
-      .lean();
-
-    if (!item) {
-      return res.status(404).json({ ok: false, error: 'Studio not found' });
-    }
-
-    let planUploads = [];
-    let servicePacks = [];
-    if (item.firm?._id) {
-      const ownerId = new mongoose.Types.ObjectId(item.firm._id);
-      [planUploads, servicePacks] = await Promise.all([
-        PlanUpload.find({ ownerType: 'firm', ownerId }).sort({ updatedAt: -1 }).limit(12).lean(),
-        ServicePack.find({ ownerType: 'firm', ownerId, status: { $in: ['published', 'active', 'available'] } })
-          .sort({ updatedAt: -1 })
-          .limit(8)
-          .lean(),
-      ]);
-    }
-
-    const decoratedItem = {
-      ...item,
-      planUploads: planUploads.map(mapPlanUploadForMarketplace),
-      servicePacks: servicePacks.map(mapServicePackForMarketplace),
-    };
-
-    attachWeb3Proof(decoratedItem, 'studio');
-    res.json({ ok: true, item: decoratedItem });
-  } catch (error) {
-    logger.error('marketplace_studio_detail_error', { error: error.message, slug: req.params.slug });
-    res.status(500).json({ ok: false, error: error.message || 'Unable to load studio' });
-  }
+router.get('/studios/:slug', async (_req, res) => {
+  res.status(410).json({ ok: false, error: 'Studio detail by slug is disabled while we rebuild.' });
 });
 
 router.get('/design-studio/hosting', async (req, res) => {
@@ -373,26 +340,8 @@ router.get('/materials', marketplaceCache(), async (req, res) => {
   }
 });
 
-router.get('/materials/:slug', async (req, res) => {
-  try {
-    const item = await Product.findOne({
-      slug: req.params.slug,
-      status: 'published',
-      kind: 'material',
-    })
-      .populate('firm', 'name slug tagline coverImage rating ratingsCount category styles services contact hosting')
-      .lean();
-
-    if (!item) {
-      return res.status(404).json({ ok: false, error: 'Material not found' });
-    }
-
-    attachWeb3Proof(item, 'material');
-    res.json({ ok: true, item });
-  } catch (error) {
-    logger.error('marketplace_material_detail_error', { error: error.message, slug: req.params.slug });
-    res.status(500).json({ ok: false, error: 'Unable to load material detail' });
-  }
+router.get('/materials/:slug', async (_req, res) => {
+  res.status(410).json({ ok: false, error: 'Material detail by slug is disabled while we rebuild.' });
 });
 
 router.get('/firms', marketplaceCache(), async (req, res) => {
@@ -425,6 +374,74 @@ router.get('/promotions', (req, res) => {
   res.json({ ok: true, items: promotionSummaries });
 });
 
+const mapPlanTile = (plan) => ({
+  id: plan._id.toString(),
+  projectTitle: plan.projectTitle,
+  category: plan.category || '',
+  primaryStyle: plan.primaryStyle || '',
+  tags: Array.isArray(plan.tags) ? plan.tags : [],
+  description: plan.description || '',
+  status: plan.status || 'draft',
+  coverImage:
+    plan.coverImage ||
+    (Array.isArray(plan.media) && plan.media[0]?.thumbnail) ||
+    (Array.isArray(plan.renderImages) && plan.renderImages[0]) ||
+    '',
+  updatedAt: plan.updatedAt,
+});
+
+const mapAssociateProfile = async (profile) => {
+  if (!profile) return null;
+  const computedName =
+    profile.fullName ||
+    profile.user?.name ||
+    [profile.user?.firstName, profile.user?.lastName].filter(Boolean).join(' ') ||
+    profile.title ||
+    null;
+  const safeToolset = Array.isArray(profile.toolset) ? profile.toolset.filter(Boolean) : profile.softwares || [];
+  const membershipFirmIds = Array.isArray(profile.user?.memberships)
+    ? profile.user.memberships.map((m) => m?.firm).filter(Boolean)
+    : [];
+
+  const ownerIds = [profile._id, profile.user?._id, profile.user, ...membershipFirmIds]
+    .filter(Boolean)
+    .map((id) => (id && id._id ? id._id : id))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  const services = await ServicePack.find({
+    ownerType: { $in: ['associate', 'firm'] },
+    ownerId: { $in: ownerIds },
+    status: { $in: ['published', 'active', 'available'] },
+  })
+    .sort({ updatedAt: -1 })
+    .limit(12)
+    .lean();
+  const planUploads = await PlanUpload.find({
+    ownerType: { $in: ['associate', 'firm'] },
+    ownerId: { $in: ownerIds },
+    status: { $in: ['published'] },
+  })
+    .sort({ updatedAt: -1 })
+    .limit(12)
+    .populate({
+      path: 'media.asset',
+      select: 'publicUrl storagePath driveFileId mimeType sizeBytes key secure originalName kind',
+    })
+    .lean();
+
+  const assembled = {
+    ...profile,
+    name: computedName,
+    firmName: profile.firmName || profile.company || '',
+    languages: profile.languages || [],
+    toolset: safeToolset,
+    services,
+    planUploads: planUploads.map(mapPlanTile),
+  };
+  return attachWeb3Proof(assembled, 'associate');
+};
+
 router.get('/associates', marketplaceCache(), async (req, res) => {
   try {
     const { search, skill, software, timezone } = req.query;
@@ -433,6 +450,8 @@ router.get('/associates', marketplaceCache(), async (req, res) => {
       match.$or = [
         { title: { $regex: new RegExp(search, 'i') } },
         { summary: { $regex: new RegExp(search, 'i') } },
+        { fullName: { $regex: new RegExp(search, 'i') } },
+        { firmName: { $regex: new RegExp(search, 'i') } },
       ];
     }
     if (skill) match.specialisations = { $regex: new RegExp(skill, 'i') };
@@ -440,13 +459,13 @@ router.get('/associates', marketplaceCache(), async (req, res) => {
     if (timezone) match.timezone = timezone;
 
     const associates = await AssociateProfile.find(match)
-      .populate('user', 'email role')
+      .populate('user', 'email role firstName lastName name memberships')
       .lean();
 
-    const decoratedAssociates = associates.map((associate) => attachWeb3Proof(associate, 'associate'));
-    const web3Summary = summariseProofs(decoratedAssociates.map((associate) => associate.web3Proof));
+    const decoratedAssociates = await Promise.all(associates.map((associate) => mapAssociateProfile(associate)));
+    const web3Summary = summariseProofs(decoratedAssociates.map((associate) => associate?.web3Proof));
 
-    res.json({ ok: true, items: decoratedAssociates, meta: { total: decoratedAssociates.length, web3: web3Summary } });
+    res.json({ ok: true, items: decoratedAssociates.filter(Boolean), meta: { total: decoratedAssociates.length, web3: web3Summary } });
   } catch (error) {
     logger.error('marketplace_associates_error', { error: error.message });
     res.status(500).json({ ok: false, error: 'Unable to load associates', items: [], meta: { total: 0, web3: summariseProofs() } });
@@ -478,17 +497,17 @@ router.get('/associates/:id', async (req, res) => {
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Associate id is required' });
     }
-    const isObjectId = mongoose.Types.ObjectId.isValid(id);
-    const match = isObjectId
+    const match = mongoose.Types.ObjectId.isValid(id)
       ? { $or: [{ _id: id }, { user: id }] }
-      : { slug: id };
+      : { _id: null }; // ignore slug lookup; only ids
+
     const associate = await AssociateProfile.findOne(match)
       .populate('user', 'email role firstName lastName name')
       .lean();
     if (!associate) {
       return res.status(404).json({ ok: false, error: 'Associate not found' });
     }
-    const decorated = attachWeb3Proof(associate, 'associate');
+    const decorated = await mapAssociateProfile(associate);
     res.json({ ok: true, item: decorated });
   } catch (error) {
     logger.error('marketplace_associate_detail_error', { error: error.message, id: req.params.id });

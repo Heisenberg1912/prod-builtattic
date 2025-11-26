@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
 
 import { buyNow } from "../services/orders.js";
-import { fetchProductBySlug } from "../services/marketplace.js";
 import { productCatalog } from "../data/products.js";
 
 const resolveUnitPrice = (product) => {
@@ -43,18 +42,25 @@ const Buy = () => {
       setLoading(true);
       setError(null);
       try {
-        const item = await fetchProductBySlug(id);
+        const match = productCatalog.find(
+          (entry) =>
+            entry._id === id ||
+            entry.id === id ||
+            entry.slug === id ||
+            String(entry._id) === String(id)
+        );
         if (!active) return;
-        if (item) {
-          setProduct(item);
+        if (match) {
+          setProduct(match);
+          setError(null);
         } else {
           setProduct(null);
-          setError('Product not found.');
+          setError("Product lookup by slug is disabled and no local match was found.");
         }
       } catch (err) {
         if (!active) return;
         setProduct(null);
-        setError(err?.message || 'Unable to load product details.');
+        setError(err?.message || "Unable to load product details.");
       } finally {
         if (active) setLoading(false);
       }

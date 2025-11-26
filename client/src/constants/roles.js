@@ -17,8 +17,8 @@ export const roleDashboardPath = {
   superadmin: "/dashboard/super-admin",
   admin: "/dashboard/admin",
   user: "/dashboard/user",
-  associate: "/dashboard/associate",
-  firm: "/dashboard/firm",
+  associate: "/dashboard/studio-hub",
+  firm: "/dashboard/studio-hub",
   client: "/dashboard/client",
   vendor: "/dashboard/vendor",
 };

@@ -44,7 +44,7 @@ const registrationLayouts = {
     {
       key: "profile",
       title: "Showcase & compliance",
-      description: "Optional right now. Finish these from your dashboard once you land.",
+      description: "Optional right now. Finish these from your workspace once you land.",
       optional: true,
       fields: makeOptional([
         { key: "registrationId", label: "Registration ID", type: "text" },
@@ -114,7 +114,7 @@ const registrationLayouts = {
     {
       key: "profile",
       title: "Business details",
-      description: "Optional right now. Finish these from your dashboard once you land.",
+      description: "Optional right now. Finish these from your workspace once you land.",
       optional: true,
       fields: makeOptional([
         { key: "registrationId", label: "Business Registration ID / GSTIN", type: "text" },
@@ -142,96 +142,11 @@ const registrationLayouts = {
       ]),
     },
   ],
-  associate: [
-    {
-      key: "essentials",
-      title: "Associate essentials",
-      description: "Share the basics so we can provision your specialist dashboard.",
-      fields: withPasswords([
-        { key: "fullName", label: "Full name", type: "text" },
-        { key: "email", label: "Email", type: "email" },
-        { key: "phone", label: "Phone (E.164)", type: "tel", placeholder: "+91 98765 43210" },
-        { key: "country", label: "Country", type: "text" },
-        { key: "city", label: "City", type: "text" },
-      ]),
-    },
-    {
-      key: "profile",
-      title: "Skills & credentials",
-      description: "Add education, files, and availability now or later from the onboarding checklist.",
-      optional: true,
-      fields: makeOptional([
-        {
-          key: "educationLevel",
-          label: "Education level",
-          type: "select",
-          options: educationLevels,
-        },
-        {
-          key: "verificationDocument",
-          label: "Verification (degree / ID)",
-          type: "file",
-          accept: documentUploadAccept,
-        },
-        {
-          key: "experienceYears",
-          label: "Experience (years)",
-          type: "number",
-          placeholder: "5",
-          inputProps: { min: "0" },
-        },
-        {
-          key: "skills",
-          label: "Skills",
-          type: "textarea",
-          placeholder: "Revit, Rhino, FF&E sourcing",
-        },
-        {
-          key: "primaryCategories",
-          label: "Primary categories",
-          type: "textarea",
-          placeholder: "Residential, Hospitality",
-        },
-        {
-          key: "primaryStyles",
-          label: "Primary styles",
-          type: "textarea",
-          placeholder: "Brutalist, Tropical minimalism",
-        },
-        {
-          key: "designRate",
-          label: "Design rate ($/sqft)",
-          type: "text",
-          placeholder: "$8 / sqft",
-        },
-        {
-          key: "availability",
-          label: "Availability",
-          type: "select",
-          options: availabilityOptions,
-        },
-        {
-          key: "workMode",
-          label: "Work mode",
-          type: "select",
-          options: workModeOptions,
-        },
-        { key: "portfolioLink", label: "Portfolio link", type: "url", optional: true },
-        {
-          key: "resumeUpload",
-          label: "Portfolio / resume upload",
-          type: "file",
-          optional: true,
-          accept: documentUploadAccept,
-        },
-      ]),
-    },
-  ],
   user: [
     {
       key: "essentials",
       title: "Client essentials",
-      description: "Your universal login for client dashboards and proposal tracking.",
+      description: "Your universal login for the client console and proposal tracking.",
       fields: withPasswords([
         { key: "fullName", label: "Full name", type: "text" },
         { key: "email", label: "Email", type: "email" },
@@ -269,26 +184,20 @@ const registrationLayouts = {
     },
   ],
 };
+registrationLayouts.workspace = registrationLayouts.firm;
 
 const roleOptions = [
-  { value: "firm", label: "Studio / firm" },
-  { value: "associate", label: "Associate" },
+  { value: "workspace", label: "Studio / Associate workspace" },
   { value: "vendor", label: "Vendor" },
   { value: "user", label: "Client / end user" },
 ];
 
 const roleShortcuts = [
   {
-    value: "firm",
-    label: "Studios & firms",
-    detail: "Publish services, invite your team, and unlock marketplace briefs.",
+    value: "workspace",
+    label: "Studios & associates",
+    detail: "Publish services, invite your team, and unlock briefs.",
     stat: "Avg setup: 4 min",
-  },
-  {
-    value: "associate",
-    label: "Associates",
-    detail: "Plug into projects as a specialist or fractional teammate.",
-    stat: "Best for freelancers",
   },
   {
     value: "vendor",
@@ -307,7 +216,7 @@ const roleShortcuts = [
 const featureHighlights = [
   {
     title: "Only essentials required",
-    description: "Create credentials now. Your dashboard reminds you to upload proofs later.",
+    description: "Create credentials now. Your workspace reminds you to upload proofs later.",
   },
   {
     title: "Google-ready onboarding",
@@ -315,20 +224,15 @@ const featureHighlights = [
   },
   {
     title: "Role-specific workspaces",
-    description: "Studios, associates, and clients land in guided dashboards with tailored checklists.",
+    description: "Studios, associates, vendors, and clients land in guided workspaces with tailored checklists.",
   },
 ];
 
 const roleCopy = {
-  firm: {
+  workspace: {
     badge: "Studios",
-    heading: "Launch your studio HQ",
-    description: "Spin up a marketplace-ready workspace and finish diligence inside your dashboard.",
-  },
-  associate: {
-    badge: "Associates",
-    heading: "Create your specialist profile",
-    description: "Lock in access with basic details; complete your skill matrix once inside.",
+    heading: "Launch your studio workspace",
+    description: "Spin up a marketplace-ready workspace and finish diligence inside your portal.",
   },
   vendor: {
     badge: "Vendors",
@@ -342,7 +246,12 @@ const roleCopy = {
   },
 };
 
-const getLayoutForRole = (candidate) => registrationLayouts[candidate] || registrationLayouts.user;
+const getLayoutForSelection = (roleGroup) => {
+  if (roleGroup === "workspace") {
+    return registrationLayouts.workspace || registrationLayouts.firm;
+  }
+  return registrationLayouts[roleGroup] || registrationLayouts.user;
+};
 const flattenFields = (sections = []) => sections.flatMap((section) => section.fields || []);
 const buildInitialFormState = (sections) => {
   const init = {};
@@ -377,18 +286,19 @@ const resolveRedirect = (role, serverPath, qsPath) => {
 
 const RegisterPage = () => {
   const navigate = useNavigate();
-  const initialSections = useMemo(() => getLayoutForRole("firm"), []);
-  const [role, setRole] = useState("firm");
+  const initialSections = useMemo(() => getLayoutForSelection("workspace"), []);
+  const [role, setRole] = useState("workspace");
   const [form, setForm] = useState(() => buildInitialFormState(initialSections));
   const [expandedSections, setExpandedSections] = useState(() => getDefaultExpandedSections(initialSections));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const currentSections = useMemo(() => getLayoutForRole(role), [role]);
+  const currentSections = useMemo(() => getLayoutForSelection(role), [role]);
   const currentFields = useMemo(() => flattenFields(currentSections), [currentSections]);
-  const roleNarrative = roleCopy[role] || roleCopy.firm;
+  const activeRole = role === "workspace" ? "firm" : role;
+  const roleNarrative = role === "workspace" ? roleCopy.workspace : roleCopy[role] || roleCopy.user;
 
   const syncLayoutForRole = useCallback((nextRole) => {
-    const sections = getLayoutForRole(nextRole);
+    const sections = getLayoutForSelection(nextRole);
     setForm(buildInitialFormState(sections));
     setExpandedSections(getDefaultExpandedSections(sections));
   }, []);
@@ -397,9 +307,14 @@ const RegisterPage = () => {
     if (typeof window === "undefined") return;
     try {
       const requestedRole = new URL(window.location.href).searchParams.get("role");
-      if (requestedRole && registrationLayouts[requestedRole]) {
-        setRole(requestedRole);
-        syncLayoutForRole(requestedRole);
+      if (requestedRole) {
+        if (requestedRole === "workspace" || requestedRole === "firm" || requestedRole === "associate") {
+          setRole("workspace");
+          syncLayoutForRole("workspace");
+        } else if (registrationLayouts[requestedRole]) {
+          setRole(requestedRole);
+          syncLayoutForRole(requestedRole);
+        }
       }
     } catch (error) {
       console.warn("register_role_prefill_error", error);
@@ -411,7 +326,8 @@ const RegisterPage = () => {
       if (!token || !user) {
         throw new Error("Registration response missing session token");
       }
-      const resolvedRole = inferRoleFromUser(user) || responseRole || role;
+      const fallbackRole = role === "workspace" ? "firm" : role;
+      const resolvedRole = inferRoleFromUser(user) || responseRole || fallbackRole;
       const qsPath = getQueryRedirect();
       const dest = resolveRedirect(resolvedRole, dashboardPath, qsPath);
       try {
@@ -433,12 +349,13 @@ const RegisterPage = () => {
     async (response) => {
       try {
         if (!response?.credential) throw new Error("Google credential missing");
-        const { token, user } = await loginWithGoogle(response.credential, role);
+        const requestedRole = role === "workspace" ? "firm" : role;
+        const { token, user } = await loginWithGoogle(response.credential, requestedRole);
         if (!token) throw new Error("Unable to complete Google sign-in");
         completeRegistrationLogin({
           token,
           user,
-          role: user?.role || role,
+          role: user?.role || requestedRole,
           dashboardPath: null,
         });
         toast.success("Signed in with Google");
@@ -604,7 +521,7 @@ const RegisterPage = () => {
 
       for (const { field, file } of filesToUpload) {
         const uploadResponse = await uploadAsset(file, {
-          kind: `${role}-${field.key}`.toLowerCase(),
+          kind: `${activeRole}-${field.key}`.toLowerCase(),
           secure: true,
         });
         const asset = uploadResponse?.asset || uploadResponse;
@@ -619,7 +536,7 @@ const RegisterPage = () => {
         }
       }
 
-      profile.roleSelection = role;
+      profile.roleSelection = activeRole;
       profile.profileCompletionStatus = "pending_dashboard";
 
       const primaryName =
@@ -641,17 +558,17 @@ const RegisterPage = () => {
       const response = await registerAccount({
         email: emailFromForm,
         password: form.password,
-        role,
+        role: activeRole,
         profile,
       });
 
       completeRegistrationLogin({
         token: response.token,
         user: response.user,
-        role: response.user?.role || response.role || role,
+        role: response.user?.role || response.role || activeRole,
         dashboardPath: response.dashboardPath,
       });
-      toast.success("You're in! Finish the remaining profile items inside your dashboard.");
+      toast.success("You're in! Finish the remaining profile items inside your workspace.");
     } catch (err) {
       const message = err?.response?.data?.message || err?.message || "Registration failed";
       setError(message);
@@ -766,10 +683,10 @@ const RegisterPage = () => {
               Builtattic onboarding
             </span>
             <h1 className="mt-6 text-4xl font-semibold leading-tight">
-              Skip the massive questionnaire—share the essentials now, finish profiles later.
+              Pick your track: studio/associate workspace, vendor, or client.
             </h1>
             <p className="mt-4 text-lg text-slate-600">
-              Dashboards for studios, associates, and clients include guided checklists so you can wrap up remaining proofs on your own time.
+              Share the essentials now. Each workspace guides you through the remaining proofs and uploads once you're inside.
             </p>
             <div className="mt-8 space-y-4">
               {featureHighlights.map((feature) => (
@@ -792,7 +709,7 @@ const RegisterPage = () => {
               <h2 className="mt-4 text-3xl font-semibold text-slate-900">{roleNarrative.heading}</h2>
               <p className="mt-2 text-sm text-slate-500">{roleNarrative.description}</p>
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {roleShortcuts.map((shortcut) => {
                   const isActive = role === shortcut.value;
                   return (
@@ -830,6 +747,7 @@ const RegisterPage = () => {
                 </select>
               </div>
 
+
               <div className="mt-8 space-y-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Prefer using Google?</div>
                 {import.meta.env.VITE_GOOGLE_CLIENT_ID ? (
@@ -841,14 +759,14 @@ const RegisterPage = () => {
                     Add <code>VITE_GOOGLE_CLIENT_ID</code> to enable one-click Google sign-up.
                   </p>
                 )}
-                <p className="text-xs text-slate-400">We only request your name and verified email; the dashboard guides the rest.</p>
+                <p className="text-xs text-slate-400">We only request your name and verified email; the workspace guides the rest.</p>
               </div>
             </div>
 
             <form onSubmit={handleSubmit} className="rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-700">Step 1: Account</span>
-                <span className="text-slate-400">Step 2 lives inside your dashboard</span>
+                <span className="text-slate-400">Step 2 lives inside your workspace</span>
               </div>
 
               <div className="mt-6 space-y-5">
@@ -901,9 +819,9 @@ const RegisterPage = () => {
               </p>
             </form>
 
-            <RoleOnboardingGuide role={role} dense />
+            <RoleOnboardingGuide role={activeRole} dense />
 
-            {role === "vendor" ? <VendorOnboardingGuide /> : null}
+            {activeRole === "vendor" ? <VendorOnboardingGuide /> : null}
           </section>
         </div>
       </div>

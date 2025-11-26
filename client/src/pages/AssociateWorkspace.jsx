@@ -146,14 +146,14 @@ export default function AssociateWorkspace() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Plan upload</p>
               <h2 className="text-lg font-semibold text-slate-900">Skill Studio plan library</h2>
-              <p className="text-sm text-slate-500">Plans you sync from the dashboard appear here for quick QA.</p>
+              <p className="text-sm text-slate-500">Plans you sync from the portal appear here for quick QA.</p>
             </div>
-            <Link to="/dashboard/associate" className="text-xs font-semibold text-slate-900 underline">
-              Update from dashboard
+            <Link to="/portal/associate" className="text-xs font-semibold text-slate-900 underline">
+              Update from portal
             </Link>
           </div>
           {planUploads.length === 0 ? (
-            <p className="text-sm text-slate-500">No plans hosted yet. Add a concept inside the Associate dashboard.</p>
+            <p className="text-sm text-slate-500">No plans hosted yet. Add a concept inside the Associate portal.</p>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {planUploads.map((plan) => (
@@ -209,8 +209,8 @@ export default function AssociateWorkspace() {
               <h2 className="text-lg font-semibold text-slate-900">Packaged scopes</h2>
               <p className="text-sm text-slate-500">Skill Studio buyers see these scopes once approved.</p>
             </div>
-            <Link to="/dashboard/associate" className="text-xs font-semibold text-slate-900 underline">
-              Update from dashboard
+            <Link to="/portal/associate" className="text-xs font-semibold text-slate-900 underline">
+              Update from portal
             </Link>
           </div>
           {serviceBundles.length === 0 ? (

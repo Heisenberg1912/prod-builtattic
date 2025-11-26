@@ -5,6 +5,7 @@ import {
   upsertAssociatePortalProfile,
   loadAssociateProfileDraft,
   subscribeToAssociateProfileDraft,
+  hasAssociateAccess,
 } from "../../services/portal.js";
 import { uploadStudioAsset } from "../../services/uploads.js";
 import {
@@ -59,8 +60,10 @@ const Hint = ({ children, className = "" }) => (
   <p className={`text-xs text-slate-500 ${className}`}>{children}</p>
 );
 
-const HERO_PLACEHOLDER = "https://images.builtattic.com/placeholders/hero-light.jpg";
-const AVATAR_PLACEHOLDER = "https://images.builtattic.com/placeholders/avatar-default.jpg";
+const HERO_PLACEHOLDER =
+  "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%201200%20400'%3E%3Crect%20width='1200'%20height='400'%20fill='%23e2e8f0'/%3E%3Ctext%20x='50%25'%20y='50%25'%20dominant-baseline='middle'%20text-anchor='middle'%20fill='%23627489'%20font-size='48'%20font-family='Arial,%20sans-serif'%3ESkill%20Studio%3C/text%3E%3C/svg%3E";
+const AVATAR_PLACEHOLDER =
+  "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20240%20240'%3E%3Crect%20width='240'%20height='240'%20rx='28'%20fill='%23cbd5e1'/%3E%3Ctext%20x='50%25'%20y='50%25'%20dominant-baseline='middle'%20text-anchor='middle'%20fill='%23475569'%20font-size='28'%20font-family='Arial,%20sans-serif'%3EAvatar%3C/text%3E%3C/svg%3E";
 const SERVICE_FILE_ACCEPT =
   ".pdf,.doc,.docx,.ppt,.pptx,.zip,.jpg,.jpeg,.png,.mp4,.mov,.webm,.heic";
 
@@ -156,18 +159,13 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
   );
 
   useEffect(() => {
-    const hasToken = (() => {
-      if (typeof window === "undefined") return false;
-      const raw = localStorage.getItem("auth_token");
-      return Boolean(raw && raw !== "null" && raw !== "undefined");
-    })();
-
     const load = async () => {
       setLoading(true);
-      if (!hasToken) {
+      const allowed = hasAssociateAccess();
+      if (!allowed) {
         setAuthRequired(true);
         applyResponse({ profile: ASSOCIATE_PORTAL_FALLBACK, source: "fallback", authRequired: true }, "load");
-        setError("Sign in to manage your Skill Studio profile.");
+        setError("Sign in with an associate/firm account to manage your Skill Studio profile.");
         setLoading(false);
         return;
       }
@@ -189,7 +187,7 @@ export default function AssociateProfileEditor({ onProfileUpdate, showPreview = 
         const draft = loadAssociateProfileDraft();
         if (draft) {
           applyResponse({ profile: draft, source: "draft" }, "load");
-          toast("Loaded local draft", { icon: "💾" });
+          toast("Loaded local draft", { icon: "edit" });
         } else {
           setError(err?.message || "Unable to load your Skill Studio profile.");
         }

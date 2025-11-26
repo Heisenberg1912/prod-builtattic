@@ -22,7 +22,6 @@ const keyOf = (item) => {
     item?.productId ??
     item?.id ??
     item?._id ??
-    item?.slug ??
     item?.sku ??
     item?.code ??
     (typeof item?.key === "string" ? item.key : null)
@@ -30,7 +29,7 @@ const keyOf = (item) => {
 };
 const fallbackIdFromItem = (item) => {
   if (!item) return null;
-  const base = item?.title || item?.name || item?.slug || item?.sku || item?.code;
+  const base = item?.title || item?.name || item?.sku || item?.code;
   return base ? `wish-${String(base).replace(/\s+/g, "-").toLowerCase()}` : null;
 };
 const coercePrice = (value, fallback = 0) => {

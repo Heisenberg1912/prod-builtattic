@@ -5,20 +5,7 @@ import { fetchVendorPortalProfile } from "./portal.js";
 
 import { decorateFirmWithProfile, decorateFirmsWithProfiles, loadFirmProfile } from "../utils/firmProfile.js";
 
-export const buildStudioSlug = (studio = {}) => {
-  const candidate = [
-    studio.slug,
-    studio.handle,
-    studio.permalink,
-    studio.alias,
-    studio.shortcode,
-    studio.workspaceSlug,
-    studio.studioSlug,
-  ].find((value) => typeof value === 'string' && value.trim().length);
-  if (candidate) return candidate.trim();
-  if (studio._id || studio.id) return String(studio._id || studio.id);
-  return null;
-};
+export const buildStudioSlug = () => null;
 const ensureArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 const nowISO = () => new Date().toISOString();
 const ADMIN_AUTH_STATUSES = new Set([401, 403]);
@@ -183,7 +170,6 @@ const normalizeStudio = (studio = {}) => {
     studio.image ||
     galleryArray[0] ||
     null;
-  const slug = buildStudioSlug(studio);
   const gallery = heroCandidate
     ? [heroCandidate, ...galleryArray.filter((img) => img !== heroCandidate)]
     : galleryArray;
@@ -291,12 +277,23 @@ const normalizeAssociate = (associate = {}) => {
   };
   return {
     ...associate,
+    name:
+      associate.name ||
+      associate.fullName ||
+      associate.user?.name ||
+      [associate.user?.firstName, associate.user?.lastName].filter(Boolean).join(" "),
+    firmName: associate.firmName || associate.company || "",
+    languages: Array.isArray(associate.languages) ? associate.languages : [],
+    toolset: Array.isArray(associate.toolset) ? associate.toolset : associate.softwares || [],
+    services: Array.isArray(associate.services) ? associate.services : [],
     hourlyRate: hourly ?? null,
     rates: mergedRates,
     heroImage: resolvedHero,
     profileImage: associate.profileImage || associate.avatar || null,
     avatar: resolvedAvatar,
-    contactEmail: associate.contactEmail || associate.user?.email || null,
+    contactEmail: associate.contactEmail || associate.contact?.email || associate.user?.email || null,
+    contactPhone: associate.contact?.phone || null,
+    contactWebsite: associate.contact?.website || null,
     serviceBadges: associate.serviceBadges || [],
     booking: associate.booking || null,
     warranty: associate.warranty || null,
@@ -304,7 +301,9 @@ const normalizeAssociate = (associate = {}) => {
     prepChecklist: associate.prepChecklist || [],
     deliverables: associate.deliverables || [],
     expertise: associate.expertise || [],
+    workHistory: Array.isArray(associate.workHistory) ? associate.workHistory : [],
     portfolioMedia: resolveMediaItems(),
+    planUploads: Array.isArray(associate.planUploads) ? associate.planUploads : [],
   };
 };
 
@@ -382,7 +381,8 @@ const buildStudioFacets = (list = []) => {
 
 export async function fetchStudios(params = {}) {
   try {
-    const { data } = await client.get("/marketplace/studios", { params });
+    const query = { limit: 0, page: 1, ...params };
+    const { data } = await client.get("/marketplace/studios", { params: query });
     const items = decorateStudiosWithProfiles((data?.items || []).map(normalizeStudio));
     const meta = data?.meta || {};
     return {
@@ -405,7 +405,8 @@ export async function fetchStudios(params = {}) {
 export async function fetchMaterials(params = {}) {
   const vendorProfile = await getVendorProfileForMarketplace();
   try {
-    const { data } = await client.get("/marketplace/materials", { params });
+    const query = { limit: 0, page: 1, ...params };
+    const { data } = await client.get("/marketplace/materials", { params: query });
     const items = decorateMaterialsWithVendorProfile((data?.items || []).map(normalizeMaterial), vendorProfile);
     const meta = data?.meta || { total: items.length };
     return {
@@ -424,11 +425,12 @@ export async function fetchMaterials(params = {}) {
 
 export async function fetchMarketplaceAssociates(params = {}) {
   try {
-    const { data } = await client.get("/marketplace/associates", { params });
+    const query = { noCache: true, ...params };
+    const { data } = await client.get("/marketplace/associates", { params: query });
     const items = (data?.items || []).map(normalizeAssociate);
 
     return {
-      items: filterAssociates(items, params),
+      items: filterAssociates(items, query),
       meta: {
         total: data?.meta?.total ?? items.length,
         web3: data?.meta?.web3 || null,
@@ -487,20 +489,8 @@ export async function fetchMarketplaceFirms(params = {}) {
   }
 }
 
-export async function fetchStudioBySlug(slug, params = {}) {
-  if (!slug) return null;
-  try {
-    const { data } = await client.get(`/marketplace/studios/${slug}`, { params });
-    const item = data?.item;
-    if (!item) throw new Error('Not found');
-    return decorateStudioWithStoredProfile(normalizeStudio(item));
-  } catch (error) {
-    if (error?.response?.status === 404) {
-      return null;
-    }
-    const message = error?.response?.data?.error || error?.message || "Unable to load studio";
-    throw new Error(message);
-  }
+export async function fetchStudioBySlug() {
+  throw new Error("Slug-based studio lookups are disabled.");
 }
 
 export async function fetchFirms() {
@@ -550,7 +540,7 @@ export async function fetchMarketplaceAssociateProfile(id) {
     throw new Error("Associate id is required");
   }
   try {
-    const { data } = await client.get(`/marketplace/associates/${id}`);
+    const { data } = await client.get(`/marketplace/associates/${id}`, { params: { noCache: true } });
     if (data?.item) {
       return normalizeAssociate(data.item);
     }
@@ -560,6 +550,19 @@ export async function fetchMarketplaceAssociateProfile(id) {
       return null;
     }
     throw error;
+  }
+}
+
+export async function requestAssociateConsultation(associateId, payload = {}) {
+  if (!associateId) {
+    throw new Error("Associate id is required");
+  }
+  try {
+    const { data } = await client.post(`/skill-studio/associates/${associateId}/consultations`, payload);
+    return data;
+  } catch (error) {
+    const message = error?.response?.data?.error || error?.message || "Unable to schedule consultation";
+    throw new Error(message);
   }
 }
 
@@ -711,19 +714,8 @@ export async function fetchProductCatalog(params = {}) {
   };
 }
 
-export async function fetchProductBySlug(slug) {
-  if (!slug) return null;
-  try {
-    const { data } = await client.get(`/marketplace/materials/${slug}`);
-    const item = data?.item;
-    if (!item) throw new Error("Not found");
-    return normalizeMaterial(item);
-  } catch (error) {
-    if (error?.response?.status === 404) {
-      return null;
-    }
-    throw error;
-  }
+export async function fetchProductBySlug() {
+  throw new Error("Slug-based product lookups are disabled.");
 }
 export const getProductSearchRecords = () => productSearchRecords;
 

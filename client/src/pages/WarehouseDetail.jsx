@@ -45,9 +45,9 @@ const WarehouseDetail = () => {
       try {
         const { items } = await fetchMaterials();
         const match =
-          items.find((item) => item.slug === id || item._id === id) ||
+          items.find((item) => item._id === id || item.id === id) ||
           fallbackMaterials.find(
-            (item) => item.slug === id || String(item._id) === String(id)
+            (item) => String(item._id) === String(id) || item.id === id
           );
         if (!cancelled) {
           setMaterial(match || null);

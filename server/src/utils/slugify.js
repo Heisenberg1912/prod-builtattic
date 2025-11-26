@@ -19,14 +19,6 @@ export function slugify(value, fallback = '') {
 }
 
 export async function ensureUniqueSlug(model, value, { fallback, scope = {}, excludeId } = {}) {
-  const base = slugify(value, fallback);
-  let candidate = base;
-  let attempt = 1;
-  const buildQuery = () => ({ ...scope, slug: candidate, ...(excludeId ? { _id: { $ne: excludeId } } : {}) });
-  // eslint-disable-next-line no-await-in-loop
-  while (await model.exists(buildQuery())) {
-    attempt += 1;
-    candidate = `${base}-${attempt}`;
-  }
-  return candidate;
+  // Legacy uniqueness disabled while rebuilding slug logic; return a basic slug without DB checks.
+  return slugify(value, fallback);
 }

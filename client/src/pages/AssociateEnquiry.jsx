@@ -66,7 +66,7 @@ const AssociateEnquiry = () => {
       if (enquiryHref) {
         window.open(enquiryHref, "_blank", "noopener,noreferrer");
       }
-      navigate("/dashboard/associate");
+      navigate("/portal/associate");
     } catch (error) {
       console.error("associate_enquiry_failed", error);
       toast.error(error?.message || "Could not send enquiry");

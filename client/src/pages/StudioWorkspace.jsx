@@ -4,7 +4,7 @@ import { toast } from "react-hot-toast";
 import { Plus, Trash2, CloudUpload, RefreshCw, SlidersHorizontal, Search, Eye } from "lucide-react";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
-import { WorkspaceHero, WorkspaceActions } from "../components/studio/WorkspaceHero.jsx";
+import { WorkspaceActions } from "../components/studio/WorkspaceHero.jsx";
 import {
   fetchFirmStudios,
   createFirmStudio,
@@ -360,15 +360,6 @@ export default function StudioWorkspace() {
     }
   }, [pendingEditSlug, studiosState.loading, studiosState.items, navigate, location.pathname]);
 
-  const metaCards = useMemo(() => {
-    const meta = studiosState.meta || {};
-    return [
-      { label: "Total studios", value: meta.total ?? "-" },
-      { label: "Published", value: meta.publishedCount ?? "-" },
-      { label: "Drafts", value: meta.draftCount ?? "-" },
-    ];
-  }, [studiosState.meta]);
-
   const studioCounts = useMemo(() => {
     const items = studiosState.items || [];
     let published = 0;
@@ -648,8 +639,6 @@ export default function StudioWorkspace() {
       <RegistrStrip />
       <main className="flex-1 pb-16">
         <div className="mx-auto w-full max-w-screen-2xl space-y-12 px-4 py-14 sm:px-8 lg:px-12">
-          <WorkspaceHero metaCards={metaCards} onCreateStudio={() => openCreateForm("create")} />
-
           {authState.required ? (
             <section className="rounded-[32px] border border-dashed border-amber-200 bg-white/95 p-10 text-center shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-500">Workspace locked</p>
@@ -725,10 +714,10 @@ export default function StudioWorkspace() {
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Plan uploads</p>
                       <h2 className="text-xl font-semibold text-slate-900">Design assets ready for hosting</h2>
-                      <p className="text-sm text-slate-500">Review concept packs synced from the Firm dashboard.</p>
+                      <p className="text-sm text-slate-500">Review concept packs synced from the studio workspace.</p>
                     </div>
-                    <Link to="/dashboard/firm" className="text-xs font-semibold text-slate-900 underline">
-                      Update from dashboard
+                    <Link to="/portal/studio" className="text-xs font-semibold text-slate-900 underline">
+                      Update from workspace
                     </Link>
                   </div>
 
@@ -789,10 +778,10 @@ export default function StudioWorkspace() {
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Service bundles</p>
                       <h2 className="text-xl font-semibold text-slate-900">Programs synced to Design Studio</h2>
-                      <p className="text-sm text-slate-500">Hourly, weekly, and monthly scopes from your dashboard.</p>
+                      <p className="text-sm text-slate-500">Hourly, weekly, and monthly scopes from your workspace.</p>
                     </div>
-                    <Link to="/dashboard/firm" className="text-xs font-semibold text-slate-900 underline">
-                      Update from dashboard
+                    <Link to="/portal/studio" className="text-xs font-semibold text-slate-900 underline">
+                      Update from workspace
                     </Link>
                   </div>
 

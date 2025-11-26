@@ -56,8 +56,26 @@ const portfolioMediaItemSchema = z.object({
   kind: z.string().trim().max(48).optional(),
 });
 
+const workHistoryItemSchema = z.object({
+  company: z.string().trim().min(1).max(160),
+  role: z.string().trim().max(120).optional(),
+  duration: z.string().trim().max(120).optional(),
+  summary: z.string().trim().max(320).optional(),
+});
+
+const contactSchema = z
+  .object({
+    email: z.string().trim().email().optional(),
+    phone: z.string().trim().max(80).optional(),
+    website: z.string().trim().url().optional(),
+    calendly: z.string().trim().url().optional(),
+  })
+  .partial();
+
 const profileInputSchema = z
   .object({
+    fullName: z.string().trim().min(2).max(160).optional(),
+    firmName: z.string().trim().max(160).optional(),
     title: z.string().trim().min(2).max(160).optional(),
     location: z.string().trim().max(160).optional(),
     hourlyRate: z.number().min(0).max(100000).optional(),
@@ -68,21 +86,35 @@ const profileInputSchema = z
     experienceYears: z.number().min(0).max(80).optional(),
     specialisations: z.array(z.string().trim().min(1).max(120)).max(24).optional(),
     softwares: z.array(z.string().trim().min(1).max(120)).max(24).optional(),
+    toolset: z.array(z.string().trim().min(1).max(120)).max(24).optional(),
     languages: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
     completedProjects: z.number().min(0).max(2000).optional(),
     rating: z.number().min(0).max(5).optional(),
     avatar: urlishString.optional(),
     heroImage: urlishString.optional(),
     profileImage: urlishString.optional(),
+    coverImage: urlishString.optional(),
     summary: z.string().trim().max(1200).optional(),
     certifications: z.array(z.string().trim().min(1).max(140)).max(20).optional(),
     portfolioLinks: z.array(z.string().trim().url()).max(15).optional(),
     keyProjects: z.array(keyProjectSchema).max(12).optional(),
     contactEmail: z.string().trim().email().optional(),
+    contact: contactSchema.optional(),
     serviceBadges: z.array(z.string().trim().min(1).max(80)).max(24).optional(),
     deliverables: z.array(z.string().trim().min(1).max(160)).max(40).optional(),
     expertise: z.array(z.string().trim().min(1).max(160)).max(40).optional(),
     portfolioMedia: z.array(portfolioMediaItemSchema).max(20).optional(),
+    workHistory: z.array(workHistoryItemSchema).max(30).optional(),
+    registrationId: z.string().trim().max(120).optional(),
+    verificationDoc: urlishString.optional(),
+    firmType: z.string().trim().max(120).optional(),
+    teamSize: z.number().min(1).max(50000).optional(),
+    primaryCategories: z.array(z.string().trim().min(1).max(160)).max(24).optional(),
+    primaryStyles: z.array(z.string().trim().min(1).max(160)).max(24).optional(),
+    avgDesignRate: z.number().min(0).max(10000000).optional(),
+    servicesOffered: z.array(z.string().trim().min(1).max(200)).max(40).optional(),
+    portfolioLink: urlishString.optional(),
+    portfolioUpload: urlishString.optional(),
   })
   .partial();
 
@@ -120,6 +152,18 @@ const normaliseMediaArray = (media) => {
       kind: item.kind?.trim(),
     }))
     .filter((item) => item.mediaUrl);
+};
+
+const normaliseWorkHistory = (entries) => {
+  if (!Array.isArray(entries)) return undefined;
+  return entries
+    .map((item) => ({
+      company: item.company?.trim(),
+      role: item.role?.trim(),
+      duration: item.duration?.trim(),
+      summary: item.summary?.trim(),
+    }))
+    .filter((item) => item.company);
 };
 
 const compactObject = (input) => {
@@ -172,6 +216,7 @@ export const upsertOwnAssociateProfile = async (req, res, next) => {
     const update = { ...parsed };
     if (update.specialisations) update.specialisations = normaliseStringArray(update.specialisations) || [];
     if (update.softwares) update.softwares = normaliseStringArray(update.softwares) || [];
+    if (update.toolset) update.toolset = normaliseStringArray(update.toolset) || [];
     if (update.languages) update.languages = normaliseStringArray(update.languages) || [];
     if (update.certifications) update.certifications = normaliseStringArray(update.certifications) || [];
     if (update.serviceBadges) update.serviceBadges = normaliseStringArray(update.serviceBadges) || [];
@@ -180,8 +225,13 @@ export const upsertOwnAssociateProfile = async (req, res, next) => {
     if (update.portfolioLinks) update.portfolioLinks = normaliseStringArray(update.portfolioLinks) || [];
     if (update.keyProjects) update.keyProjects = normaliseProjectArray(update.keyProjects) || [];
     if (update.portfolioMedia) update.portfolioMedia = normaliseMediaArray(update.portfolioMedia) || [];
+    if (update.primaryCategories) update.primaryCategories = normaliseStringArray(update.primaryCategories) || [];
+    if (update.primaryStyles) update.primaryStyles = normaliseStringArray(update.primaryStyles) || [];
+    if (update.servicesOffered) update.servicesOffered = normaliseStringArray(update.servicesOffered) || [];
+    if (update.workHistory) update.workHistory = normaliseWorkHistory(update.workHistory) || [];
     if (update.rates?.currency) update.rates.currency = update.rates.currency.toUpperCase();
     if (update.contactEmail) update.contactEmail = update.contactEmail.toLowerCase();
+    if (update.contact?.email) update.contact.email = update.contact.email.toLowerCase();
     if (update.heroImage) update.heroImage = update.heroImage.trim();
     if (update.profileImage) update.profileImage = update.profileImage.trim();
 

@@ -92,6 +92,8 @@ import workspaceDownloadsRouter from './routes/workspaceDownloads.js';
 import workspaceChatsRouter from './routes/workspaceChats.js';
 import addressesRouter from './routes/addresses.js';
 import wishlistRouter from './routes/wishlist.js';
+import studioHubRouter from './routes/studioHub.js';
+import skillStudioRouter from './routes/skillStudio.js';
 
 
 const app = express();
@@ -202,7 +204,13 @@ app.use(cookieParser());
 
 app.use(compression());
 
-app.use(helmet());
+// Disable COOP/COEP so portal postMessage and embeds keep working in dev/previews.
+app.use(
+  helmet({
+    crossOriginOpenerPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }),
+);
 
 
 
@@ -340,6 +348,8 @@ app.use(['/schedule/meetings', '/api/schedule/meetings'], meetingsRouter);
 app.use(['/plan-uploads', '/api/plan-uploads'], planUploadsRouter);
 app.use(['/workspace-downloads', '/api/workspace-downloads'], workspaceDownloadsRouter);
 app.use(['/workspace-chats', '/api/workspace-chats'], workspaceChatsRouter);
+app.use(['/studio-hub', '/api/studio-hub'], studioHubRouter);
+app.use(['/skill-studio', '/api/skill-studio'], skillStudioRouter);
 
 
 app.get(['/health', '/api/health'], (_req, res) => {
