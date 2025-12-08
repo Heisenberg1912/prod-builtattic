@@ -1,5 +1,12 @@
 import client from "../config/axios.jsx";
 import { productSearchRecords } from "../data/products.js";
+import {
+  fallbackAssociates,
+  fallbackFirms,
+  fallbackMaterials as marketplaceFallbackMaterials,
+  fallbackStudios,
+} from "../data/marketplace.js";
+import { materialStudioFallback } from "../data/materialStudioFallback.js";
 
 import { fetchVendorPortalProfile } from "./portal.js";
 
@@ -9,6 +16,21 @@ export const buildStudioSlug = () => null;
 const ensureArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 const nowISO = () => new Date().toISOString();
 const ADMIN_AUTH_STATUSES = new Set([401, 403]);
+
+const slugify = (value = "") =>
+  String(value)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
+
+const deriveStudioSlug = (studio = {}) => {
+  const candidates = [studio.slug, studio.handle, studio._id, studio.id, studio.title].filter(Boolean);
+  if (!candidates.length) return null;
+  const first = String(candidates[0]).trim();
+  if (studio.slug) return first;
+  return slugify(first);
+};
 
 const sanitizeQueryParams = (params = {}) =>
   Object.entries(params).reduce((acc, [key, value]) => {
@@ -163,6 +185,7 @@ const normalizeHostingConfig = (hosting = {}) => ({
 });
 
 const normalizeStudio = (studio = {}) => {
+  const slug = deriveStudioSlug(studio);
   const galleryArray = ensureArray(studio.gallery).filter(Boolean);
   const heroCandidate =
     studio.heroImage ||
@@ -384,6 +407,18 @@ export async function fetchStudios(params = {}) {
     const query = { limit: 0, page: 1, ...params };
     const { data } = await client.get("/marketplace/studios", { params: query });
     const items = decorateStudiosWithProfiles((data?.items || []).map(normalizeStudio));
+    if (!items.length) {
+      const fallbackItems = decorateStudiosWithProfiles(fallbackStudios.map(normalizeStudio));
+      return {
+        items: fallbackItems,
+        meta: {
+          total: fallbackItems.length,
+          facets: buildStudioFacets(fallbackItems),
+          web3: null,
+          fallback: true,
+        },
+      };
+    }
     const meta = data?.meta || {};
     return {
       items,
@@ -391,9 +426,22 @@ export async function fetchStudios(params = {}) {
         total: meta.total ?? items.length,
         facets: meta.facets || buildStudioFacets(items),
         web3: meta.web3 || null,
+        fallback: false,
       },
     };
   } catch (error) {
+    const fallbackItems = decorateStudiosWithProfiles(fallbackStudios.map(normalizeStudio));
+    if (fallbackItems.length) {
+      return {
+        items: fallbackItems,
+        meta: {
+          total: fallbackItems.length,
+          facets: buildStudioFacets(fallbackItems),
+          web3: null,
+          fallback: true,
+        },
+      };
+    }
     const message = error?.response?.data?.error || error?.message || "Unable to load studios";
     throw new Error(message);
   }
@@ -404,20 +452,47 @@ export async function fetchStudios(params = {}) {
 
 export async function fetchMaterials(params = {}) {
   const vendorProfile = await getVendorProfileForMarketplace();
+  const fallbackMaterialList =
+    (Array.isArray(marketplaceFallbackMaterials) && marketplaceFallbackMaterials.length
+      ? marketplaceFallbackMaterials
+      : materialStudioFallback) || [];
   try {
     const query = { limit: 0, page: 1, ...params };
     const { data } = await client.get("/marketplace/materials", { params: query });
     const items = decorateMaterialsWithVendorProfile((data?.items || []).map(normalizeMaterial), vendorProfile);
     const meta = data?.meta || { total: items.length };
+    if (!items.length && fallbackMaterialList.length) {
+      const fallbackItems = decorateMaterialsWithVendorProfile(fallbackMaterialList.map(normalizeMaterial), vendorProfile);
+      return {
+        items: fallbackItems,
+        meta: {
+          total: fallbackItems.length,
+          web3: meta.web3 || null,
+          fallback: true,
+        },
+      };
+    }
     return {
       items,
       meta: {
         ...meta,
         total: meta.total ?? items.length,
         web3: meta.web3 || null,
+        fallback: false,
       },
     };
   } catch (error) {
+    if (fallbackMaterialList.length) {
+      const fallbackItems = decorateMaterialsWithVendorProfile(fallbackMaterialList.map(normalizeMaterial), vendorProfile);
+      return {
+        items: fallbackItems,
+        meta: {
+          total: fallbackItems.length,
+          web3: null,
+          fallback: true,
+        },
+      };
+    }
     const message = error?.response?.data?.error || error?.message || "Unable to load materials";
     throw new Error(message);
   }
@@ -429,14 +504,34 @@ export async function fetchMarketplaceAssociates(params = {}) {
     const { data } = await client.get("/marketplace/associates", { params: query });
     const items = (data?.items || []).map(normalizeAssociate);
 
+    if (!items.length && Array.isArray(fallbackAssociates) && fallbackAssociates.length) {
+      const fallbackItems = fallbackAssociates.map(normalizeAssociate);
+      return {
+        items: filterAssociates(fallbackItems, query),
+        meta: {
+          total: fallbackItems.length,
+          web3: null,
+          fallback: true,
+        },
+      };
+    }
+
     return {
       items: filterAssociates(items, query),
       meta: {
         total: data?.meta?.total ?? items.length,
         web3: data?.meta?.web3 || null,
+        fallback: false,
       },
     };
   } catch (error) {
+    if (Array.isArray(fallbackAssociates) && fallbackAssociates.length) {
+      const items = fallbackAssociates.map(normalizeAssociate);
+      return {
+        items: filterAssociates(items, params),
+        meta: { total: items.length, web3: null, fallback: true },
+      };
+    }
     const message = error?.response?.data?.error || error?.message || "Unable to load associates";
     throw new Error(message);
   }
@@ -476,14 +571,37 @@ export async function fetchMarketplaceFirms(params = {}) {
   try {
     const { data } = await client.get("/marketplace/firms", { params });
     const items = decorateFirmsWithProfiles(data?.items || []);
+    if (!items.length && Array.isArray(fallbackFirms) && fallbackFirms.length) {
+      const fallbackItems = decorateFirmsWithProfiles(fallbackFirms);
+      return {
+        items: fallbackItems,
+        meta: {
+          total: fallbackItems.length,
+          web3: null,
+          fallback: true,
+        },
+      };
+    }
     return {
       items,
       meta: {
         total: data?.meta?.total ?? items.length,
         web3: data?.meta?.web3 || null,
+        fallback: false,
       },
     };
   } catch (error) {
+    if (Array.isArray(fallbackFirms) && fallbackFirms.length) {
+      const items = decorateFirmsWithProfiles(fallbackFirms);
+      return {
+        items,
+        meta: {
+          total: items.length,
+          web3: null,
+          fallback: true,
+        },
+      };
+    }
     const message = error?.response?.data?.error || error?.message || "Unable to load firms";
     throw new Error(message);
   }
@@ -700,18 +818,37 @@ export async function fetchFirmById(firmId) {
 }
 
 export async function fetchProductCatalog(params = {}) {
-  const { data } = await client.get("/marketplace/materials", { params });
-  if (!Array.isArray(data?.items)) {
-    throw new Error("Unexpected response");
+  try {
+    const { data } = await client.get("/marketplace/materials", { params });
+    if (!Array.isArray(data?.items)) {
+      throw new Error("Unexpected response");
+    }
+    const enriched = data.items.map((item) => ({ ...item, kind: "product" }));
+    return {
+      items: enriched,
+      meta: {
+        total: data.meta?.total ?? enriched.length,
+        facets: buildProductFacets(enriched),
+      },
+    };
+  } catch (error) {
+    const fallbackList =
+      (Array.isArray(marketplaceFallbackMaterials) && marketplaceFallbackMaterials.length
+        ? marketplaceFallbackMaterials
+        : materialStudioFallback) || [];
+    if (fallbackList.length) {
+      const enriched = fallbackList.map((item) => ({ ...item, kind: "product" }));
+      return {
+        items: enriched,
+        meta: {
+          total: enriched.length,
+          facets: buildProductFacets(enriched),
+          fallback: true,
+        },
+      };
+    }
+    throw error;
   }
-  const enriched = data.items.map((item) => ({ ...item, kind: "product" }));
-  return {
-    items: enriched,
-    meta: {
-      total: data.meta?.total ?? enriched.length,
-      facets: buildProductFacets(enriched),
-    },
-  };
 }
 
 export async function fetchProductBySlug() {

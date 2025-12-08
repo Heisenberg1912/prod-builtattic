@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat server/src/routes/designStudio.js)",
+      "Bash(cat server/src/routes/studioHub.js)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(if [ -f .env ])",
+      "Bash(then echo \".env file exists\")",
+      "Bash(else echo \".env file NOT found\")",
+      "Bash(fi)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(dir:*)",
+      "Bash(wc:*)",
+      "Bash(npm install:*)",
+      "Bash(npm:*)",
+      "Bash(xargs cat:*)",
+      "Bash(xargs grep:*)",
+      "Bash(git restore:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(taskkill /F /PID 29992)",
+      "Bash(taskkill //F //PID 29992)",
+      "Bash(then echo \"client/.env exists\")",
+      "Bash(else echo \"client/.env NOT found\")",
+      "Bash(if [ -f \"client/.env\" ])",
+      "Bash(taskkill:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

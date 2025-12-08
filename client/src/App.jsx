@@ -8,9 +8,14 @@ import { WishlistProvider } from "./context/WishlistContext";
 import PageTransition from "./components/PageTransition";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import SimpleLogin from "./pages/SimpleLogin";
+import Register from "./pages/Register";
+import RoleSelection from "./pages/RoleSelection";
+import AssociateOnboarding from "./pages/onboarding/AssociateOnboarding";
+import VendorOnboarding from "./pages/onboarding/VendorOnboarding";
+import BuyerOnboarding from "./pages/onboarding/BuyerOnboarding";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
-import Register from "./pages/Register";
 import ProductList from "./pages/ProductList";
 import ProductDetail from "./pages/ProductDetail";
 import Cart from "./pages/Cart";
@@ -18,42 +23,31 @@ import Wishlist from "./pages/Wishlist";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import Studio from "./pages/Studio";
+import StudioDetail from "./pages/StudioDetail";
 import Warehouse from "./pages/Warehouse";
 import WarehouseDetail from "./pages/WarehouseDetail";
 import Firms from "./pages/Firms";
-import CartPage from "./pages/CartPage";
 import Associates from "./pages/Associates";
+import AssociateDetail from "./pages/AssociateDetail";
 import FirmPortfolio from "./pages/FirmPortfolio";
 import AssociatePortfolio from "./pages/AssociatePortfolio";
-import AssociateOrder from "./pages/AssociateOrder.jsx";
-import AssociateSchedule from "./pages/AssociateSchedule.jsx";
-import AssociateEnquiry from "./pages/AssociateEnquiry.jsx";
-import Ai from "./pages/Ai";
-import Matters from "./pages/Matters";
+import AssociateServicePortfolio from "./pages/AssociateServicePortfolio";
 import AssociatePortal from "./pages/AssociatePortal";
-import AssociateWorkspace from "./pages/AssociateWorkspace.jsx";
 import StudioPortal from "./pages/StudioPortal";
-import StudioWorkspace from "./pages/StudioWorkspace.jsx";
-import SkillStudio from "./pages/SkillStudio.jsx";
-import CurrencyConverter from "./pages/CurrencyConverter";
-import OrderHistory from "./pages/OrderHistory";
-import Buy from "./pages/Buy";
 import Account from "./pages/Account";
 import Settings from "./pages/Settings";
 import SupportChatWidget from "./components/SupportChatWidget";
-import SuperAdminDashboard from "./pages/dashboard/SuperAdminDashboard";
-import UserDashboard from "./pages/dashboard/UserDashboard";
-import ClientDashboard from "./pages/dashboard/ClientDashboard";
-import VendorDashboard from "./pages/dashboard/SaleDashboard";
-import AdminDashboard from "./pages/dashboard/AdminDashboard";
-import StudioHubDashboard from "./pages/dashboard/StudioHubDashboard";
-import StudioDetail from "./pages/StudioDetail";
 import RegistrStrip from "./components/registrstrip";
 import { readStoredAuth } from "./services/auth.js";
 import VendorPortal from "./pages/VendorPortal.jsx";
 import Faqs from "./pages/Faqs.jsx";
-import StudioServicesWorkspace from "./pages/StudioServicesWorkspace.jsx";
-import DesignWorkspace from "./pages/DesignWorkspace.jsx";
+import AssociateDashboard from "./pages/associates/AssociateDashboard.jsx";
+import DesignStudioList from "./pages/associates/design-studio/DesignStudioList.jsx";
+import DesignStudioDetail from "./pages/associates/design-studio/DesignStudioDetail.jsx";
+import DesignStudioCreate from "./pages/associates/design-studio/DesignStudioCreate.jsx";
+import SkillStudioList from "./pages/associates/skill-studio/SkillStudioList.jsx";
+import SkillStudioDetail from "./pages/associates/skill-studio/SkillStudioDetail.jsx";
+import SkillStudioCreate from "./pages/associates/skill-studio/SkillStudioCreate.jsx";
 
 const ScrollToTop = () => {
   const location = useLocation();
@@ -192,63 +186,81 @@ const App = () => {
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
               <Route path="/" element={wrapWithTransition(<Home />)} />
-              <Route path="/login" element={wrapWithTransition(<Login onLogin={handleLoginSuccess} />)} />
+              <Route path="/login" element={wrapWithTransition(<Login onLoginSuccess={handleLoginSuccess} />)} />
+              <Route path="/simple-login" element={wrapWithTransition(<SimpleLogin />)} />
+              <Route path="/register" element={wrapWithTransition(<Register />)} />
+              <Route path="/role-selection" element={wrapWithTransition(<RoleSelection />)} />
+              <Route path="/onboarding/associate" element={wrapWithTransition(<AssociateOnboarding />)} />
+              <Route path="/onboarding/vendor" element={wrapWithTransition(<VendorOnboarding />)} />
+              <Route path="/onboarding/buyer" element={wrapWithTransition(<BuyerOnboarding />)} />
               <Route path="/forgot-password" element={wrapWithTransition(<ForgotPassword />)} />
               <Route path="/reset-password" element={wrapWithTransition(<ResetPassword />)} />
-              <Route path="/register" element={wrapWithTransition(<Register />)} />
-              <Route path="/products" element={wrapWithTransition(<ProductList />)} />
-              <Route path="/products/:id" element={wrapWithTransition(<ProductDetail />)} />
-              <Route path="/buy" element={wrapWithTransition(<Buy />)} />
-              <Route path="/buy/:id" element={wrapWithTransition(<Buy />)} />
-              <Route path="/cart" element={wrapWithTransition(<Cart />)} />
-              <Route path="/cartpage" element={wrapWithTransition(<CartPage />)} />
-              <Route path="/ai" element={wrapWithTransition(<Ai />)} />
-              <Route path="/aisetting" element={wrapWithTransition(<Ai />)} />
-              <Route path="/matters" element={wrapWithTransition(<Matters />)} />
+
+              {/* Marketplace */}
               <Route path="/studio" element={wrapWithTransition(<Studio />)} />
-              <Route path="/studio/portal" element={wrapWithTransition(<StudioPortal />)} />
-              <Route path="/studio/portal/intro" element={wrapWithTransition(<StudioPortal />)} />
-              <Route path="/portal/studio" element={wrapWithTransition(<StudioWorkspace />)} />
-              <Route path="/portal/vendor" element={wrapWithTransition(<VendorPortal />)} />
+              <Route path="/studio/:id" element={wrapWithTransition(<StudioDetail />)} />
               <Route path="/warehouse" element={wrapWithTransition(<Warehouse />)} />
               <Route path="/warehouse/:id" element={wrapWithTransition(<WarehouseDetail />)} />
               <Route path="/firms" element={wrapWithTransition(<Firms />)} />
               <Route path="/associates" element={wrapWithTransition(<Associates />)} />
-              <Route path="/associates/portal" element={wrapWithTransition(<AssociatePortal />)} />
-              <Route path="/associates/portal/intro" element={wrapWithTransition(<AssociatePortal />)} />
-              <Route path="/portal/associate" element={wrapWithTransition(<AssociateWorkspace />)} />
-              <Route path="/skillstudio" element={wrapWithTransition(<SkillStudio />)} />
-              <Route path="/skill-studio" element={<Navigate to="/skillstudio" replace />} />
+              <Route path="/associates/:id" element={wrapWithTransition(<AssociateDetail />)} />
+
+              {/* Legacy product routes (to be deprecated) */}
+              <Route path="/products" element={wrapWithTransition(<ProductList />)} />
+              <Route path="/products/:id" element={wrapWithTransition(<ProductDetail />)} />
+
+              {/* Portfolios */}
               <Route path="/firmportfolio" element={wrapWithTransition(<FirmPortfolio />)} />
               <Route path="/associateportfolio" element={wrapWithTransition(<AssociatePortfolio />)} />
               <Route path="/associateportfolio/:id" element={wrapWithTransition(<AssociatePortfolio />)} />
-              <Route path="/associate/order" element={wrapWithTransition(<AssociateOrder />)} />
-              <Route path="/associate/order/:id" element={wrapWithTransition(<AssociateOrder />)} />
-              <Route path="/associate/schedule" element={wrapWithTransition(<AssociateSchedule />)} />
-              <Route path="/associate/schedule/:id" element={wrapWithTransition(<AssociateSchedule />)} />
-              <Route path="/associate/enquiry" element={wrapWithTransition(<AssociateEnquiry />)} />
-              <Route path="/associate/enquiry/:id" element={wrapWithTransition(<AssociateEnquiry />)} />
-              <Route path="/currencyconver" element={wrapWithTransition(<CurrencyConverter />)} />
-              <Route path="/amazon" element={<Navigate to="/studio" replace />} />
-              <Route path="/blinkit" element={<Navigate to="/warehouse" replace />} />
-              <Route path="/urban" element={<Navigate to="/firms" replace />} />
+              <Route path="/associate-portfolio/:id" element={wrapWithTransition(<AssociateServicePortfolio />)} />
+
+              {/* Portals */}
+              <Route path="/studio/portal" element={wrapWithTransition(<StudioPortal />)} />
+              <Route path="/studio/portal/intro" element={wrapWithTransition(<StudioPortal />)} />
+              <Route path="/associates/portal" element={wrapWithTransition(<AssociatePortal />)} />
+              <Route path="/associates/portal/intro" element={wrapWithTransition(<AssociatePortal />)} />
+              <Route path="/portal/vendor" element={wrapWithTransition(<VendorPortal />)} />
+
+              {/* Associate Dashboard & Management */}
+              <Route path="/associates/dashboard" element={wrapWithTransition(<AssociateDashboard />)} />
+
+              {/* Design Studio */}
+              <Route path="/associates/design-studio" element={wrapWithTransition(<DesignStudioList />)} />
+              <Route path="/associates/design-studio/create" element={wrapWithTransition(<DesignStudioCreate />)} />
+              <Route path="/associates/design-studio/:id" element={wrapWithTransition(<DesignStudioDetail />)} />
+              <Route path="/associates/design-studio/:id/edit" element={wrapWithTransition(<DesignStudioCreate />)} />
+
+              {/* Skill Studio */}
+              <Route path="/associates/skill-studio" element={wrapWithTransition(<SkillStudioList />)} />
+              <Route path="/associates/skill-studio/create" element={wrapWithTransition(<SkillStudioCreate />)} />
+              <Route path="/associates/skill-studio/:id" element={wrapWithTransition(<SkillStudioDetail />)} />
+              <Route path="/associates/skill-studio/:id/edit" element={wrapWithTransition(<SkillStudioCreate />)} />
+
+              {/* Inquiries & Analytics - Placeholder */}
+              <Route path="/associates/inquiries" element={wrapWithTransition(<AssociateDashboard />)} />
+              <Route path="/associates/analytics" element={wrapWithTransition(<AssociateDashboard />)} />
+
+              {/* Cart & Wishlist */}
+              <Route path="/cart" element={wrapWithTransition(<Cart />)} />
               <Route path="/wishlist" element={wrapWithTransition(<Wishlist />)} />
+
+              {/* User Account */}
               <Route path="/profile" element={wrapWithTransition(<Profile />)} />
               <Route path="/account" element={wrapWithTransition(<Account />)} />
               <Route path="/settings" element={wrapWithTransition(<Settings />)} />
-              <Route path="/orders" element={wrapWithTransition(<OrderHistory />)} />
-              <Route path="/dashboard/super-admin" element={wrapWithTransition(<SuperAdminDashboard />)} />
-              <Route path="/dashboard/admin" element={wrapWithTransition(<AdminDashboard />)} />
-              <Route path="/dashboard/studio-hub" element={wrapWithTransition(<StudioHubDashboard />)} />
-              <Route path="/dashboard/user" element={wrapWithTransition(<UserDashboard />)} />
-              <Route path="/dashboard/client" element={wrapWithTransition(<ClientDashboard />)} />
-              <Route path="/dashboard/vendor" element={wrapWithTransition(<VendorDashboard />)} />
-              <Route path="/workspace/studio" element={wrapWithTransition(<StudioServicesWorkspace />)} />
-              <Route path="/workspace/design" element={wrapWithTransition(<DesignWorkspace />)} />
-              <Route path="/studioDetail" element={wrapWithTransition(<StudioDetail />)} />
-              <Route path="/studio/:id" element={wrapWithTransition(<StudioDetail />)} />
+
+              {/* Utility Pages */}
               <Route path="/faqs" element={wrapWithTransition(<Faqs />)} />
               <Route path="/registrstrip" element={wrapWithTransition(<RegistrStrip />)} />
+
+              {/* Legacy redirects */}
+              <Route path="/amazon" element={<Navigate to="/studio" replace />} />
+              <Route path="/blinkit" element={<Navigate to="/warehouse" replace />} />
+              <Route path="/urban" element={<Navigate to="/firms" replace />} />
+              <Route path="/dashboard/*" element={<Navigate to="/" replace />} />
+
+              {/* 404 */}
               <Route path="*" element={wrapWithTransition(<NotFound />)} />
             </Routes>
           </AnimatePresence>

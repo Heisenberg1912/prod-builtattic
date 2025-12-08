@@ -51,12 +51,12 @@ const AssociatePortal = () => {
             >
               Sign in to associate workspace
             </Link>
-            <Link
-              to="/register"
+            <a
+              href="mailto:support@builtattic.com"
               className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
             >
-              Request portal access
-            </Link>
+              Contact support
+            </a>
           </div>
         </section>
 

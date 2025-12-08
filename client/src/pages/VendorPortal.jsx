@@ -19,7 +19,6 @@ import {
   deleteVendorMaterial,
   fetchVendorOnboarding,
 } from "../services/portal.js";
-import { fetchVendorDashboard } from "../services/dashboard.js";
 
 const EMPTY_MATERIAL_FORM = {
   id: null,
@@ -389,29 +388,15 @@ export default function VendorPortal() {
   }, [refreshOnboarding]);
 
   const refreshWorkspace = useCallback(async () => {
-    setWorkspaceState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const payload = await fetchVendorDashboard();
-      setWorkspaceState({
-        loading: false,
-        error: payload?.error || null,
-        servicePacks: payload?.servicePacks || [],
-        meetings: payload?.meetings || [],
-        planUploads: payload?.planUploads || [],
-        downloads: payload?.downloads || [],
-        chats: payload?.chats || [],
-      });
-    } catch (error) {
-      setWorkspaceState({
-        loading: false,
-        error: error?.message || "Unable to load workspace data",
-        servicePacks: [],
-        meetings: [],
-        planUploads: [],
-        downloads: [],
-        chats: [],
-      });
-    }
+    setWorkspaceState({
+      loading: false,
+      error: "Dashboard workspace features have been removed.",
+      servicePacks: [],
+      meetings: [],
+      planUploads: [],
+      downloads: [],
+      chats: [],
+    });
   }, []);
 
   useEffect(() => {
@@ -553,11 +538,10 @@ export default function VendorPortal() {
             </div>
             <button
               type="button"
-              onClick={refreshWorkspace}
-              disabled={workspaceState.loading}
+              disabled
               className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
             >
-              {workspaceState.loading ? "Refreshing..." : "Refresh snapshot"}
+              Dashboard removed
             </button>
           </div>
           {workspaceState.error ? (

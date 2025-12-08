@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FileText, Film, Image as ImageIcon, Play } from "lucide-react";
+import { ExternalLink, FileText, Film, Image as ImageIcon, Play, ChevronLeft, ChevronRight } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Button } from "../ui/button";
 import { normaliseAssetUrl } from "../../utils/studioForm.js";
 
 const MEDIA_EXTENSIONS = {
@@ -39,73 +41,70 @@ const normalisePortfolioMedia = (value) => {
 
 const Thumbnail = ({ item, isActive, onSelect }) => {
   const type = detectMediaType(item);
-  const base = "rounded-xl border px-3 py-2 text-xs font-semibold transition";
-  const stateClass = isActive
-    ? "border-slate-900 bg-slate-900 text-white"
-    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300";
+
+  const Icon = type === "image" ? ImageIcon : type === "video" || type === "embed" ? Film : FileText;
+  const label = item.title || (type === "image" ? "Image" : type === "video" || type === "embed" ? "Video" : "Document");
 
   return (
-    <button type="button" onClick={onSelect} className={`${base} ${stateClass}`}>
-      {type === "image" ? (
-        <div className="flex items-center gap-2">
-          <ImageIcon size={14} />
-          <span>{item.title || "Image"}</span>
-        </div>
-      ) : type === "video" || type === "embed" ? (
-        <div className="flex items-center gap-2">
-          <Film size={14} />
-          <span>{item.title || "Video"}</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <FileText size={14} />
-          <span>{item.title || "Document"}</span>
-        </div>
-      )}
-    </button>
+    <Button
+      type="button"
+      onClick={onSelect}
+      variant={isActive ? "default" : "outline"}
+      size="sm"
+      className="justify-start"
+    >
+      <Icon size={14} />
+      <span className="truncate">{label}</span>
+    </Button>
   );
 };
 
 const MediaPreview = ({ item, onOpen }) => {
   const type = detectMediaType(item);
+
   if (type === "embed") {
     return (
       <iframe
         src={item.mediaUrl}
         title={item.title || "Portfolio media"}
-        className="h-64 w-full md:h-72"
+        className="h-64 w-full md:h-72 rounded-xl"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
       />
     );
   }
+
   if (type === "video") {
     return (
-      <video controls className="h-64 w-full object-cover md:h-72">
+      <video controls className="h-64 w-full object-cover md:h-72 rounded-xl">
         <source src={item.mediaUrl} />
       </video>
     );
   }
+
   if (type === "image") {
     return (
       <img
         src={item.mediaUrl}
         alt={item.title || "Portfolio media"}
-        className="h-64 w-full object-cover md:h-72"
+        className="h-64 w-full object-cover md:h-72 rounded-xl"
       />
     );
   }
+
   return (
-    <div className="flex h-64 w-full flex-col items-center justify-center bg-white text-slate-700 md:h-72">
-      <FileText size={18} className="text-slate-500" />
-      <p className="mt-2 text-sm font-semibold">Document preview unavailable</p>
-      <button
+    <div className="flex h-64 w-full flex-col items-center justify-center bg-slate-50 rounded-xl text-slate-700 md:h-72">
+      <FileText size={32} className="text-slate-400 mb-3" />
+      <p className="text-sm font-semibold mb-3">Document preview unavailable</p>
+      <Button
         type="button"
         onClick={onOpen}
-        className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400"
+        variant="outline"
+        size="sm"
       >
-        Open document <ExternalLink size={12} />
-      </button>
+        Open document
+        <ExternalLink size={14} />
+      </Button>
     </div>
   );
 };
@@ -122,11 +121,6 @@ const PortfolioMediaPlayer = ({
 }) => {
   const mediaItems = useMemo(() => normalisePortfolioMedia(items), [items]);
   const [index, setIndex] = useState(0);
-  const Wrapper = variant === "bare" ? "div" : "section";
-  const wrapperClass =
-    variant === "bare"
-      ? className
-      : `rounded-2xl border border-slate-200 bg-white p-6 shadow-sm ${className}`;
 
   useEffect(() => {
     if (!mediaItems.length) {
@@ -139,6 +133,7 @@ const PortfolioMediaPlayer = ({
   }, [index, mediaItems.length]);
 
   const current = mediaItems[index];
+
   const openCurrent = () => {
     if (!current?.mediaUrl || typeof window === "undefined") return;
     try {
@@ -148,61 +143,170 @@ const PortfolioMediaPlayer = ({
     }
   };
 
+  const goToPrevious = () => setIndex((prev) => (prev === 0 ? mediaItems.length - 1 : prev - 1));
+  const goToNext = () => setIndex((prev) => (prev === mediaItems.length - 1 ? 0 : prev + 1));
+
+  // Bare variant (no card wrapper)
+  if (variant === "bare") {
+    if (!mediaItems.length) {
+      return (
+        <div className={className}>
+          {title && <p className="text-sm font-semibold text-slate-900 mb-1">{title}</p>}
+          {subtitle && <p className="text-xs text-slate-500 mb-4">{subtitle}</p>}
+          <p className="text-sm text-slate-500">{emptyLabel}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className={className}>
+        {title && <p className="text-sm font-semibold text-slate-900 mb-1">{title}</p>}
+        {subtitle && <p className="text-xs text-slate-500 mb-4">{subtitle}</p>}
+
+        <div className="space-y-4">
+          {/* Media Preview with Navigation */}
+          <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-black">
+            <MediaPreview item={current} onOpen={openCurrent} />
+
+            {mediaItems.length > 1 && (
+              <>
+                <Button
+                  type="button"
+                  onClick={goToPrevious}
+                  variant="secondary"
+                  size="sm"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white"
+                >
+                  <ChevronLeft size={16} />
+                  Prev
+                </Button>
+                <Button
+                  type="button"
+                  onClick={goToNext}
+                  variant="secondary"
+                  size="sm"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white"
+                >
+                  Next
+                  <ChevronRight size={16} />
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Media Metadata */}
+          {showMeta && (
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900">{current.title || `Media #${index + 1}`}</h4>
+              <p className="text-xs text-slate-500 mt-1">
+                {current.description || "Add context so buyers know what they are viewing."}
+              </p>
+              <Button
+                type="button"
+                onClick={openCurrent}
+                variant="link"
+                size="sm"
+                className="mt-2 p-0 h-auto text-xs"
+              >
+                <Play size={12} />
+                Open this tile
+              </Button>
+            </div>
+          )}
+
+          {/* Thumbnail Navigation */}
+          {showThumbnails && mediaItems.length > 1 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {mediaItems.map((item, itemIndex) => (
+                <Thumbnail
+                  key={item.id || item.mediaUrl || itemIndex}
+                  item={item}
+                  isActive={itemIndex === index}
+                  onSelect={() => setIndex(itemIndex)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Card variant (default)
   if (!mediaItems.length) {
     return (
-      <Wrapper className={wrapperClass}>
-        {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
-        {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
-        <p className="mt-4 text-sm text-slate-500">{emptyLabel}</p>
-      </Wrapper>
+      <Card className={className}>
+        <CardHeader>
+          {title && <CardTitle className="text-sm">{title}</CardTitle>}
+          {subtitle && <CardDescription className="text-xs">{subtitle}</CardDescription>}
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-500">{emptyLabel}</p>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <Wrapper className={wrapperClass}>
-      {title ? <p className="text-sm font-semibold text-slate-900">{title}</p> : null}
-      {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
-      <div className="mt-4 space-y-4">
-        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-black">
+    <Card className={className}>
+      <CardHeader>
+        {title && <CardTitle className="text-sm">{title}</CardTitle>}
+        {subtitle && <CardDescription className="text-xs">{subtitle}</CardDescription>}
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Media Preview with Navigation */}
+        <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-black">
           <MediaPreview item={current} onOpen={openCurrent} />
-          {mediaItems.length > 1 ? (
+
+          {mediaItems.length > 1 && (
             <>
-              <button
+              <Button
                 type="button"
-                onClick={() => setIndex((prev) => (prev === 0 ? mediaItems.length - 1 : prev - 1))}
-                className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 shadow hover:bg-white"
+                onClick={goToPrevious}
+                variant="secondary"
+                size="sm"
+                className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white"
               >
+                <ChevronLeft size={16} />
                 Prev
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                onClick={() => setIndex((prev) => (prev === mediaItems.length - 1 ? 0 : prev + 1))}
-                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 shadow hover:bg-white"
+                onClick={goToNext}
+                variant="secondary"
+                size="sm"
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white"
               >
                 Next
-              </button>
+                <ChevronRight size={16} />
+              </Button>
             </>
-          ) : null}
+          )}
         </div>
-        {showMeta ? (
+
+        {/* Media Metadata */}
+        {showMeta && (
           <div>
-            <p className="text-sm font-semibold text-slate-900">{current.title || `Media #${index + 1}`}</p>
-            <p className="text-xs text-slate-500">
+            <h4 className="text-sm font-semibold text-slate-900">{current.title || `Media #${index + 1}`}</h4>
+            <p className="text-xs text-slate-500 mt-1">
               {current.description || "Add context so buyers know what they are viewing."}
             </p>
-            <div className="mt-2 inline-flex items-center gap-2 text-xs text-slate-500">
+            <Button
+              type="button"
+              onClick={openCurrent}
+              variant="link"
+              size="sm"
+              className="mt-2 p-0 h-auto text-xs"
+            >
               <Play size={12} />
-              <button
-                type="button"
-                onClick={openCurrent}
-                className="font-semibold text-slate-900 underline decoration-dotted underline-offset-4"
-              >
-                Open this tile
-              </button>
-            </div>
+              Open this tile
+            </Button>
           </div>
-        ) : null}
-        {showThumbnails && mediaItems.length > 1 ? (
+        )}
+
+        {/* Thumbnail Navigation */}
+        {showThumbnails && mediaItems.length > 1 && (
           <div className="grid gap-2 sm:grid-cols-2">
             {mediaItems.map((item, itemIndex) => (
               <Thumbnail
@@ -213,9 +317,9 @@ const PortfolioMediaPlayer = ({
               />
             ))}
           </div>
-        ) : null}
-      </div>
-    </Wrapper>
+        )}
+      </CardContent>
+    </Card>
   );
 };
 

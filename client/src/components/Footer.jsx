@@ -44,9 +44,9 @@ const Footer = () => {
         <div>
           <h3 className="font-semibold text-white mb-4">Join the Platform</h3>
           <ul className="space-y-2 text-sm">
-            <li><Link to="/register" className="hover:text-white">Register your Firm</Link></li>
-            <li><Link to="/register" className="hover:text-white">Become a Design Associate</Link></li>
-            <li><Link to="/register" className="hover:text-white">Advertise your Design</Link></li>
+            <li><Link to="/login" className="hover:text-white">Sign in</Link></li>
+            <li><a href="mailto:support@builtattic.com" className="hover:text-white">Contact our team</a></li>
+            <li><Link to="/studio" className="hover:text-white">Explore studios</Link></li>
           </ul>
         </div>
 

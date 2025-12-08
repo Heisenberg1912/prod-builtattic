@@ -5,7 +5,7 @@ const { execSync } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const path = require('node:path');
 
-const projects = ['client', 'server'];
+const projects = ['client'];
 
 for (const project of projects) {
   const projectPath = path.resolve(__dirname, '..', project);

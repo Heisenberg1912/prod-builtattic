@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "default",
+  "rsc": false,
+  "tsx": false,
+  "tailwind": {
+    "config": "client/vite.config.js",
+    "css": "client/src/index.css",
+    "baseColor": "slate",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "d:/prod2/client/src/components",
+    "utils": "d:/prod2/client/src/lib",
+    "ui": "d:/prod2/client/src/components/ui",
+    "lib": "d:/prod2/client/src/lib",
+    "hooks": "d:/prod2/client/src/hooks"
+  }
+}

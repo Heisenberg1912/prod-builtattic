@@ -1,892 +1,552 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "react-hot-toast";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "react-hot-toast";
 import {
-  HiOutlineFilter,
   HiOutlineSearch,
+  HiOutlineAdjustments,
+  HiX,
   HiOutlineHeart,
   HiHeart,
+  HiOutlineShoppingCart,
+  HiOutlineShieldCheck,
+  HiOutlineEye
 } from "react-icons/hi";
-import { motion as Motion, AnimatePresence } from "framer-motion";
+import RegistrStrip from "../components/registrstrip";
+import Footer from "../components/Footer";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
-import { marketplaceFeatures } from "../data/marketplace.js";
 import { fetchMaterials } from "../services/marketplace.js";
-import { analyzeImage } from "../utils/imageSearch.js";
-import {
-  applyFallback,
-  getMaterialFallback,
-  getMaterialImage,
-} from "../utils/imageFallbacks.js";
-import { resolveMaterialStudioHero } from "../assets/materialStudioImages.js";
+import { getMaterialImage, getMaterialFallback, applyFallback } from "../utils/imageFallbacks.js";
 
-const extractWishlistIds = (items) => {
-  const set = new Set();
-  (items || []).forEach((entry) => {
-    const key =
-      entry?.productId ??
-      entry?.id ??
-      entry?._id ??
-      entry?.slug;
-    if (key != null) set.add(String(key));
-  });
-  return set;
-};
+const MATERIAL_FAMILIES = [
+  "Concrete",
+  "Steel",
+  "Timber",
+  "Composite",
+  "Envelope",
+  "Mechanical",
+  "Finishes",
+  "Modular Kits"
+];
 
-const formatRelativeTime = (iso) => {
-  if (!iso) return null;
-  const target = new Date(iso);
-  if (Number.isNaN(target.getTime())) return null;
-  const diffMs = target.getTime() - Date.now();
-  const units = [
-    { unit: "day", ms: 86_400_000 },
-    { unit: "hour", ms: 3_600_000 },
-    { unit: "minute", ms: 60_000 },
-  ];
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  for (const { unit, ms } of units) {
-    if (Math.abs(diffMs) >= ms || unit === "minute") {
-      return formatter.format(Math.round(diffMs / ms), unit);
-    }
-  }
-  return target.toLocaleDateString();
-};
+const CERTIFICATIONS = ["FSC", "PEFC", "LEED", "CE Mark", "ISO 9001", "BIS"];
 
-const MATERIAL_FILTER_SECTIONS = {
-  family: {
-    label: "Material family",
-    options: [
-      "Concrete",
-      "Steel",
-      "Timber",
-      "Composite",
-      "Envelope",
-      "Mechanical",
-      "Finishes",
-      "Modular Kits",
-    ],
-  },
-  grade: {
-    label: "Structural grade",
-    options: [
-      "Grade 60",
-      "Grade 50",
-      "ASTM A615",
-      "EN 1090",
-      "GL24",
-      "Class A",
-    ],
-  },
-  finish: {
-    label: "Finish",
-    options: [
-      "Galvanized",
-      "Epoxy coated",
-      "Fire-treated",
-      "Polished",
-      "UV Sealed",
-      "Weathering",
-    ],
-  },
-  certification: {
-    label: "Certification",
-    options: [
-      "FSC",
-      "PEFC",
-      "LEED",
-      "CE Mark",
-      "ISO 9001",
-      "BIS",
-    ],
-  },
-  leadTime: {
-    label: "Lead time",
-    options: [
-      "<= 14 days",
-      "15-30 days",
-      "31-45 days",
-      "46+ days",
-    ],
-  },
-  moq: {
-    label: "MOQ brackets",
-    options: [
-      "1-10 units",
-      "11-50 units",
-      "51-100 units",
-      "100+ units",
-    ],
-  },
-  supplier: {
-    label: "Supplier region",
-    options: [
-      "North America",
-      "Europe",
-      "Asia-Pacific",
-      "Middle East",
-      "Latin America",
-      "Africa",
-    ],
-  },
-  logistics: {
-    label: "Handling profile",
-    options: [
-      "Includes cranage",
-      "Requires curing",
-      "Prefabricated kit",
-      "Bulk commodity",
-    ],
-  },
-};
-
-const createMaterialFilterState = () =>
-  Object.fromEntries(Object.keys(MATERIAL_FILTER_SECTIONS).map((key) => [key, new Set()]));
-
-const REGION_KEYWORDS = {
-  "North America": ["usa", "united states", "canada", "mexico", "portland", "atlanta"],
-  "Europe": ["germany", "france", "uk", "london", "spain", "italy", "denmark", "europe"],
-  "Asia-Pacific": ["india", "china", "singapore", "australia", "malaysia", "vietnam", "asia"],
-  "Middle East": ["dubai", "abu dhabi", "saudi", "riyadh", "doha", "middle east"],
-  "Latin America": ["brazil", "colombia", "chile", "peru", "latam", "latin"],
-  "Africa": ["nairobi", "south africa", "egypt", "kenya", "lagos", "africa"],
-};
-
-const LOGISTICS_KEYWORDS = {
-  "Includes cranage": ["cranage", "lifting", "hoisting"],
-  "Requires curing": ["curing", "post-tension", "hydration"],
-  "Prefabricated kit": ["prefab", "modular", "kit"],
-  "Bulk commodity": ["bulk", "aggregate", "commodity"],
-};
-
-const categorizeLeadTime = (days) => {
-  if (!Number.isFinite(days)) return null;
-  if (days <= 14) return "<= 14 days";
-  if (days <= 30) return "15-30 days";
-  if (days <= 45) return "31-45 days";
-  return "46+ days";
-};
-
-const categorizeMoq = (qty) => {
-  if (!Number.isFinite(qty)) return null;
-  if (qty <= 10) return "1-10 units";
-  if (qty <= 50) return "11-50 units";
-  if (qty <= 100) return "51-100 units";
-  return "100+ units";
-};
-
-
+const SUPPLIER_REGIONS = [
+  "North America",
+  "Europe",
+  "Asia-Pacific",
+  "Middle East",
+  "Latin America",
+  "Africa"
+];
 
 const Warehouse = () => {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { addToWishlist, removeFromWishlist, wishlistItems = [] } = useWishlist();
-  const [query, setQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [showFilters, setShowFilters] = useState(false);
-  const [favourites, setFavourites] = useState(() => extractWishlistIds(wishlistItems));
+
   const [materials, setMaterials] = useState([]);
-  const [web3Meta, setWeb3Meta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [hoveredCard, setHoveredCard] = useState(null);
+  const [comparedItems, setComparedItems] = useState(new Set());
 
-  const [materialFilters, setMaterialFilters] = useState(() => createMaterialFilterState());
-  const [imageKeywords, setImageKeywords] = useState([]);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [imageStatus, setImageStatus] = useState("");
-  const [imageSearching, setImageSearching] = useState(false);
-  const imageInputRef = useRef(null);
+  const [selectedFamilies, setSelectedFamilies] = useState(new Set());
+  const [selectedCertifications, setSelectedCertifications] = useState(new Set());
+  const [selectedRegions, setSelectedRegions] = useState(new Set());
+  const [sortBy, setSortBy] = useState("");
 
-  useEffect(() => {
-    setFavourites(extractWishlistIds(wishlistItems));
-  }, [wishlistItems]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadMaterials() {
-      setLoading(true);
-      setError(null);
-      setWeb3Meta(null);
-      try {
-        const { items, meta } = await fetchMaterials();
-        if (!cancelled) {
-          setMaterials(items);
-          setWeb3Meta(meta?.web3 || null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err?.message || "Unable to load warehouse catalogue.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-    loadMaterials();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const categories = useMemo(() => {
-    const unique = new Set(materials.map((item) => item.category).filter(Boolean));
-    return ["All", ...unique];
-  }, [materials]);
-
-  const filteredItems = useMemo(() => {
-    const activeAdvancedFilters = Object.entries(materialFilters).filter(([, value]) => value?.size);
-
-    return materials.filter((item) => {
-      const matchesCategory =
-        selectedCategory === "All" ||
-        item.category === selectedCategory ||
-        (Array.isArray(item.categories) && item.categories.includes(selectedCategory));
-
-      const matchesQuery = (() => {
-        if (!query) return true;
-        const needles = query.toLowerCase().split(/\s+/).filter(Boolean);
-        if (!needles.length) return true;
-        const haystack = [
-          item.title,
-          item.description,
-          item.category,
-          item.metafields?.vendor,
-          item.metafields?.location,
-        ]
-          .filter(Boolean)
-          .map((value) => String(value).toLowerCase());
-        return needles.every((needle) => haystack.some((part) => part.includes(needle)));
-      })();
-
-      if (!matchesCategory || !matchesQuery) return false;
-      if (!activeAdvancedFilters.length) return true;
-
-      const pricing = item.pricing || {};
-      const textSources = [
-        item.title,
-        item.description,
-        item.category,
-        ...(item.categories || []),
-        ...(item.tags || []),
-        ...(item.highlights || []),
-        ...((item.specs || []).map((spec) => `${spec.label} ${spec.value}`)),
-        item.delivery?.instructions,
-        ...(item.delivery?.items || []),
-      ];
-
-      const textHaystack = textSources
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase());
-
-      const includesText = (option) =>
-        textHaystack.some((part) => part.includes(option.toLowerCase()));
-
-      const leadTimeDays = (() => {
-        if (Number.isFinite(item.metafields?.leadTimeDays)) return Number(item.metafields.leadTimeDays);
-        if (Number.isFinite(item.delivery?.leadTimeWeeks)) return Number(item.delivery.leadTimeWeeks) * 7;
-        if (Number.isFinite(pricing.leadTimeDays)) return Number(pricing.leadTimeDays);
-        return null;
-      })();
-      const leadTimeLabel = categorizeLeadTime(leadTimeDays);
-
-      const moqValue = (() => {
-        if (Number.isFinite(item.metafields?.moq)) return Number(item.metafields.moq);
-        if (Number.isFinite(pricing.minQuantity)) return Number(pricing.minQuantity);
-        if (Number.isFinite(item.inventory)) return Number(item.inventory);
-        return null;
-      })();
-      const moqLabel = categorizeMoq(moqValue);
-
-      const location = String(item.metafields?.location || "").toLowerCase();
-
-      const matchesRegion = (option) => {
-        const keywords = REGION_KEYWORDS[option] || [];
-        if (!keywords.length) return false;
-        return keywords.some((keyword) => location.includes(keyword));
-      };
-
-      const matchesLogistics = (option) => {
-        const keywords = LOGISTICS_KEYWORDS[option] || [];
-        if (!keywords.length) return includesText(option);
-        return keywords.some((keyword) => includesText(keyword));
-      };
-
-      return activeAdvancedFilters.every(([section, selections]) => {
-        if (!selections?.size) return true;
-        const options = Array.from(selections);
-        switch (section) {
-          case "family":
-          case "grade":
-          case "finish":
-          case "certification":
-            return options.some((option) => includesText(option));
-          case "leadTime":
-            return leadTimeLabel ? options.includes(leadTimeLabel) : false;
-          case "moq":
-            return moqLabel ? options.includes(moqLabel) : false;
-          case "supplier":
-            return options.some((option) => matchesRegion(option));
-          case "logistics":
-            return options.some((option) => matchesLogistics(option));
-          default:
-            return true;
-        }
-      });
-    });
-  }, [materials, selectedCategory, query, materialFilters]);
-
-  const hasActiveMaterialFilters = useMemo(
-    () => Object.values(materialFilters).some((set) => set?.size),
-    [materialFilters],
+  const wishlistIds = useMemo(
+    () => new Set(wishlistItems.map(item => item.productId || item.id || item._id)),
+    [wishlistItems]
   );
 
-  const displayItems = useMemo(() => {
-    if (!imageKeywords.length) return filteredItems;
-    const needles = imageKeywords.map((kw) => kw.toLowerCase());
-    return filteredItems.filter((item) => {
-      const haystack = [
-        item.title,
-        item.description,
-        item.category,
-        item.metafields?.vendor,
-        item.metafields?.location,
-      ]
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase());
-      return needles.some((needle) => haystack.some((part) => part.includes(needle)));
-    });
-  }, [filteredItems, imageKeywords]);
+  useEffect(() => {
+    loadMaterials();
+  }, []);
 
-  const handleAddToCart = async (material) => {
-    const key = material?._id ?? material?.id ?? material?.slug;
-    if (!key) return;
-    const price = Number(material.priceSqft ?? material.pricing?.basePrice ?? material.price ?? 0);
-    const heroImage = resolveMaterialStudioHero(material);
-    const payload = {
-      productId: key,
-      title: material.title,
-      image: heroImage || getMaterialImage(material),
-      price,
-      quantity: 1,
-      seller: material.metafields?.vendor || "Marketplace vendor",
-      source: "Material",
-      kind: "material",
-      metadata: {
-        category: material.category,
-        unit: material.pricing?.unit || material.pricing?.unitLabel || material.metafields?.unit,
-      },
-    };
+  const loadMaterials = async () => {
+    setLoading(true);
     try {
-      await addToCart(payload);
-      toast.success(`${material.title} added to cart`);
+      const { items } = await fetchMaterials();
+      setMaterials(items || []);
     } catch (err) {
-      console.error(err);
-      toast.error("Could not add to cart");
+      console.error("Failed to load materials:", err);
+      setError(err?.message || "Unable to load materials");
+      setMaterials([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const toggleFavourite = async (material) => {
-    const key = material?._id ?? material?.id ?? material?.slug;
-    if (!key) return;
-    const stringKey = String(key);
-    const isFav = favourites.has(stringKey);
-    const heroImage = resolveMaterialStudioHero(material);
-    const payload = {
-      productId: key,
-      title: material.title,
-      image: heroImage || getMaterialImage(material),
-      price: Number(material.priceSqft ?? material.pricing?.basePrice ?? material.price ?? 0),
-      source: "Material",
-    };
+  const toggleFilter = (set, setter, value) => {
+    const newSet = new Set(set);
+    if (newSet.has(value)) newSet.delete(value);
+    else newSet.add(value);
+    setter(newSet);
+  };
+
+  const toggleCompare = (materialId) => {
+    const newCompared = new Set(comparedItems);
+    if (newCompared.has(materialId)) {
+      newCompared.delete(materialId);
+    } else {
+      if (newCompared.size >= 3) {
+        toast.error("You can only compare up to 3 items");
+        return;
+      }
+      newCompared.add(materialId);
+    }
+    setComparedItems(newCompared);
+  };
+
+  const filteredMaterials = useMemo(() => {
+    let result = materials;
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(m =>
+        (m.name?.toLowerCase().includes(query)) ||
+        (m.description?.toLowerCase().includes(query)) ||
+        (m.vendorName?.toLowerCase().includes(query))
+      );
+    }
+
+    if (selectedFamilies.size > 0) {
+      result = result.filter(m =>
+        Array.from(selectedFamilies).some(family =>
+          m.family?.toLowerCase().includes(family.toLowerCase())
+        )
+      );
+    }
+
+    if (selectedCertifications.size > 0) {
+      result = result.filter(m =>
+        Array.from(selectedCertifications).some(cert =>
+          m.certifications?.some(c => c.toLowerCase().includes(cert.toLowerCase()))
+        )
+      );
+    }
+
+    if (selectedRegions.size > 0) {
+      result = result.filter(m =>
+        Array.from(selectedRegions).some(region =>
+          m.supplier?.region?.toLowerCase().includes(region.toLowerCase())
+        )
+      );
+    }
+
+    if (sortBy === "price-asc") {
+      result.sort((a, b) => (a.price || 0) - (b.price || 0));
+    } else if (sortBy === "price-desc") {
+      result.sort((a, b) => (b.price || 0) - (a.price || 0));
+    } else if (sortBy === "lead-time") {
+      result.sort((a, b) => (a.leadTime || 0) - (b.leadTime || 0));
+    }
+
+    return result;
+  }, [materials, searchQuery, selectedFamilies, selectedCertifications, selectedRegions, sortBy]);
+
+  const activeFilterCount = selectedFamilies.size + selectedCertifications.size + selectedRegions.size;
+
+  const clearAllFilters = () => {
+    setSelectedFamilies(new Set());
+    setSelectedCertifications(new Set());
+    setSelectedRegions(new Set());
+    setSortBy("");
+  };
+
+  const handleWishlistToggle = async (material) => {
+    const materialId = material._id || material.id;
+    const isInWishlist = wishlistIds.has(materialId);
+
     try {
-      if (isFav) {
-        await removeFromWishlist(payload);
+      if (isInWishlist) {
+        await removeFromWishlist(materialId);
         toast.success("Removed from wishlist");
       } else {
-        await addToWishlist(payload);
+        await addToWishlist({ productId: materialId, ...material });
         toast.success("Added to wishlist");
       }
-      setFavourites((prev) => {
-        const next = new Set(prev);
-        isFav ? next.delete(stringKey) : next.add(stringKey);
-        return next;
-      });
     } catch (err) {
-      console.error(err);
-      toast.error("Could not update wishlist");
+      toast.error(isInWishlist ? "Failed to remove from wishlist" : "Failed to add to wishlist");
     }
   };
 
-
-  const handleMaterialFilterToggle = (section, option) => {
-    setMaterialFilters((prev) => {
-      const next = { ...prev };
-      const nextSet = new Set(next[section] || []);
-      if (nextSet.has(option)) {
-        nextSet.delete(option);
-      } else {
-        nextSet.add(option);
-      }
-      next[section] = nextSet;
-      return next;
-    });
-  };
-
-  const handleClearMaterialFilters = () => {
-    setMaterialFilters(createMaterialFilterState());
-  };
-
-  const handleReverseSearchClick = () => {
-    imageInputRef.current?.click();
-  };
-
-  const handleImageSelected = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setImageSearching(true);
-    setImageStatus("Analysing reference image...");
+  const handleAddToCart = async (material) => {
     try {
-      const result = await analyzeImage(file);
-      setImagePreview(result.dataUrl);
-      setImageKeywords(result.keywords);
-      setImageStatus(`Matched colour keywords: ${result.keywords.join(", ")}`);
+      await addToCart({ productId: material._id || material.id, quantity: 1, ...material });
+      toast.success("Added to cart");
     } catch (err) {
-      console.error("Reverse image search failed", err);
-      setImagePreview(null);
-      setImageKeywords([]);
-      setImageStatus(err?.message || "Could not analyse the image.");
-    } finally {
-      setImageSearching(false);
-      if (event.target) event.target.value = "";
+      toast.error("Failed to add to cart");
     }
-  };
-
-  const clearImageSearch = () => {
-    setImageKeywords([]);
-    setImagePreview(null);
-    setImageStatus("");
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen text-slate-900">
-      <main className="max-w-6xl mx-auto px-4 py-10 space-y-8">
-        <div className="flex flex-wrap items-center gap-3 justify-between">
-          <div className="flex flex-wrap gap-2">
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-full text-sm transition ${
-                  selectedCategory === category
-                    ? "bg-slate-900 text-white"
-                    : "bg-white border border-slate-200 text-slate-600 hover:border-slate-300"
-                }`}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setShowFilters((prev) => !prev)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:border-slate-300"
-          >
-            <HiOutlineFilter className="w-4 h-4" />
-            Filters
-          </button>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-white to-stone-50/50">
+      <RegistrStrip />
 
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <HiOutlineSearch className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search materials, vendors, or specifications"
-              className="w-full bg-white border border-slate-200 rounded-lg pl-12 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleReverseSearchClick}
-            disabled={imageSearching}
-            className="whitespace-nowrap px-4 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white hover:border-slate-300 disabled:opacity-60"
-          >
-            {imageSearching ? "Scanning..." : "Reverse image"}
-          </button>
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageSelected}
-          />
-        </div>
-
-        {(imageStatus || imagePreview || imageKeywords.length > 0) && (
-          <section className="bg-white border border-slate-200 rounded-xl px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 text-sm">
-            <div className="space-y-1">
-              <p className="font-semibold text-slate-700">Reverse image search</p>
-              <p className="text-slate-500">
-                {imageStatus || "Upload a reference photo to surface similar inventory."}
-              </p>
-              {imageKeywords.length > 0 && (
-                <p className="text-slate-400 text-xs uppercase tracking-wide">
-                  Matched keywords: {imageKeywords.join(", ")}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {imagePreview && (
-                <img
-                  src={imagePreview}
-                  alt="Reverse search preview"
-                  className="w-16 h-16 rounded-lg border border-slate-200 object-cover"
-                />
-              )}
-              {imageKeywords.length > 0 && (
-                <button
-                  type="button"
-                  onClick={clearImageSearch}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-600 hover:border-slate-300"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </section>
-        )}
-
-        {!loading && web3Meta && (
-
-          <div className="rounded-2xl border border-slate-800 bg-black px-6 py-5 text-slate-100 shadow-sm">
-
-            <p className="text-[11px] uppercase tracking-[0.35em] text-slate-400">
-
-              Warehouse provenance
-
-            </p>
-
-            <div className="mt-2 flex flex-wrap items-center gap-4">
-
-              <h2 className="text-xl font-semibold">
-
-                {web3Meta.total ?? 0} inventory proofs anchored on {web3Meta.chain ?? "Polygon"}
-
-              </h2>
-
-              {Array.isArray(web3Meta.anchors) && web3Meta.anchors.length > 0 ? (
-
-                <p className="text-xs text-slate-300">
-
-                  Latest anchors: {web3Meta.anchors.slice(0, 3).join(" · ")}
-
-                </p>
-
-              ) : null}
-
+      {/* Clean Header */}
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-stone-200/60 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1">
+              <HiOutlineSearch className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
+              <input
+                type="text"
+                placeholder="Search construction materials..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 rounded-xl bg-stone-50 border border-stone-200 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-200 focus:bg-white transition-all duration-200"
+              />
             </div>
 
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-4 py-3 rounded-xl bg-stone-50 border border-stone-200 text-sm text-stone-700 focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-200 focus:bg-white transition-all duration-200 cursor-pointer"
+            >
+              <option value="">Sort By</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="lead-time">Fastest Delivery</option>
+            </select>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-stone-900 text-white text-sm font-medium hover:bg-stone-800 transition-all duration-200 shadow-sm"
+            >
+              <HiOutlineAdjustments className="w-5 h-5" />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-white/20 text-xs font-semibold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </motion.button>
           </div>
 
-        )}
-
-
-
-        <AnimatePresence>
-          {showFilters && (
-            <Motion.div
+          {comparedItems.size > 0 && (
+            <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="bg-white border border-slate-200 rounded-xl p-6 space-y-5"
+              className="mt-3 px-4 py-2 bg-stone-100 rounded-lg text-sm text-stone-700 font-medium text-center"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-800">Refine by material attributes</p>
-                {hasActiveMaterialFilters && (
-                  <button
-                    type="button"
-                    onClick={handleClearMaterialFilters}
-                    className="text-xs font-medium text-slate-600 hover:text-slate-800"
+              {comparedItems.size} material{comparedItems.size !== 1 ? 's' : ''} selected for comparison
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <div className="flex gap-6">
+          {/* Filter Sidebar */}
+          <AnimatePresence>
+            {filtersOpen && (
+              <motion.aside
+                initial={{ opacity: 0, x: -30 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -30 }}
+                transition={{ duration: 0.3, type: "spring", stiffness: 200 }}
+                className="w-64 flex-shrink-0 bg-white rounded-2xl border border-stone-200 p-5 h-fit sticky top-24 shadow-sm"
+              >
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-base font-semibold text-stone-900">Filters</h3>
+                  <motion.button
+                    whileHover={{ scale: 1.1, rotate: 90 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setFiltersOpen(false)}
+                    className="p-1.5 hover:bg-stone-100 rounded-lg transition-colors duration-200"
                   >
-                    Clear selections
-                  </button>
+                    <HiX className="w-5 h-5 text-stone-500" />
+                  </motion.button>
+                </div>
+
+                <div className="mb-5">
+                  <h4 className="font-medium text-stone-900 mb-3 text-sm">Material Family</h4>
+                  <div className="space-y-2">
+                    {MATERIAL_FAMILIES.map((family) => (
+                      <label key={family} className="flex items-center gap-2.5 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={selectedFamilies.has(family)}
+                          onChange={() => toggleFilter(selectedFamilies, setSelectedFamilies, family)}
+                          className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-2 focus:ring-stone-200 transition-all duration-200"
+                        />
+                        <span className="text-sm text-stone-700 group-hover:text-stone-900 transition-colors duration-200">{family}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mb-5">
+                  <h4 className="font-medium text-stone-900 mb-3 text-sm">Certifications</h4>
+                  <div className="space-y-2">
+                    {CERTIFICATIONS.map((cert) => (
+                      <label key={cert} className="flex items-center gap-2.5 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={selectedCertifications.has(cert)}
+                          onChange={() => toggleFilter(selectedCertifications, setSelectedCertifications, cert)}
+                          className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-2 focus:ring-stone-200 transition-all duration-200"
+                        />
+                        <span className="text-sm text-stone-700 group-hover:text-stone-900 transition-colors duration-200">{cert}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-stone-900 mb-3 text-sm">Supplier Region</h4>
+                  <div className="space-y-2">
+                    {SUPPLIER_REGIONS.map((region) => (
+                      <label key={region} className="flex items-center gap-2.5 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={selectedRegions.has(region)}
+                          onChange={() => toggleFilter(selectedRegions, setSelectedRegions, region)}
+                          className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-2 focus:ring-stone-200 transition-all duration-200"
+                        />
+                        <span className="text-sm text-stone-700 group-hover:text-stone-900 transition-colors duration-200">{region}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {activeFilterCount > 0 && (
+                  <motion.button
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={clearAllFilters}
+                    className="w-full mt-5 px-4 py-2.5 bg-stone-100 text-stone-900 text-sm font-medium rounded-lg hover:bg-stone-200 transition-all duration-200"
+                  >
+                    Clear All Filters
+                  </motion.button>
                 )}
-              </div>
-              <div className="grid gap-5 sm:grid-cols-2">
-                {Object.entries(MATERIAL_FILTER_SECTIONS).map(([section, config]) => (
-                  <div key={section} className="space-y-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-                      {config.label}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {config.options.map((option) => {
-                        const isActive = materialFilters[section]?.has(option);
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            onClick={() => handleMaterialFilterToggle(section, option)}
-                            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                              isActive
-                                ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                                : "border-slate-200 text-slate-600 hover:border-slate-300"
-                            }`}
-                          >
-                            {option}
-                          </button>
-                        );
-                      })}
+              </motion.aside>
+            )}
+          </AnimatePresence>
+
+          {/* Materials Grid */}
+          <div className="flex-1">
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3.5 text-sm text-red-700 mb-6"
+              >
+                {error}
+              </motion.div>
+            )}
+
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {[...Array(12)].map((_, i) => (
+                  <div key={i} className="animate-pulse">
+                    <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
+                      <div className="bg-stone-100 aspect-square"></div>
+                      <div className="p-4 space-y-3">
+                        <div className="h-3 bg-stone-100 rounded w-3/4"></div>
+                        <div className="h-3 bg-stone-100 rounded w-1/2"></div>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </Motion.div>
+            ) : filteredMaterials.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center py-24 bg-white rounded-2xl border border-stone-200"
+              >
+                <p className="text-base text-stone-600 mb-4">No materials found</p>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="text-sm text-stone-900 hover:text-stone-700 font-medium transition-colors duration-200"
+                  >
+                    Clear all filters
+                  </button>
+                )}
+              </motion.div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {filteredMaterials.map((material, index) => {
+                  const materialImage = getMaterialImage(material);
+                  const fallbackImage = getMaterialFallback();
+                  const materialId = material._id || material.id;
+                  const isWishlisted = wishlistIds.has(materialId);
+                  const isHovered = hoveredCard === materialId;
+                  const isCompared = comparedItems.has(materialId);
 
-          )}
-        </AnimatePresence>
-
-        {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm">
-            {error}
-          </div>
-        )}
-
-        {loading && (
-          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">
-            Loading warehouse inventory
-          </div>
-        )}
-
-        <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {!loading &&
-            displayItems.map((item) => {
-              const materialKey = item._id ?? item.id ?? item.slug;
-              const favourite = materialKey ? favourites.has(String(materialKey)) : false;
-              const pricing = item.pricing || {};
-              const vendorProfile = item.vendorProfile || null;
-              const vendor = vendorProfile?.companyName || item.metafields?.vendor || "Builtattic partner";
-              const location = vendorProfile?.location || item.metafields?.location || "Global";
-              const heroOverride = resolveMaterialStudioHero(item) || vendorProfile?.heroImage || null;
-              const materialImage = heroOverride || getMaterialImage(item);
-              const materialFallback = heroOverride || getMaterialFallback(item);
-              const moq =
-                vendorProfile?.minOrderQuantity ??
-                item.metafields?.moq ??
-                pricing.minQuantity ??
-                item.inventory ??
-                0;
-              const leadTime =
-                vendorProfile?.leadTimeDays ??
-                item.metafields?.leadTimeDays ??
-                (item.delivery?.leadTimeWeeks ? item.delivery.leadTimeWeeks * 7 : null);
-              const vendorTagline = vendorProfile?.tagline || item.vendorTagline || null;
-              const vendorRegions = Array.isArray(vendorProfile?.shippingRegions)
-                ? vendorProfile.shippingRegions.slice(0, 3)
-                : [];
-              const vendorUpdatedAt = vendorProfile?.updatedAt || vendorProfile?.createdAt || null;
-              const leadTimeDisplay = Number.isFinite(Number(leadTime)) ? Number(leadTime) : null;
-
-              const detailPath = item.slug
-                ? `/warehouse/${item.slug}`
-                : `/warehouse/${item._id}`;
-
-              return (
-                <Motion.article
-                  key={item._id}
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition"
-                  role="link"
-                  tabIndex={0}
-                  onClick={(event) => {
-                    if (event.defaultPrevented) return;
-                    navigate(detailPath);
-                  }}
-                  onKeyDown={(event) => {
-                    if ((event.key === "Enter" || event.key === " ") && event.currentTarget === event.target) {
-                      event.preventDefault();
-                      navigate(detailPath);
-                    }
-                  }}
-                >
-                    <div className="relative">
-                      <img
-                        src={materialImage}
-                        alt={item.title}
-                        className="h-48 w-full object-cover"
-                        loading="lazy"
-                        onError={(event) => applyFallback(event, materialFallback)}
-                      />
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          toggleFavourite(item);
-                        }}
-                        className="absolute top-3 right-3 bg-white/85 rounded-full p-2 shadow-sm"
-                        aria-label="Toggle favourite"
+                  return (
+                    <motion.article
+                      key={materialId || index}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        delay: index * 0.05,
+                        duration: 0.4,
+                        type: "spring",
+                        stiffness: 100,
+                      }}
+                      onMouseEnter={() => setHoveredCard(materialId)}
+                      onMouseLeave={() => setHoveredCard(null)}
+                      className="group cursor-pointer"
+                    >
+                      <motion.div
+                        whileHover={{ y: -8 }}
+                        transition={{ duration: 0.3, type: "spring", stiffness: 300 }}
+                        className="bg-white rounded-2xl overflow-hidden border border-stone-200 hover:border-stone-300 hover:shadow-xl hover:shadow-stone-900/10 transition-all duration-300 h-full flex flex-col"
                       >
-                        {favourite ? (
-                          <HiHeart className="text-rose-500 w-5 h-5" />
-                        ) : (
-                          <HiOutlineHeart className="text-slate-700 w-5 h-5" />
-                        )}
-                      </button>
-                    </div>
-                    <div className="p-5 space-y-4">
-                      <div>
-                        <p className="uppercase tracking-[0.3em] text-xs text-slate-400 mb-2">
-                          {item.category}
-                        </p>
-                        <h2 className="text-xl font-semibold text-slate-900">
-                          {item.title}
-                        </h2>
-                        <p className="text-sm text-slate-500">
-                          {vendor}, {location}
-                        </p>
-                        {vendorTagline && (
-                          <p className="text-xs text-slate-500 mt-1">{vendorTagline}</p>
-                        )}
-                        {vendorRegions.length ? (
-                          <p className="text-[11px] text-slate-400 mt-1">
-                            {vendorRegions.join(' • ')}
-                          </p>
-                        ) : null}
-                        {vendorUpdatedAt && (
-                          <p className="text-[11px] text-slate-400 mt-1">Updated {formatRelativeTime(vendorUpdatedAt)}</p>
-                        )}
-                      </div>
+                        <div className="relative overflow-hidden bg-stone-50 aspect-square">
+                          <motion.img
+                            src={materialImage}
+                            alt={material.name}
+                            className="w-full h-full object-cover"
+                            animate={{ scale: isHovered ? 1.1 : 1 }}
+                            transition={{ duration: 0.6, ease: "easeOut" }}
+                            onError={(e) => applyFallback(e, fallbackImage)}
+                          />
 
-                      <div className="grid grid-cols-2 gap-4 text-xs text-slate-600">
-                        <div className="bg-slate-100 border border-slate-200 rounded-lg p-3">
-                          <p className="text-slate-500 uppercase tracking-widest text-[10px] mb-1">
-                            Unit price
-                          </p>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {pricing.basePrice
-                              ? `${pricing.currency || "USD"} ${pricing.basePrice}`
-                              : "On request"}
-                          </p>
-                          {pricing.unitLabel && (
-                            <p className="text-[11px] text-slate-500 mt-1">
-                              {pricing.unitLabel}
-                            </p>
+                          <motion.div
+                            animate={{ opacity: isHovered ? 1 : 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"
+                          />
+
+                          <div className="absolute top-3 right-3 flex gap-2">
+                            <motion.button
+                              whileHover={{ scale: 1.15 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCompare(materialId);
+                              }}
+                              className={`p-2 rounded-full shadow-lg transition-all duration-200 ${
+                                isCompared ? "bg-stone-900" : "bg-white"
+                              }`}
+                            >
+                              <HiOutlineShieldCheck className={`w-4 h-4 ${isCompared ? "text-white" : "text-stone-700"}`} />
+                            </motion.button>
+                            <motion.button
+                              whileHover={{ scale: 1.15 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleWishlistToggle(material);
+                              }}
+                              className="p-2 bg-white rounded-full shadow-lg transition-all duration-200"
+                            >
+                              {isWishlisted ? (
+                                <HiHeart className="w-4 h-4 text-red-500 fill-current" />
+                              ) : (
+                                <HiOutlineHeart className="w-4 h-4 text-stone-700" />
+                              )}
+                            </motion.button>
+                          </div>
+
+                          {material.family && (
+                            <div className="absolute top-3 left-3">
+                              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-stone-900 shadow-lg">
+                                {material.family}
+                              </span>
+                            </div>
                           )}
-                        </div>
-                        <div className="bg-slate-100 border border-slate-200 rounded-lg p-3">
-                          <p className="text-slate-500 uppercase tracking-widest text-[10px] mb-1">
-                            MOQ & lead time
-                          </p>
-                          <p className="text-sm font-semibold text-slate-900">
-                            MOQ {moq.toLocaleString()}
-                          </p>
-                          {leadTimeDisplay !== null && (
-                            <p className="text-[11px] text-slate-500 mt-1">
-                              Lead time {leadTimeDisplay} days
-                            </p>
-                          )}
-                        </div>
-                      </div>
 
-                      {item.highlights?.length ? (
-                        <ul className="text-xs text-slate-500 space-y-1">
-                          {item.highlights.slice(0, 3).map((highlight) => (
-                            <li key={highlight}>• {highlight}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-
-                      {item.delivery?.items?.length ? (
-                        <div className="bg-white border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
-                          <p className="text-slate-400 uppercase tracking-widest mb-2">
-                            Portfolio deliverables
-                          </p>
-                          <ul className="space-y-1">
-                            {item.delivery.items.slice(0, 3).map((deliverable) => (
-                              <li key={deliverable}>• {deliverable}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            handleAddToCart(item);
-                          }}
-                          className="bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 transition"
-                        >
-                          Add to cart
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            toggleFavourite(item);
-                          }}
-                          className="px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:border-slate-300 transition"
-                        >
-                          {favourite ? "Remove from wishlist" : "Add to wishlist"}
-                        </button>
-                        <button
-                          type="button"
-                          className="px-4 py-2.5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:border-slate-300 transition">
-                          Enquire
-                        </button>
-                        {item.web3Proof?.explorerUrl && (
-                          <a
-                            href={item.web3Proof.explorerUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-2 text-xs font-medium text-amber-600 hover:text-amber-500"
-                            onClick={(event) => event.stopPropagation()}
+                          <motion.div
+                            animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 20 }}
+                            transition={{ duration: 0.3 }}
+                            className="absolute bottom-3 left-3 right-3 flex gap-2"
                           >
-                            <span className="h-2 w-2 rounded-full bg-amber-400" />
-                            <span>On-chain proof</span>
-                            {item.web3Proof.anchor ? (
-                              <span className="font-mono text-amber-700">{item.web3Proof.anchor}</span>
-                            ) : null}
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                </Motion.article>
-              );
-            })}
-        </section>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddToCart(material);
+                              }}
+                              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-white text-stone-900 text-sm font-medium rounded-xl hover:bg-stone-50 transition-all duration-200 shadow-lg"
+                            >
+                              <HiOutlineShoppingCart className="w-4 h-4" />
+                              Add to Cart
+                            </button>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-3 py-2.5 bg-white text-stone-900 rounded-xl hover:bg-stone-50 transition-all duration-200 shadow-lg"
+                            >
+                              <HiOutlineEye className="w-4 h-4" />
+                            </button>
+                          </motion.div>
+                        </div>
 
-        {!loading && displayItems.length === 0 && (
-          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500">
-            No materials match the current filters. Adjust your search to explore
-            more inventory.
-          </div>
-        )}
+                        <div className="p-4 flex-1 flex flex-col">
+                          <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1">
+                            {material.vendorName || "Verified Supplier"}
+                          </p>
+                          <h3 className="text-sm font-semibold text-stone-900 line-clamp-2 leading-snug mb-2">
+                            {material.name}
+                          </h3>
 
-        <section className="">
-          <div className="grid md:grid-cols-3 gap-8">
-            {marketplaceFeatures.map((feature) => (
-              <div key={feature.title}>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                  {feature.title}
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  {feature.description}
-                </p>
+                          {material.description && (
+                            <p className="text-xs text-stone-600 line-clamp-2 leading-relaxed mb-3">{material.description}</p>
+                          )}
+
+                          <div className="flex items-center justify-between mt-auto pt-3 border-t border-stone-100">
+                            <div>
+                              <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold mb-0.5">Lead Time</p>
+                              <p className="text-sm font-semibold text-stone-900">
+                                {material.leadTime ? `${material.leadTime} days` : "Contact"}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold mb-0.5">MOQ</p>
+                              <p className="text-sm font-semibold text-stone-900">
+                                {material.moq ? `${material.moq} units` : "N/A"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {material.certifications && material.certifications.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-3">
+                              {material.certifications.slice(0, 2).map((cert, i) => (
+                                <span key={i} className="px-2 py-1 bg-stone-100 text-stone-700 rounded-lg text-xs font-medium">
+                                  {cert}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="pt-3 mt-3 border-t border-stone-100">
+                            {material.price ? (
+                              <p className="text-sm font-semibold text-stone-900">
+                                ${material.price}
+                                <span className="text-xs font-normal text-stone-500"> /unit</span>
+                              </p>
+                            ) : (
+                              <p className="text-xs text-stone-500">Price on request</p>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    </motion.article>
+                  );
+                })}
               </div>
-            ))}
+            )}
           </div>
-        </section>
+        </div>
       </main>
+
+      <Footer />
     </div>
   );
 };
 
 export default Warehouse;
-
-

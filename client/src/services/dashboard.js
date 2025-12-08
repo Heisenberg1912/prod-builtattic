@@ -14,17 +14,6 @@ const buildError = (error, fallbackMessage) => {
   return nextError;
 };
 
-const handleRequest = async (path) => {
-  try {
-    const { data } = await client.get(path);
-    return { ...data, fallback: false, authRequired: false };
-  } catch (error) {
-    throw buildError(error, "Unable to load dashboard");
-  }
-};
-
-export const fetchVendorDashboard = () => handleRequest("/dashboard/vendor");
-
 export const fetchFirmHostingConfig = async () => {
   try {
     const { data } = await client.get("/portal/firm/design-studio/hosting");

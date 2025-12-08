@@ -5,7 +5,7 @@ export function useAuthRedirect(authState) {
   const navigate = useNavigate();
   useEffect(() => {
     if (authState?.dashboardPath) {
-      navigate(authState.dashboardPath, { replace: true });
+      navigate("/", { replace: true });
     }
   }, [authState, navigate]);
 }

@@ -21,6 +21,7 @@ import { createEmptyFilterState } from "../constants/designFilters.js";
 import { marketplaceFeatures } from "../data/marketplace.js";
 import { fetchStudios, fetchDesignStudioHosting } from "../services/marketplace.js";
 import { analyzeImage } from "../utils/imageSearch.js";
+import { getAllPublishedDesigns, convertDesignToStudioFormat } from "../services/associateDesigns.js";
 import {
   applyFallback,
   getStudioFallback,
@@ -458,36 +459,61 @@ const Studio = () => {
     if (incomingSearch) setQuery(incomingSearch);
   }, [location.state]);
 
-  // Fetch studios (backend untouched)
+  // Fetch studios (backend untouched) + merge with localStorage designs
   useEffect(() => {
     let cancelled = false;
     async function loadStudios() {
       setMarketplaceState((prev) => ({ ...prev, loading: true, error: null }));
       try {
+        // Get localStorage designs
+        const localDesigns = getAllPublishedDesigns();
+        const convertedLocalDesigns = localDesigns.map(convertDesignToStudioFormat);
+
+        // Try to fetch from API
         const params = {};
         if (selectedCategory !== "All") params.category = selectedCategory;
         if (debouncedQuery) params.search = debouncedQuery;
-        const { items, meta } = await fetchStudios(params);
+
+        let apiItems = [];
+        let meta = null;
+
+        try {
+          const response = await fetchStudios(params);
+          apiItems = response.items || [];
+          meta = response.meta;
+        } catch (apiErr) {
+          console.warn("API fetch failed, using localStorage only:", apiErr);
+        }
+
+        // Merge: localStorage designs first, then API items
+        const mergedItems = [...convertedLocalDesigns, ...apiItems];
+
         if (!cancelled) {
           setMarketplaceState({
             loading: false,
             error: null,
-            items,
+            items: mergedItems,
             meta,
             web3: meta?.web3 || null,
             fallback: false,
           });
-          setStudios(items || []);
+          setStudios(mergedItems);
         }
       } catch (err) {
         if (!cancelled) {
-          setMarketplaceState((prev) => ({
-            ...prev,
+          // If everything fails, still show localStorage designs
+          const localDesigns = getAllPublishedDesigns();
+          const convertedLocalDesigns = localDesigns.map(convertDesignToStudioFormat);
+
+          setMarketplaceState({
             loading: false,
-            error: err?.message || "Unable to load studios right now.",
-            fallback: false,
-          }));
-          setStudios([]);
+            error: convertedLocalDesigns.length === 0 ? (err?.message || "Unable to load studios right now.") : null,
+            items: convertedLocalDesigns,
+            meta: null,
+            web3: null,
+            fallback: true,
+          });
+          setStudios(convertedLocalDesigns);
         }
       }
     }
@@ -1338,6 +1364,18 @@ const Studio = () => {
               <section className={`${listingsContainerClass} ${listingsGridClass}`}>
                 {Array.from({ length: PAGE_SIZE }).map((_, i) => <SkeletonCard key={i} />)}
               </section>
+            )}
+
+            {/* LocalStorage designs indicator */}
+            {!loading && displayStudios.some(s => s._source === 'localStorage') && (
+              <div className={`${listingsContainerClass} rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-4 text-emerald-900 shadow-sm`}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
+                  🎨 Your Published Designs
+                </p>
+                <p className="text-sm text-emerald-800">
+                  {displayStudios.filter(s => s._source === 'localStorage').length} design{displayStudios.filter(s => s._source === 'localStorage').length !== 1 ? 's' : ''} from your portfolio {displayStudios.filter(s => s._source === 'localStorage').length === 1 ? 'is' : 'are'} now live on the marketplace
+                </p>
+              </div>
             )}
 
             {!loading && web3Meta && !marketplaceState.fallback && (

@@ -1,22 +1,22 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
 
-// Role -> dashboard mapping
+// Role -> landing path mapping (dashboards removed)
 const roleDashboardPath = {
-  superadmin: "/dashboard/super-admin",
-  admin: "/dashboard/admin",
-  vendor: "/dashboard/vendor",
+  superadmin: "/",
+  admin: "/",
+  vendor: "/",
   firm: "/portal/studio",
   associate: "/portal/associate",
-  client: "/dashboard/client",
-  user: "/dashboard/user",
+  client: "/",
+  user: "/",
 };
 
 const ProtectedRoute = ({ allowRoles = [], auth, children }) => {
-  if (!auth?.loaded) return null; // or a loader
-  if (!auth.token) return <Navigate to="/login" replace />;
-  if (allowRoles.length && !allowRoles.includes(auth.role)) {
-    const target = roleDashboardPath[auth.role] || "/login";
+  // Login is disabled; always render the child route.
+  const role = auth?.role || "user";
+  if (allowRoles.length && !allowRoles.includes(role)) {
+    const target = roleDashboardPath[role] || "/";
     return <Navigate to={target} replace />;
   }
   return children;

@@ -13,14 +13,15 @@ export const roleAliases = {
   salesperson: "vendor",
 };
 
+// Dashboards have been removed; send every role to the home page.
 export const roleDashboardPath = {
-  superadmin: "/dashboard/super-admin",
-  admin: "/dashboard/admin",
-  user: "/dashboard/user",
-  associate: "/dashboard/studio-hub",
-  firm: "/dashboard/studio-hub",
-  client: "/dashboard/client",
-  vendor: "/dashboard/vendor",
+  superadmin: "/",
+  admin: "/",
+  user: "/",
+  associate: "/",
+  firm: "/",
+  client: "/",
+  vendor: "/",
 };
 
 export const normalizeRole = (role) => {
@@ -31,7 +32,7 @@ export const normalizeRole = (role) => {
 };
 
 export const resolveDashboardPath = (role) =>
-  roleDashboardPath[normalizeRole(role)] || "/dashboard/user";
+  roleDashboardPath[normalizeRole(role)] || "/";
 
 export const inferRoleFromUser = (user) => {
   if (!user) return "user";

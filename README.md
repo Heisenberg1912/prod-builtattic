@@ -1,6 +1,6 @@
-# Builtattic Marketplace
+# Builtattic Marketplace Frontend
 
-This monorepo contains the Vite React client and Express + MongoDB backend that power the Builtattic marketplace and support desk integrations.
+This repo now only ships the Vite React client. The former Express + MongoDB backend has been removed; point the client at your own API using `VITE_API_BASE_URL` / `VITE_API_URL`.
 
 ## Local Development
 
@@ -9,43 +9,14 @@ npm install
 npm run dev
 ```
 
-This runs the client and server concurrently. Environment variables now live in a single `.env` at the repository root—copy `.env.example`, fill in your own secrets, and both apps will read from the same file.
+This installs client dependencies and runs Vite from `client/`.
 
 ## Production Deployment
 
-The project now includes:
+- **Vercel** – `vercel.json` is configured for a static Vite build (`npm run build`, output `client/dist`) with an SPA rewrite to `index.html`.
+- **Cloud Run / Docker** – the `Dockerfile` builds the client and serves the static bundle with `serve` on `$PORT` (default 8080).
+- **Environment** – only the client-side Vite variables are needed; see `.env.example` for the current list.
 
-- **Dockerfile** – builds the React client and packages the Express API for Cloud Run.
-- **cloudbuild.yaml** – opinionated Cloud Build pipeline to build, push, and deploy the container.
-- **Structured logging + secret loading** – Winston JSON logs for Cloud Logging and optional Secret Manager integration.
-- **Hardened webhook** – shared-secret gate for the support email ingress endpoint.
+## Notes on the removed backend
 
-For a complete walkthrough, including Google Cloud prerequisites, secret provisioning, and custom domain setup, see `docs/DEPLOYMENT.md`.
-
-## Environment Promotion & Previews
-
-- **Secrets live in Cloud** - keep `.env` for local work only. Production/staging deployments should source every key (Mongo, JWT, Gemini, SMTP, etc.) from Google Secret Manager or Vercel `env` so CI/CD pipelines never bake credentials into images.
-- **Preview everything** - every non-main branch should publish a preview container (Cloud Run) or Vercel deployment so designers can QA `/studio/:slug` and Vitruvi flows without cloning the repo. Point previews at staging Mongo using scoped service accounts.
-- **Smoke tests block promotion** - run `npm --prefix server test` (Vitruvi analyze, plan upload CRUD, studio publish, workspace downloads) plus `npm --prefix client run build` before merging to ensure both apps compile.
-- **Synthetic monitors** - wire uptime checks to `/health`, `/health/db`, `/metrics`, and `/api/vitruvi/analyze` so regressions are caught before buyers hit errors.
-- **Inline processors** - plan upload validation and workspace download packaging now run inline on the API tier, so there is no Redis/BullMQ dependency to provision or monitor.
-
-## Vercel Deployment
-
-1. Connect the repository to Vercel and keep the project root (`.`).
-2. Leave the install command as `npm install` and the build command as `npm run build`; the client output directory is `client/dist`.
-3. In the Vercel dashboard define the environment variables listed in `.env.example` (at minimum `MONGO_URI`, `MONGO_DBNAME`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and any third-party API keys you rely on). You can optionally set `VITE_API_BASE_URL=/api` for client previews, otherwise the default is already relative.
-4. Seed your Mongo database once by running `npm run seed:json` locally (or from a one-off Vercel job) before pointing production traffic at the project.
-5. Deploy; the `/api/*` requests are automatically proxied to the Express app running inside a Vercel serverless function while static assets are served from `client/dist`.
-
-For environment management, `vercel env pull` keeps local `.env` files aligned with the dashboard values; see `docs/VERCEL_ENV.md` for the exact list of keys to provision.
-
-## Studio Content Editing
-
-- **Firm dashboard hosting editor** (`/dashboard/firm`) controls the firm-wide Design Studio narrative. Use the Service Tiles section to update the service summary plus service/product tiles, then click **Save tiles** to push the change via `PUT /portal/firm/design-studio/hosting`. The live preview card mirrors the copy that renders on `/studio/:slug` once the page is refreshed.
-- **Studio workspace** (`/portal/studio`) owns everything that is unique per studio: hero asset, summary, description, price, currency, style, categories/tags, area + plot metrics, bedrooms/bathrooms/floors, highlights, delivery notes, and gallery. The editor now surfaces these fields with a right-hand live preview that echoes the studio detail layout. Use **Save** to persist drafts and **Publish** (cloud icon on the table) to expose the listing on the marketplace.
-- **Studio detail page** (`/studio/:slug`) stitches the two surfaces together. Hosting tiles feed the “Services & Products” blocks, while per-studio fields map directly to title, hero, specs, and pricing. Units (sq ft or m²) and currencies render exactly as selected in the workspace.
-
-### Demo workspace login
-
-If you don’t have local credentials, enable demo auth by setting `ENABLE_DEMO_AUTH=true` (default) and pointing `DEMO_FIRM_ID` or `DEMO_FIRM_SLUG` to any firm in your Mongo cluster. Then use the **Connect demo workspace** button in `/portal/studio`—it requests a short-lived JWT, updates `localStorage.auth_token`, and lets you create/publish studios against that firm so they immediately surface on `/studio/:slug`.
+All Express/Mongo server code and seed/maintenance scripts have been deleted. Any `/api` route references in legacy docs are now historical; wire the frontend to whichever backend you plan to replace it with.

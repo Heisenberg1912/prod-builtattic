@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle, Circle, Sparkles } from "lucide-react";
-import { normalizeRole, resolveDashboardPath } from "../../constants/roles.js";
+import { normalizeRole } from "../../constants/roles.js";
 
 const ROLE_STEPS = {
   firm: {
@@ -46,9 +46,9 @@ const ROLE_STEPS = {
       },
       {
         id: "vendor-dashboard",
-        title: "Watch the vendor dashboard",
-        description: "Orders, catalogue status, and onboarding progress are mirrored on this page.",
-        action: { label: "Open vendor dashboard", href: "/dashboard/vendor" },
+        title: "Review workspace status",
+        description: "Orders, catalogue status, and onboarding progress live inside the vendor portal.",
+        action: { label: "Open vendor portal", href: "/portal/vendor" },
       },
     ],
   },
@@ -78,7 +78,7 @@ const ROLE_STEPS = {
   },
   user: {
     heading: "Start buying with confidence",
-    helper: "Finish these quick steps so orders, savings, and support show up in your dashboard.",
+    helper: "Finish these quick steps so orders, savings, and support stay in sync.",
     steps: [
       {
         id: "user-profile",
@@ -94,9 +94,9 @@ const ROLE_STEPS = {
       },
       {
         id: "user-dashboard",
-        title: "Track everything in your dashboard",
-        description: "Orders, saved studios, and onboarding progress are reflected automatically.",
-        action: { label: "Open your dashboard", href: "/dashboard/user" },
+        title: "Track your orders",
+        description: "Keep an eye on purchases and saved studios from your account pages.",
+        action: { label: "View orders", href: "/orders" },
       },
     ],
   },
@@ -136,7 +136,6 @@ const persistCompletedSteps = (roleKey, completed) => {
 export default function RoleOnboardingGuide({ role = "user", className = "", dense = false }) {
   const normalizedRole = normalizeRole(role);
   const roleKey = resolveRoleKey(normalizedRole);
-  const dashboardPath = resolveDashboardPath(normalizedRole);
   const { heading, helper, steps } = useMemo(() => ROLE_STEPS[roleKey] || ROLE_STEPS.user, [roleKey]);
   const [completed, setCompleted] = useState(() => loadCompletedSteps(roleKey));
 
@@ -226,7 +225,7 @@ export default function RoleOnboardingGuide({ role = "user", className = "", den
       </ul>
 
       <p className="mt-3 text-xs text-slate-500">
-        Progress saves locally and is reflected once you head to {dashboardPath}.
+        Progress saves locally so you can pick up where you left off.
       </p>
     </div>
   );
