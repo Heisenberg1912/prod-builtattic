@@ -26,7 +26,11 @@
       "Bash(then echo \"client/.env exists\")",
       "Bash(else echo \"client/.env NOT found\")",
       "Bash(if [ -f \"client/.env\" ])",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(ls:*)",
+      "Bash(if [ -f \"d:\\prod2\\CRITICAL_FIXES_APPLIED.md\" ])",
+      "Bash(then echo \"File exists\")",
+      "Bash(else echo \"File does not exist\")"
     ],
     "deny": [],
     "ask": []

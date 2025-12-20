@@ -22,6 +22,8 @@ import { marketplaceFeatures } from "../data/marketplace.js";
 import { fetchStudios, fetchDesignStudioHosting } from "../services/marketplace.js";
 import { analyzeImage } from "../utils/imageSearch.js";
 import { getAllPublishedDesigns, convertDesignToStudioFormat } from "../services/associateDesigns.js";
+import { mergeAndDedupeStudios } from "../utils/studioDeduplication.js";
+import { sanitizeStudioData, validateUrl } from "../utils/securityValidation.js";
 import {
   applyFallback,
   getStudioFallback,
@@ -479,14 +481,14 @@ const Studio = () => {
 
         try {
           const response = await fetchStudios(params);
-          apiItems = response.items || [];
+          apiItems = (response.items || []).map(sanitizeStudioData).filter(Boolean);
           meta = response.meta;
         } catch (apiErr) {
           console.warn("API fetch failed, using localStorage only:", apiErr);
         }
 
-        // Merge: localStorage designs first, then API items
-        const mergedItems = [...convertedLocalDesigns, ...apiItems];
+        // Merge and deduplicate: localStorage designs first, then API items
+        const mergedItems = mergeAndDedupeStudios(convertedLocalDesigns, apiItems);
 
         if (!cancelled) {
           setMarketplaceState({
@@ -1714,11 +1716,11 @@ const Studio = () => {
                           {programTokens && (
                             <p className="text-xs text-slate-500">{programTokens}</p>
                           )}
-                          {studio.web3Proof?.explorerUrl && (
+                          {studio.web3Proof?.explorerUrl && validateUrl(studio.web3Proof.explorerUrl) && (
                             <a
-                              href={studio.web3Proof.explorerUrl}
+                              href={validateUrl(studio.web3Proof.explorerUrl)}
                               target="_blank"
-                              rel="noreferrer"
+                              rel="noreferrer noopener"
                               className="inline-flex items-center gap-2 text-xs font-medium text-indigo-500 hover:text-indigo-400"
                               onClick={(event) => event.stopPropagation()}
                             >
@@ -1747,11 +1749,11 @@ const Studio = () => {
                               {studio.firm.contact.phone}
                             </span>
                           )}
-                          {studio.firm?.website && (
+                          {studio.firm?.website && validateUrl(studio.firm.website) && (
                             <a
-                              href={studio.firm.website}
+                              href={validateUrl(studio.firm.website)}
                               target="_blank"
-                              rel="noreferrer"
+                              rel="noreferrer noopener"
                               className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
                               onClick={(event) => event.stopPropagation()}
                             >

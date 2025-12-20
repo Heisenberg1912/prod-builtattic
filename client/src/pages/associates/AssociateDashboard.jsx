@@ -18,13 +18,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import StatsCard from "../../components/associate/StatsCard";
 import StatusBadge from "../../components/associate/StatusBadge";
-import { getDesignStats } from "../../services/associateDesigns";
-import { getServiceStats } from "../../services/associateServices";
-import { getInquiryStats, getAllInquiries } from "../../services/inquiries";
-import { getAnalyticsSummary } from "../../services/analytics";
-import { seedMockDesigns } from "../../data/mockDesigns";
-import { seedMockServices } from "../../data/mockServices";
-import { seedMockInquiries } from "../../data/mockInquiries";
+import { fetchDashboardStats, fetchRecentInquiries, fetchProfileCompletion } from "../../services/dashboard";
 
 export default function AssociateDashboard() {
   const navigate = useNavigate();
@@ -34,46 +28,35 @@ export default function AssociateDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [recentInquiries, setRecentInquiries] = useState([]);
   const [profileCompletion, setProfileCompletion] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
   }, []);
 
-  const loadDashboardData = () => {
-    // Seed mock data if not exists
-    seedMockDesigns();
-    seedMockServices();
-    seedMockInquiries();
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      // Fetch all dashboard data from API (with localStorage fallback)
+      const [stats, inquiries, completion] = await Promise.all([
+        fetchDashboardStats(),
+        fetchRecentInquiries(3),
+        fetchProfileCompletion(),
+      ]);
 
-    // Load stats
-    setDesignStats(getDesignStats());
-    setServiceStats(getServiceStats());
-    setInquiryStats(getInquiryStats());
-    setAnalytics(getAnalyticsSummary(30));
-
-    // Load recent inquiries
-    const allInquiries = getAllInquiries();
-    setRecentInquiries(allInquiries.slice(0, 3));
-
-    // Calculate profile completion
-    calculateProfileCompletion();
-  };
-
-  const calculateProfileCompletion = () => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const designs = getDesignStats();
-    const services = getServiceStats();
-
-    let completed = 0;
-    const total = 5;
-
-    if (user.name || user.fullName) completed++;
-    if (user.email) completed++;
-    if (designs.total > 0) completed++;
-    if (services.total > 0) completed++;
-    if (designs.published > 0 || services.published > 0) completed++;
-
-    setProfileCompletion(Math.round((completed / total) * 100));
+      setDesignStats(stats.designStats);
+      setServiceStats(stats.serviceStats);
+      setInquiryStats(stats.inquiryStats);
+      setAnalytics(stats.analytics);
+      setRecentInquiries(inquiries.items);
+      setProfileCompletion(completion);
+      setUsingFallback(stats.fallback || inquiries.fallback);
+    } catch (error) {
+      console.error("Failed to load dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const totalViews = (designStats?.totalViews || 0) + (serviceStats?.totalViews || 0);
@@ -100,6 +83,30 @@ export default function AssociateDashboard() {
             </div>
           </div>
         </motion.div>
+
+        {/* Offline Data Warning */}
+        {usingFallback && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="mb-6"
+          >
+            <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-amber-900 mb-1">Using Offline Data</h3>
+                    <p className="text-sm text-amber-800">
+                      Dashboard is showing data from your device. Some statistics may not be up-to-date. Check your connection to see live analytics.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Publishing Guide Banner */}
         <motion.div

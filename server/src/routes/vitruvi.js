@@ -8,18 +8,17 @@ import {
   creditVitruviUsage,
   estimateTokenUsage,
 } from "../services/vitruviUsage.js";
+import { authenticate, rateLimit, validatePrompt } from "../middleware/index.js";
 
 const router = Router();
+const rateLimiter = rateLimit({ windowMs: 60_000, max: 10 });
 
 router.get("/", (_req, res) => {
   res.json({ ok: true, service: "vitruvi-ai" });
 });
 
-router.post("/analyze", async (req, res) => {
+router.post("/analyze", authenticate, rateLimiter, validatePrompt, async (req, res) => {
   const { prompt = "", options = {} } = req.body || {};
-  if (!prompt.trim()) {
-    return res.status(400).json({ error: "prompt_required" });
-  }
 
   try {
     const started = Date.now();
@@ -45,11 +44,8 @@ router.post("/analyze", async (req, res) => {
   }
 });
 
-router.post("/analyze-and-generate", async (req, res) => {
+router.post("/analyze-and-generate", authenticate, rateLimiter, validatePrompt, async (req, res) => {
   const { prompt = "", options = {} } = req.body || {};
-  if (!prompt.trim()) {
-    return res.status(400).json({ error: "prompt_required" });
-  }
 
   try {
     const started = Date.now();

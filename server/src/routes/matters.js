@@ -6,6 +6,7 @@ import {
   getSiteFeed,
   analyzeSiteFeedFrame,
 } from '../services/mattersVisionService.js';
+import { authenticate } from '../middleware/index.js';
 
 const router = Router();
 
@@ -44,9 +45,16 @@ router.get(
 
 router.post(
   '/assistant',
+  authenticate,
   asyncHandler(async (req, res) => {
     try {
       const { messages, mode } = req.body || {};
+
+      // Validate messages
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: 'messages_required', message: 'Messages array is required' });
+      }
+
       const data = await chatWithAssistant({ messages, mode });
       return send(res, data);
     } catch (err) {
