@@ -978,12 +978,12 @@ const Studio = () => {
     return n;
   }, [filters, priceSel, priceRange, sqftSel, sqftRange, floorsSel, floorsRange, programsSel, programsRange, serviceFocus]);
 
-  // Grid class responsive tweak
+  // Grid class responsive tweak - optimized for rectangular cards
   const listingsGridClass = useMemo(
     () =>
       filtersOpen
-        ? "grid w-full auto-rows-fr gap-5 xs:grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-        : "grid w-full auto-rows-fr gap-5 xs:grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+        ? "grid w-full gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        : "grid w-full gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
     [filtersOpen]
   );
 
@@ -992,21 +992,13 @@ const Studio = () => {
     [filtersOpen]
   );
 
-  // Skeleton placeholder
+  // Skeleton placeholder - image-only tile
   const SkeletonCard = () => (
-    <div className="animate-pulse h-full overflow-hidden rounded-3xl border border-slate-200 bg-white">
-      <div className="aspect-[4/3] w-full bg-slate-200" />
-      <div className="p-6 space-y-3">
-        <div className="h-3 w-24 bg-slate-200 rounded" />
-        <div className="h-5 w-3/4 bg-slate-200 rounded" />
-        <div className="h-3 w-1/2 bg-slate-200 rounded" />
-        <div className="h-8 w-full bg-slate-200 rounded" />
-      </div>
-    </div>
+    <div className="animate-pulse aspect-[16/10] overflow-hidden rounded-2xl bg-slate-200" />
   );
 
-  // Animation helpers
-  const initialAnim = prefersReducedMotion ? {} : { opacity: 0, y: 20 };
+  // Animation helpers - smooth easing for minimal aesthetic
+  const initialAnim = prefersReducedMotion ? {} : { opacity: 0, y: 16 };
   const inViewAnim = prefersReducedMotion ? {} : { opacity: 1, y: 0 };
 
   return (
@@ -1402,8 +1394,6 @@ const Studio = () => {
             {!loading && (
               <section className={`${listingsContainerClass} ${listingsGridClass}`}>
                 {displayStudios.slice(0, visibleCount).map((studio) => {
-                  const href = `/studio/${encodeURIComponent(studio.id || "")}`;
-
                   const priceLabel =
                     studio.priceSqft ?? studio.pricing?.basePrice ?? studio.price ?? null;
                   const currency = studio.currency || studio.pricing?.currency || "USD";
@@ -1502,17 +1492,21 @@ const Studio = () => {
                     .filter(Boolean)
                     .join(" | ");
 
+                  const studioId = studio._id || studio.id || studio.slug;
+                  const studioHref = studioId ? `/studio/${encodeURIComponent(studioId)}` : "/studio";
+
                   return (
                     <MotionArticle
-                      key={studio._id || studio.id}
+                      key={studioId || Math.random()}
                       initial={initialAnim}
                       animate={inViewAnim}
-                      className="group flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
+                      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                      className="group relative aspect-[16/10] overflow-hidden rounded-2xl cursor-pointer"
                       role="link"
                       tabIndex={0}
                       onClick={(event) => {
                         if (event.defaultPrevented) return;
-                        navigate(href);
+                        navigate(studioHref);
                       }}
                       onKeyDown={(event) => {
                         if (
@@ -1520,291 +1514,71 @@ const Studio = () => {
                           event.currentTarget === event.target
                         ) {
                           event.preventDefault();
-                          navigate(href);
+                          navigate(studioHref);
                         }
                       }}
                     >
-                      <Link
-                        to={href}
-                        onClick={(event) => event.stopPropagation()}
-                        className="relative aspect-[4/3] w-full overflow-hidden"
-                      >
-                        <img
-                          src={heroImage}
-                          alt={studio.title}
-                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                          loading="lazy"
-                          onError={(event) => applyFallback(event, heroFallback)}
-                        />
-                        {overlayTiles.length > 0 && (
-                          <div className="absolute left-3 top-3 flex max-w-[90%] flex-wrap gap-2">
-                            {overlayTiles.map((tile, index) => (
-                              <span
-                                key={`overlay-${studio.id || studio._id || index}-${tile.id || index}`}
-                                className="rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm"
-                              >
-                                {tile.label}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {Array.isArray(studio.highlights) && studio.highlights.length > 0 && (
-                          <div className="absolute bottom-3 left-3 flex max-w-[90%] flex-wrap gap-2">
-                            {studio.highlights.slice(0, 2).map((highlight, index) => (
-                              <span
-                                key={`highlight-${studio.id || studio._id || index}`}
-                                className="rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm"
-                              >
-                                {highlight}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </Link>
+                      {/* Base image */}
+                      <img
+                        src={heroImage}
+                        alt={studio.title}
+                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.02]"
+                        loading="lazy"
+                        onError={(event) => applyFallback(event, heroFallback)}
+                      />
 
-                      <div className="flex flex-1 flex-col gap-5 p-6">
-                        <div className="flex flex-col gap-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 space-y-1">
-                              <p className="text-xs sm:text-sm font-semibold text-slate-500 uppercase tracking-[0.2em]">
-                                {firmName || "Verified studio"}
-                              </p>
-                              <h2 className="text-lg sm:text-xl font-semibold text-slate-900 leading-tight line-clamp-2">
-                                <Link
-                                  to={href}
-                                  onClick={(event) => event.stopPropagation()}
-                                  className="text-slate-900 hover:text-slate-700 transition"
-                                >
-                                  {studio.title}
-                                </Link>
-                              </h2>
-                              {firmCountry && (
-                                <p className="text-xs text-slate-500">{firmCountry}</p>
-                              )}
-                              {studio.status ? (
-                                <div className="flex flex-wrap items-center gap-2 pt-1">
-                                  <span
-                                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-                                      studio.status === "published"
-                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                        : "border-amber-200 bg-amber-50 text-amber-800"
-                                    }`}
-                                  >
-                                    {studio.status === "published" ? "Published" : "Draft"}
-                                  </span>
-                                </div>
-                              ) : null}
-                              {studio.firm?.tagline && (
-                                <p className="text-xs text-slate-500">{studio.firm.tagline}</p>
-                              )}
-                            </div>
-                            {firmLogo ? (
-                              <img
-                                src={firmLogo}
-                                alt={`${firmName || studio.title} logo`}
-                                className="h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 rounded-full border border-slate-200 bg-white object-cover"
-                                loading="lazy"
-                              />
-                            ) : null}
-                          </div>
+                      {/* Default gradient overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-                          {Number.isFinite(ratingValue) && (
-                            <div className="flex items-center gap-1 text-amber-500">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <AiFillStar
-                                  key={i}
-                                  className={`h-4 w-4 ${i < Math.round(ratingValue ?? 0) ? "text-amber-500" : "text-slate-300"}`}
-                                />
-                              ))}
-                              <span className="ml-1 text-xs text-slate-500">
-                                {(ratingValue ?? 0).toFixed(1)}
-                              </span>
-                            </div>
-                          )}
-
-                          {practiseBadges.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {practiseBadges.slice(0, 4).map((badge, index) => (
-                                <span
-                                  key={`practise-${studio.id || studio._id || index}-${badge}-${index}`}
-                                  className="inline-flex items-center gap-1 rounded-full bg-slate-900/10 px-2.5 py-1 text-[11px] font-semibold text-slate-800"
-                                >
-                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-800" aria-hidden="true" />
-                                  {badge}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {bodyTiles.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {bodyTiles.map((tile, index) => (
-                                <span
-                                  key={`hosting-chip-${studio.id || studio._id || index}-${tile.id || index}`}
-                                  className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
-                                >
-                                  {tile.label}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {metaPills.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {metaPills.map((pill) => (
-                                <span
-                                  key={`meta-${studio.id || studio._id || index}-${pill.id}`}
-                                  className="inline-flex min-w-[110px] flex-col rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"
-                                >
-                                  <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                                    {pill.label}
-                                  </span>
-                                  <span className="text-xs font-semibold text-slate-900 line-clamp-1">
-                                    {pill.value}
-                                  </span>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {Array.isArray(studio.firm?.services) && studio.firm.services.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {studio.firm.services.slice(0, 4).map((service, index) => {
-                                const serviceLabel =
-                                  typeof service === "string"
-                                    ? service
-                                    : service?.title || service?.name || service?.description;
-                                if (!serviceLabel) return null;
-                                const serviceKey =
-                                  typeof service === "string"
-                                    ? service
-                                    : service?._id || service?.title || service?.name || index;
-                                return (
-                                  <span
-                                    key={`service-${studio.id || studio._id || index}-${serviceKey}`}
-                                    className="rounded-full bg-slate-900/10 px-2.5 py-1 text-xs font-medium text-slate-600"
-                                  >
-                                    {serviceLabel}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {readinessFlags.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                              {readinessFlags.map((flag) => {
-                                const toneClass =
-                                  flag.tone === "emerald"
-                                    ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                                    : flag.tone === "amber"
-                                    ? "border-amber-100 bg-amber-50 text-amber-700"
-                                    : "border-slate-200 bg-slate-50 text-slate-700";
-                                return (
-                                  <span
-                                    key={`readiness-${studio.id || studio._id || index}-${flag.id}`}
-                                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${toneClass}`}
-                                  >
-                                    <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
-                                    {flag.label}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {programTokens && (
-                            <p className="text-xs text-slate-500">{programTokens}</p>
-                          )}
-                          {studio.web3Proof?.explorerUrl && validateUrl(studio.web3Proof.explorerUrl) && (
-                            <a
-                              href={validateUrl(studio.web3Proof.explorerUrl)}
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              className="inline-flex items-center gap-2 text-xs font-medium text-indigo-500 hover:text-indigo-400"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <span className="h-2 w-2 rounded-full bg-indigo-400" />
-                              Verified on-chain | {studio.web3Proof.anchor}
-                            </a>
-                          )}
-                        </div>
-
-                        <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
-                          {supportingText}
+                      {/* Default state content - bottom */}
+                      <div className="absolute inset-x-0 bottom-0 p-5 transition-all duration-300 ease-out group-hover:opacity-0 group-hover:translate-y-2">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/60 mb-1">
+                          {firmName || "Studio"}
                         </p>
+                        <h2 className="text-lg font-semibold text-white leading-tight line-clamp-1">
+                          {studio.title}
+                        </h2>
+                      </div>
 
-                        <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                          {studio.firm?.contact?.email && (
-                            <a
-                              href={`mailto:${studio.firm.contact.email}`}
-                              className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              Email firm
-                            </a>
-                          )}
-                          {studio.firm?.contact?.phone && (
-                            <span className="inline-flex items-center gap-2">
-                              {studio.firm.contact.phone}
-                            </span>
-                          )}
-                          {studio.firm?.website && validateUrl(studio.firm.website) && (
-                            <a
-                              href={validateUrl(studio.firm.website)}
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              Visit website
-                            </a>
-                          )}
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-black/70 opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100" />
+
+                      {/* Hover content */}
+                      <div className="absolute inset-0 flex flex-col justify-end p-5 opacity-0 translate-y-3 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 pointer-events-none group-hover:pointer-events-auto">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/50 mb-1">
+                          {firmName || "Studio"}
+                        </p>
+                        <h3 className="text-lg font-semibold text-white leading-tight mb-3">
+                          {studio.title}
+                        </h3>
+
+                        {/* Minimal info row */}
+                        <div className="flex items-center gap-3 text-[11px] text-white/60 mb-4">
+                          {firmCountry && <span>{firmCountry}</span>}
+                          {firmCountry && primaryStyle && <span className="text-white/30">·</span>}
+                          {primaryStyle && <span>{primaryStyle}</span>}
+                          {(firmCountry || primaryStyle) && areaToken && <span className="text-white/30">·</span>}
+                          {areaToken && <span>{areaToken}</span>}
                         </div>
 
-                        <div className="mt-auto space-y-4">
-                          <div className="flex flex-wrap items-end justify-between gap-3">
-                            {priceLabel ? (
-                              <p className="text-base font-semibold text-slate-900">
-                                {currency} {formattedPrice}
-                                <span className="ml-1 text-xs font-normal text-slate-500">
-                                  / {normalizedUnit}
-                                </span>
-                              </p>
-                            ) : (
-                              <p className="text-sm font-medium text-slate-500">Price on request</p>
-                            )}
-                            {areaToken && (
-                              <p className="text-xs text-slate-500">{areaToken}</p>
-                            )}
-                          </div>
+                        {/* Price & CTA */}
+                        <div className="flex items-center justify-between gap-4">
+                          {priceLabel ? (
+                            <p className="text-base font-semibold text-white">
+                              {currency} {formattedPrice}
+                              <span className="ml-1 text-[10px] font-normal text-white/40">/ {normalizedUnit}</span>
+                            </p>
+                          ) : (
+                            <p className="text-sm text-white/50">Price on request</p>
+                          )}
 
-                          <div className="flex flex-wrap gap-3">
-                            <Link
-                              to={href}
-                              onClick={(event) => event.stopPropagation()}
-                              className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-                            >
-                              View studio
-                            </Link>
-                            {contactEmail ? (
-                              <a
-                                href={`mailto:${contactEmail}`}
-                                onClick={(event) => event.stopPropagation()}
-                                className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
-                              >
-                                {contactCtaLabel}
-                              </a>
-                            ) : (
-                              <Link
-                                to={href}
-                                onClick={(event) => event.stopPropagation()}
-                                className="inline-flex flex-1 min-w-[140px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300"
-                              >
-                                {contactCtaLabel}
-                              </Link>
-                            )}
-                          </div>
+                          <Link
+                            to={studioHref}
+                            onClick={(event) => event.stopPropagation()}
+                            className="inline-flex items-center justify-center rounded-lg bg-white px-5 py-2 text-xs font-semibold text-slate-900 transition-colors duration-200 hover:bg-white/90"
+                          >
+                            View
+                          </Link>
                         </div>
                       </div>
                     </MotionArticle>

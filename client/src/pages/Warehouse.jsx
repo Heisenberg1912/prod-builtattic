@@ -14,6 +14,7 @@ import {
 } from "react-icons/hi";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
+import WarehousePreviewGrid from "../components/warehouse/WarehousePreviewGrid";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { fetchMaterials } from "../services/marketplace.js";
@@ -348,16 +349,10 @@ const Warehouse = () => {
             )}
 
             {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {[...Array(12)].map((_, i) => (
                   <div key={i} className="animate-pulse">
-                    <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
-                      <div className="bg-stone-100 aspect-square"></div>
-                      <div className="p-4 space-y-3">
-                        <div className="h-3 bg-stone-100 rounded w-3/4"></div>
-                        <div className="h-3 bg-stone-100 rounded w-1/2"></div>
-                      </div>
-                    </div>
+                    <div className="bg-stone-200 rounded-lg aspect-[3/2]"></div>
                   </div>
                 ))}
               </div>
@@ -378,167 +373,12 @@ const Warehouse = () => {
                 )}
               </motion.div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {filteredMaterials.map((material, index) => {
-                  const materialImage = getMaterialImage(material);
-                  const fallbackImage = getMaterialFallback();
-                  const materialId = material._id || material.id;
-                  const isWishlisted = wishlistIds.has(materialId);
-                  const isHovered = hoveredCard === materialId;
-                  const isCompared = comparedItems.has(materialId);
-
-                  return (
-                    <motion.article
-                      key={materialId || index}
-                      initial={{ opacity: 0, y: 30 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: index * 0.05,
-                        duration: 0.4,
-                        type: "spring",
-                        stiffness: 100,
-                      }}
-                      onMouseEnter={() => setHoveredCard(materialId)}
-                      onMouseLeave={() => setHoveredCard(null)}
-                      className="group cursor-pointer"
-                    >
-                      <motion.div
-                        whileHover={{ y: -8 }}
-                        transition={{ duration: 0.3, type: "spring", stiffness: 300 }}
-                        className="bg-white rounded-2xl overflow-hidden border border-stone-200 hover:border-stone-300 hover:shadow-xl hover:shadow-stone-900/10 transition-all duration-300 h-full flex flex-col"
-                      >
-                        <div className="relative overflow-hidden bg-stone-50 aspect-square">
-                          <motion.img
-                            src={materialImage}
-                            alt={material.name}
-                            className="w-full h-full object-cover"
-                            animate={{ scale: isHovered ? 1.1 : 1 }}
-                            transition={{ duration: 0.6, ease: "easeOut" }}
-                            onError={(e) => applyFallback(e, fallbackImage)}
-                          />
-
-                          <motion.div
-                            animate={{ opacity: isHovered ? 1 : 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"
-                          />
-
-                          <div className="absolute top-3 right-3 flex gap-2">
-                            <motion.button
-                              whileHover={{ scale: 1.15 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleCompare(materialId);
-                              }}
-                              className={`p-2 rounded-full shadow-lg transition-all duration-200 ${
-                                isCompared ? "bg-stone-900" : "bg-white"
-                              }`}
-                            >
-                              <HiOutlineShieldCheck className={`w-4 h-4 ${isCompared ? "text-white" : "text-stone-700"}`} />
-                            </motion.button>
-                            <motion.button
-                              whileHover={{ scale: 1.15 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleWishlistToggle(material);
-                              }}
-                              className="p-2 bg-white rounded-full shadow-lg transition-all duration-200"
-                            >
-                              {isWishlisted ? (
-                                <HiHeart className="w-4 h-4 text-red-500 fill-current" />
-                              ) : (
-                                <HiOutlineHeart className="w-4 h-4 text-stone-700" />
-                              )}
-                            </motion.button>
-                          </div>
-
-                          {material.family && (
-                            <div className="absolute top-3 left-3">
-                              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-stone-900 shadow-lg">
-                                {material.family}
-                              </span>
-                            </div>
-                          )}
-
-                          <motion.div
-                            animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 20 }}
-                            transition={{ duration: 0.3 }}
-                            className="absolute bottom-3 left-3 right-3 flex gap-2"
-                          >
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleAddToCart(material);
-                              }}
-                              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-white text-stone-900 text-sm font-medium rounded-xl hover:bg-stone-50 transition-all duration-200 shadow-lg"
-                            >
-                              <HiOutlineShoppingCart className="w-4 h-4" />
-                              Add to Cart
-                            </button>
-                            <button
-                              onClick={(e) => e.stopPropagation()}
-                              className="px-3 py-2.5 bg-white text-stone-900 rounded-xl hover:bg-stone-50 transition-all duration-200 shadow-lg"
-                            >
-                              <HiOutlineEye className="w-4 h-4" />
-                            </button>
-                          </motion.div>
-                        </div>
-
-                        <div className="p-4 flex-1 flex flex-col">
-                          <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1">
-                            {material.vendorName || "Verified Supplier"}
-                          </p>
-                          <h3 className="text-sm font-semibold text-stone-900 line-clamp-2 leading-snug mb-2">
-                            {material.name}
-                          </h3>
-
-                          {material.description && (
-                            <p className="text-xs text-stone-600 line-clamp-2 leading-relaxed mb-3">{material.description}</p>
-                          )}
-
-                          <div className="flex items-center justify-between mt-auto pt-3 border-t border-stone-100">
-                            <div>
-                              <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold mb-0.5">Lead Time</p>
-                              <p className="text-sm font-semibold text-stone-900">
-                                {material.leadTime ? `${material.leadTime} days` : "Contact"}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold mb-0.5">MOQ</p>
-                              <p className="text-sm font-semibold text-stone-900">
-                                {material.moq ? `${material.moq} units` : "N/A"}
-                              </p>
-                            </div>
-                          </div>
-
-                          {material.certifications && material.certifications.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-3">
-                              {material.certifications.slice(0, 2).map((cert, i) => (
-                                <span key={i} className="px-2 py-1 bg-stone-100 text-stone-700 rounded-lg text-xs font-medium">
-                                  {cert}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="pt-3 mt-3 border-t border-stone-100">
-                            {material.price ? (
-                              <p className="text-sm font-semibold text-stone-900">
-                                ${material.price}
-                                <span className="text-xs font-normal text-stone-500"> /unit</span>
-                              </p>
-                            ) : (
-                              <p className="text-xs text-stone-500">Price on request</p>
-                            )}
-                          </div>
-                        </div>
-                      </motion.div>
-                    </motion.article>
-                  );
-                })}
-              </div>
+              <WarehousePreviewGrid
+                materials={filteredMaterials}
+                wishlistIds={wishlistIds}
+                onToggleWishlist={handleWishlistToggle}
+                onAddToCart={handleAddToCart}
+              />
             )}
           </div>
         </div>

@@ -59,7 +59,7 @@ const StudioPreviewGrid = ({ studios = [], hostingTiles }) => {
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid gap-6 lg:grid-cols-2">
       {studios.map((studio) => {
         const slug = studio._id || studio.id || null;
         const href = slug ? `/studio/${slug}` : "/studio";
@@ -76,102 +76,67 @@ const StudioPreviewGrid = ({ studios = [], hostingTiles }) => {
         const statusTone = studio.status === "published" ? "text-emerald-600" : "text-amber-600";
 
         return (
-          <article
+          <Link
+            to={href}
             key={studio._id || studio.id}
-            className="flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+            className="group relative aspect-[16/10] overflow-hidden rounded-2xl cursor-pointer block"
           >
-            <div className="relative aspect-[4/3] w-full overflow-hidden">
-              <img
-                src={heroImage}
-                alt={studio.title || "Studio hero"}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-              {overlays.length > 0 && (
-                <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-                  {overlays.map((label, index) => (
-                    <span
-                      key={`overlay-${slug || 'studio'}-${index}`}
-                      className="rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white shadow"
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              )}
+            {/* Base image */}
+            <img
+              src={heroImage}
+              alt={studio.title || "Studio hero"}
+              className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.02]"
+              loading="lazy"
+            />
+
+            {/* Default gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+            {/* Default state content - bottom */}
+            <div className="absolute inset-x-0 bottom-0 p-5 transition-all duration-300 ease-out group-hover:opacity-0 group-hover:translate-y-2">
+              <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/60 mb-1">
+                {studio.firm?.name || "Studio listing"}
+              </p>
+              <h3 className="text-lg font-semibold text-white leading-tight line-clamp-1">
+                {studio.title || "Untitled studio"}
+              </h3>
             </div>
 
-            <div className="flex flex-1 flex-col gap-4 p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">
-                    {studio.firm?.name || "Studio listing"}
-                  </p>
-                  <h3 className="text-xl font-semibold text-slate-900">{studio.title || "Untitled studio"}</h3>
-                  <p className="text-xs text-slate-500">
-                    {studio.location?.city || studio.firm?.location?.city || "Location TBD"},{" "}
-                    {studio.location?.country || studio.firm?.location?.country || "Global"}
-                  </p>
-                </div>
-                <span className={`text-xs font-semibold uppercase tracking-[0.3em] ${statusTone}`}>
-                  {studio.status || "draft"}
-                </span>
+            {/* Hover overlay */}
+            <div className="absolute inset-0 bg-black/70 opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100" />
+
+            {/* Hover content */}
+            <div className="absolute inset-0 flex flex-col justify-end p-5 opacity-0 translate-y-3 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0 pointer-events-none group-hover:pointer-events-auto">
+              <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/50 mb-1">
+                {studio.firm?.name || "Studio listing"}
+              </p>
+              <h3 className="text-lg font-semibold text-white leading-tight mb-3">
+                {studio.title || "Untitled studio"}
+              </h3>
+
+              {/* Minimal info row */}
+              <div className="flex items-center gap-3 text-[11px] text-white/60 mb-4">
+                <span>{studio.location?.city || studio.firm?.location?.city || "Location TBD"}</span>
+                {style !== "Unspecified" && (
+                  <>
+                    <span className="text-white/30">·</span>
+                    <span>{style}</span>
+                  </>
+                )}
               </div>
 
-              {chips.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {chips.map((chip, index) => (
-                    <span
-                      key={`chip-${slug || 'studio'}-${index}`}
-                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700"
-                    >
-                      {chip}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {/* Price & CTA */}
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-base font-semibold text-white">{formatPriceText(studio)}</p>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">Category</p>
-                  <p className="text-sm font-semibold text-slate-900">{category}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">Style</p>
-                  <p className="text-sm font-semibold text-slate-900">{style}</p>
-                </div>
-              </div>
-
-              <p className="text-sm text-slate-600 line-clamp-3">{summary}</p>
-
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Pricing</p>
-                  <p className="text-sm font-semibold text-slate-900">{formatPriceText(studio)}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    to={href}
-                    className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-800"
-                  >
-                    View studio
-                  </Link>
-                  <Link
-                    to={`${href}#brief`}
-                    className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300"
-                  >
-                    Share brief
-                  </Link>
-                  <Link
-                    to={editHref}
-                    className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300"
-                  >
-                    Edit listing
-                  </Link>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-xs font-semibold text-slate-900 transition-colors duration-200 hover:bg-white/90">
+                    View
+                  </span>
                 </div>
               </div>
             </div>
-          </article>
+          </Link>
         );
       })}
     </div>

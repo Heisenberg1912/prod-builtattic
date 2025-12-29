@@ -13,6 +13,7 @@ import {
 } from "react-icons/hi";
 import RegistrStrip from "../components/registrstrip";
 import Footer from "../components/Footer";
+import AssociatePreviewGrid from "../components/associates/AssociatePreviewGrid";
 import { fetchMarketplaceAssociates } from "../services/marketplace.js";
 import { getAssociateAvatar, getAssociateFallback } from "../utils/imageFallbacks.js";
 import { getAllPublishedServices, convertServiceToAssociateFormat } from "../services/associateServices.js";
@@ -303,16 +304,10 @@ const Associates = () => {
             )}
 
             {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {[...Array(12)].map((_, i) => (
                   <div key={i} className="animate-pulse">
-                    <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
-                      <div className="bg-stone-100 aspect-[3/4]"></div>
-                      <div className="p-4 space-y-3">
-                        <div className="h-3 bg-stone-100 rounded w-3/4"></div>
-                        <div className="h-3 bg-stone-100 rounded w-1/2"></div>
-                      </div>
-                    </div>
+                    <div className="bg-stone-200 rounded-lg aspect-[3/2]"></div>
                   </div>
                 ))}
               </div>
@@ -333,149 +328,11 @@ const Associates = () => {
                 )}
               </motion.div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {filteredAssociates.map((associate, index) => {
-                  const avatar = associate.heroImage || associate.profileImage || associate.avatar || getAssociateAvatar(associate) || getAssociateFallback();
-                  const hourly = associate.rates?.hourly ?? associate.rate ?? associate.hourlyRate ?? null;
-                  const currency = associate.rates?.currency || "USD";
-                  // For localStorage services, link to userId-based portfolio, otherwise use associateId
-                  const profileHref = associate._source === 'localStorage'
-                    ? `/associate-portfolio/${associate.userId || associate.id}`
-                    : `/associateportfolio/${associate._id || associate.id}`;
-                  const associateId = associate._id || associate.id;
-                  const isHovered = hoveredCard === associateId;
-                  const isFavorite = favorites.has(associateId);
-
-                  return (
-                    <motion.article
-                      key={associateId || index}
-                      initial={{ opacity: 0, y: 30 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: index * 0.05,
-                        duration: 0.4,
-                        type: "spring",
-                        stiffness: 100,
-                      }}
-                      onMouseEnter={() => setHoveredCard(associateId)}
-                      onMouseLeave={() => setHoveredCard(null)}
-                      className="group cursor-pointer"
-                    >
-                      <motion.div
-                        whileHover={{ y: -8 }}
-                        transition={{ duration: 0.3, type: "spring", stiffness: 300 }}
-                        className="bg-white rounded-2xl overflow-hidden border border-stone-200 hover:border-stone-300 hover:shadow-xl hover:shadow-stone-900/10 transition-all duration-300 h-full flex flex-col"
-                      >
-                        <div className="relative overflow-hidden bg-stone-100 aspect-[3/4]">
-                          <motion.img
-                            src={avatar}
-                            alt={associate.name || "Associate"}
-                            className="w-full h-full object-cover"
-                            animate={{ scale: isHovered ? 1.1 : 1 }}
-                            transition={{ duration: 0.6, ease: "easeOut" }}
-                          />
-
-                          <motion.div
-                            animate={{ opacity: isHovered ? 1 : 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"
-                          />
-
-                          <div className="absolute top-3 right-3">
-                            <motion.button
-                              whileHover={{ scale: 1.15 }}
-                              whileTap={{ scale: 0.9 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleFavorite(associateId);
-                              }}
-                              className="p-2 bg-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-200"
-                            >
-                              {isFavorite ? (
-                                <HiHeart className="w-4 h-4 text-red-500 fill-current" />
-                              ) : (
-                                <HiOutlineHeart className="w-4 h-4 text-stone-700" />
-                              )}
-                            </motion.button>
-                          </div>
-
-                          {associate.rating && (
-                            <div className="absolute top-3 left-3 bg-white px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
-                              <HiOutlineStar className="w-3.5 h-3.5 text-amber-500 fill-current" />
-                              <span className="text-xs font-semibold text-stone-900">{Number(associate.rating).toFixed(1)}</span>
-                            </div>
-                          )}
-
-                          {associate.specialisations && associate.specialisations.length > 0 && (
-                            <div className="absolute bottom-3 left-3">
-                              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-stone-900/90 backdrop-blur text-white shadow-lg">
-                                {associate.specialisations[0]}
-                              </span>
-                            </div>
-                          )}
-
-                          <motion.div
-                            animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 20 }}
-                            transition={{ duration: 0.3 }}
-                            className="absolute bottom-3 right-3"
-                          >
-                            <Link
-                              to={profileHref}
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-2 px-4 py-2.5 bg-white text-stone-900 text-sm font-medium rounded-xl hover:bg-stone-50 transition-all duration-200 shadow-lg"
-                            >
-                              <HiOutlineEye className="w-4 h-4" />
-                              View Profile
-                            </Link>
-                          </motion.div>
-                        </div>
-
-                        <div
-                          onClick={() => navigate(profileHref)}
-                          className="p-4 flex-1 flex flex-col"
-                        >
-                          <h3 className="text-sm font-semibold text-stone-900 line-clamp-1 leading-snug mb-1">
-                            {associate.name || "Associate"}
-                          </h3>
-                          <p className="text-xs text-stone-500 mb-2">
-                            {associate.firmName || "Independent"}
-                            {associate.location && ` • ${associate.location}`}
-                          </p>
-
-                          {associate.summary && (
-                            <p className="text-xs text-stone-600 line-clamp-2 leading-relaxed mb-3">{associate.summary}</p>
-                          )}
-
-                          <div className="flex items-center justify-between mt-auto pt-3 border-t border-stone-100">
-                            <div>
-                              <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold mb-0.5">Rate</p>
-                              <p className="text-sm font-semibold text-stone-900">
-                                {hourly ? `${currency} ${hourly}/hr` : "On Request"}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold mb-0.5">Experience</p>
-                              <p className="text-sm font-semibold text-stone-900">
-                                {associate.experienceYears ? `${associate.experienceYears} years` : "N/A"}
-                              </p>
-                            </div>
-                          </div>
-
-                          {associate.toolset && associate.toolset.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-3">
-                              {associate.toolset.slice(0, 3).map((tool, i) => (
-                                <span key={i} className="px-2 py-1 bg-stone-100 text-stone-700 rounded-lg text-xs font-medium">
-                                  {tool}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    </motion.article>
-                  );
-                })}
-              </div>
+              <AssociatePreviewGrid
+                associates={filteredAssociates}
+                favorites={favorites}
+                onToggleFavorite={toggleFavorite}
+              />
             )}
           </div>
         </div>
