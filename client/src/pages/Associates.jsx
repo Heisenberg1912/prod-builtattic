@@ -158,7 +158,7 @@ const Associates = () => {
 
       {/* Clean Header */}
       <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-stone-200/60 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="w-full px-4 py-4">
           <div className="flex items-center gap-4">
             <div className="relative flex-1">
               <HiOutlineSearch className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
@@ -201,7 +201,7 @@ const Associates = () => {
       </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="w-full px-4 py-8">
         <div className="flex gap-6">
           {/* Filter Sidebar */}
           <AnimatePresence>
