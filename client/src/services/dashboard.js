@@ -104,3 +104,100 @@ export const markInquiryAsRead = async (inquiryId) => {
   const { data } = await client.patch(`/dashboard/inquiries/${inquiryId}`, { read: true });
   return data?.inquiry || null;
 };
+
+// Fetch earnings overview
+export const fetchEarningsOverview = async () => {
+  try {
+    const { data } = await client.get("/dashboard/earnings");
+    return { ...data, fallback: false };
+  } catch {
+    // Fallback mock data for development
+    return {
+      totalEarnings: 12450,
+      pendingPayments: 2340,
+      thisMonth: 3200,
+      lastMonth: 2890,
+      payoutHistory: [
+        { id: 1, amount: 1500, date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), status: 'completed' },
+        { id: 2, amount: 890, date: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), status: 'completed' },
+        { id: 3, amount: 2340, date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), status: 'pending' },
+      ],
+      fallback: true,
+    };
+  }
+};
+
+// Fetch chart analytics data
+export const fetchChartAnalytics = async (days = 7) => {
+  try {
+    const { data } = await client.get("/dashboard/analytics/chart", { params: { days } });
+    return { ...data, fallback: false };
+  } catch {
+    // Generate fallback data for chart
+    const chartData = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      chartData.push({
+        date: date.toISOString().split('T')[0],
+        views: Math.floor(Math.random() * 100) + 20,
+        inquiries: Math.floor(Math.random() * 10) + 1,
+      });
+    }
+    return { data: chartData, fallback: true };
+  }
+};
+
+// Fetch activity feed
+export const fetchActivityFeed = async (limit = 5) => {
+  try {
+    const { data } = await client.get("/dashboard/activity", { params: { limit } });
+    return { items: data?.items || [], fallback: false };
+  } catch {
+    // Fallback mock activity data
+    const activities = [
+      { id: 1, type: 'inquiry', message: 'New inquiry received from John Doe', timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString() },
+      { id: 2, type: 'view', message: 'Your design "Modern Villa" was viewed 15 times', timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() },
+      { id: 3, type: 'publish', message: 'Service "Interior Consultation" was published', timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() },
+      { id: 4, type: 'save', message: 'Someone saved your design "Beach House"', timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString() },
+      { id: 5, type: 'payment', message: 'Payment of $500 received', timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+    ];
+    return { items: activities.slice(0, limit), fallback: true };
+  }
+};
+
+// Fetch top performers
+export const fetchTopPerformers = async (limit = 3) => {
+  try {
+    const { data } = await client.get("/dashboard/top-performers", { params: { limit } });
+    return { ...data, fallback: false };
+  } catch {
+    // Get from localStorage as fallback
+    try {
+      const { getAllDesigns } = await import("./associateDesigns.js");
+      const { getAllServices } = await import("./associateServices.js");
+
+      const designs = getAllDesigns()
+        .sort((a, b) => (b.views || 0) - (a.views || 0))
+        .slice(0, limit)
+        .map(d => ({ ...d, itemType: 'design' }));
+
+      const services = getAllServices()
+        .sort((a, b) => (b.views || 0) - (a.views || 0))
+        .slice(0, limit)
+        .map(s => ({ ...s, itemType: 'service' }));
+
+      return {
+        topDesigns: designs,
+        topServices: services,
+        fallback: true,
+      };
+    } catch {
+      return {
+        topDesigns: [],
+        topServices: [],
+        fallback: true,
+      };
+    }
+  }
+};

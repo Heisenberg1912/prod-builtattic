@@ -20,17 +20,13 @@ import {
   LogIn,
   LogOut,
   MonitorSmartphone,
-  Laptop,
-  Tablet,
   User,
-  Briefcase,
   Globe,
   CheckCircle2,
   AlertTriangle,
   RefreshCcw,
   Eye,
   EyeOff,
-  Zap,
   Lock,
   Palette,
   Moon,
@@ -39,16 +35,18 @@ import {
   Save,
   X,
   ChevronRight,
+  ArrowRight,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Switch } from "../components/ui/switch";
-import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Separator } from "../components/ui/separator";
-import { Badge } from "../components/ui/badge";
+
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -10 }
+};
 
 const SETTINGS_DEFAULTS = {
   notifications: {
@@ -107,6 +105,14 @@ const TIMEZONE_OPTIONS = [
   "Africa/Johannesburg",
 ];
 
+const TABS = [
+  { id: "profile", label: "Profile", icon: User },
+  { id: "security", label: "Security", icon: Shield },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "privacy", label: "Privacy", icon: Eye },
+  { id: "appearance", label: "Appearance", icon: Palette },
+];
+
 const mergeSettingsWithDefaults = (incoming = {}) => ({
   notifications: { ...SETTINGS_DEFAULTS.notifications, ...(incoming.notifications || {}) },
   privacy: { ...SETTINGS_DEFAULTS.privacy, ...(incoming.privacy || {}) },
@@ -119,7 +125,6 @@ const detectTimezone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   } catch (error) {
-    console.warn("settings_timezone_detect_error", error);
     return "UTC";
   }
 };
@@ -200,22 +205,16 @@ const Settings = () => {
     if (!isAuthenticated) {
       hydrateFromFallback({}, "Sign in to sync your settings");
       setLoading(false);
-      return () => {
-        isMounted = false;
-      };
+      return () => { isMounted = false; };
     }
     loadSettings();
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [isAuthenticated, userHydrationKey]);
 
   const handleSave = useCallback(
     async ({ silent = false } = {}) => {
       const snapshot = settingsRef.current;
-      if (!snapshot || !snapshot.hasChanges) {
-        return false;
-      }
+      if (!snapshot || !snapshot.hasChanges) return false;
       if (!isAuthenticated) {
         if (!silent) {
           toast.error("Sign in to save your settings");
@@ -247,14 +246,10 @@ const Settings = () => {
         if (!silent) {
           setError(err?.message || "Unable to update settings");
           toast.error("Failed to save settings");
-        } else {
-          console.warn("settings_autosave_failed", err);
         }
         return false;
       } finally {
-        if (!silent) {
-          setSaving(false);
-        }
+        if (!silent) setSaving(false);
       }
     },
     [isAuthenticated, navigate],
@@ -262,17 +257,13 @@ const Settings = () => {
 
   const queueAutoSave = useCallback(() => {
     if (!isAuthenticated) return;
-    if (autoSaveTimer.current) {
-      clearTimeout(autoSaveTimer.current);
-    }
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     setAutoSaveStatus("queued");
     autoSaveTimer.current = window.setTimeout(async () => {
       setAutoSaveStatus("saving");
       const ok = await handleSave({ silent: true });
       setAutoSaveStatus(ok ? "saved" : "error");
-      if (ok) {
-        window.setTimeout(() => setAutoSaveStatus("idle"), 2000);
-      }
+      if (ok) window.setTimeout(() => setAutoSaveStatus("idle"), 2000);
     }, 900);
   }, [handleSave, isAuthenticated]);
 
@@ -284,9 +275,7 @@ const Settings = () => {
         if (!next || next === prev) return prev;
         return { ...next, hasChanges: true };
       });
-      if (autoSave) {
-        queueAutoSave();
-      }
+      if (autoSave) queueAutoSave();
     },
     [queueAutoSave],
   );
@@ -295,14 +284,10 @@ const Settings = () => {
     setError("");
     setSuccess("");
     applySettingsUpdate(
-      (prev) => {
-        if (!prev) return prev;
-        const current = Boolean(prev.notifications?.[id]);
-        return {
-          ...prev,
-          notifications: { ...(prev.notifications || {}), [id]: !current },
-        };
-      },
+      (prev) => ({
+        ...prev,
+        notifications: { ...(prev.notifications || {}), [id]: !Boolean(prev.notifications?.[id]) },
+      }),
       { autoSave: true },
     );
   };
@@ -323,14 +308,10 @@ const Settings = () => {
     setError("");
     setSuccess("");
     applySettingsUpdate(
-      (prev) => {
-        if (!prev) return prev;
-        const current = Boolean(prev.privacy?.[id]);
-        return {
-          ...prev,
-          privacy: { ...(prev.privacy || {}), [id]: !current },
-        };
-      },
+      (prev) => ({
+        ...prev,
+        privacy: { ...(prev.privacy || {}), [id]: !Boolean(prev.privacy?.[id]) },
+      }),
       { autoSave: true },
     );
   };
@@ -340,7 +321,6 @@ const Settings = () => {
     setSuccess("");
     applySettingsUpdate(
       (prev) => {
-        if (!prev) return prev;
         const current = Boolean(prev.security?.[id]);
         const resolved = typeof nextValue === "boolean" ? nextValue : !current;
         if (current === resolved) return prev;
@@ -380,7 +360,6 @@ const Settings = () => {
       toast.success('Signed out');
       navigate('/login');
     } catch (err) {
-      console.warn('settings_signout_error', err);
       toast.error('Unable to sign out completely');
     }
   };
@@ -399,14 +378,14 @@ const Settings = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50/50 flex items-center justify-center">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center space-y-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center gap-4"
         >
-          <div className="h-12 w-12 mx-auto border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
-          <p className="text-slate-600 font-medium">Loading your settings...</p>
+          <div className="w-8 h-8 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin" />
+          <p className="text-sm text-stone-500 font-medium">Loading settings...</p>
         </motion.div>
       </div>
     );
@@ -414,261 +393,291 @@ const Settings = () => {
 
   if (!settings) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle size={24} />
-              Settings Unavailable
-            </CardTitle>
-            <CardDescription>{error || 'Unable to load settings'}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => navigate('/login')} className="w-full">
-              <LogIn size={16} />
-              Sign in
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-stone-50/50 flex items-center justify-center p-4">
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          className="bg-white border border-stone-200 rounded-xl p-8 shadow-sm max-w-md w-full text-center"
+        >
+          <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-5 h-5 text-stone-500" />
+          </div>
+          <h2 className="text-lg font-semibold text-stone-900 mb-2">Settings Unavailable</h2>
+          <p className="text-sm text-stone-500 mb-6">{error || 'Unable to load settings'}</p>
+          <Button onClick={() => navigate('/login')} className="bg-stone-900 hover:bg-stone-800">
+            <LogIn className="w-4 h-4 mr-2" />
+            Sign in
+          </Button>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <div className="mx-auto max-w-7xl px-4 py-10 space-y-6">
+    <div className="min-h-screen bg-stone-50/50">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl bg-white/90 backdrop-blur-sm p-8 shadow-xl ring-1 ring-slate-100"
+        <motion.header
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.5 }}
+          className="mb-8"
         >
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="flex items-start sm:items-center justify-between gap-4 flex-col sm:flex-row">
             <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16 ring-4 ring-slate-100">
-                <AvatarFallback className="bg-gradient-to-br from-slate-900 to-slate-700 text-white text-xl">
-                  {profileInitials}
-                </AvatarFallback>
-              </Avatar>
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.1 }}
+                className="w-14 h-14 rounded-full bg-stone-900 flex items-center justify-center text-white text-lg font-semibold"
+              >
+                {profileInitials}
+              </motion.div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">{displayName}</h1>
-                <p className="text-sm text-slate-600">{displayEmail}</p>
-                <div className="flex items-center gap-2 mt-2">
+                <motion.h1
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="text-2xl font-semibold text-stone-900 tracking-tight"
+                >
+                  {displayName}
+                </motion.h1>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-stone-500 text-sm"
+                >
+                  {displayEmail}
+                </motion.p>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.25 }}
+                  className="flex items-center gap-2 mt-2"
+                >
                   {isAuthenticated ? (
-                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                      <CheckCircle2 size={12} className="mr-1" />
+                    <span className="px-2 py-0.5 text-xs font-medium bg-stone-100 text-stone-600 rounded-full flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
                       Active
-                    </Badge>
+                    </span>
                   ) : (
-                    <Badge variant="outline" className="text-slate-600">
+                    <span className="px-2 py-0.5 text-xs font-medium bg-stone-100 text-stone-500 rounded-full">
                       Signed out
-                    </Badge>
+                    </span>
                   )}
                   {autoSaveStatus === "saving" && (
-                    <Badge variant="outline" className="text-blue-600 border-blue-200">
-                      <RefreshCcw size={12} className="mr-1 animate-spin" />
-                      Saving...
-                    </Badge>
+                    <span className="px-2 py-0.5 text-xs font-medium bg-stone-100 text-stone-500 rounded-full flex items-center gap-1">
+                      <RefreshCcw className="w-3 h-3 animate-spin" />
+                      Saving
+                    </span>
                   )}
                   {autoSaveStatus === "saved" && (
-                    <Badge className="bg-green-100 text-green-700 border-green-200">
-                      <CheckCircle2 size={12} className="mr-1" />
+                    <span className="px-2 py-0.5 text-xs font-medium bg-stone-900 text-white rounded-full flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
                       Saved
-                    </Badge>
+                    </span>
                   )}
-                </div>
+                </motion.div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 }}
+              className="flex items-center gap-2"
+            >
               {settings?.hasChanges && (
                 <Button
                   onClick={() => handleSave()}
                   disabled={saving || !isAuthenticated}
-                  size="lg"
-                  className="bg-gradient-to-r from-slate-900 to-slate-700"
+                  className="bg-stone-900 hover:bg-stone-800"
                 >
-                  <Save size={16} />
-                  {saving ? "Saving..." : "Save Changes"}
+                  <Save className="w-4 h-4 mr-2" />
+                  {saving ? "Saving..." : "Save"}
                 </Button>
               )}
               {isAuthenticated ? (
-                <Button onClick={handleSignOut} variant="outline">
-                  <LogOut size={16} />
+                <Button onClick={handleSignOut} variant="outline" className="border-stone-200 hover:bg-stone-100">
+                  <LogOut className="w-4 h-4 mr-2" />
                   Sign Out
                 </Button>
               ) : (
-                <Button onClick={() => navigate('/login')}>
-                  <LogIn size={16} />
+                <Button onClick={() => navigate('/login')} className="bg-stone-900 hover:bg-stone-800">
+                  <LogIn className="w-4 h-4 mr-2" />
                   Sign In
                 </Button>
               )}
-            </div>
+            </motion.div>
           </div>
-        </motion.div>
+        </motion.header>
 
         {/* Alerts */}
         <AnimatePresence mode="wait">
           {(error || success) && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden"
+              variants={fadeInUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mb-6"
             >
               {error && (
-                <Card className="border-red-200 bg-red-50">
-                  <CardContent className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-3">
-                      <AlertTriangle size={20} className="text-red-600" />
-                      <p className="text-sm text-red-700">{error}</p>
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => setError("")}>
-                      <X size={16} />
-                    </Button>
-                  </CardContent>
-                </Card>
+                <div className="flex items-center justify-between px-4 py-3 bg-stone-100 border border-stone-200 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <AlertTriangle className="w-4 h-4 text-stone-500" />
+                    <p className="text-sm text-stone-600">{error}</p>
+                  </div>
+                  <button onClick={() => setError("")} className="p-1 hover:bg-stone-200 rounded transition-colors">
+                    <X className="w-4 h-4 text-stone-500" />
+                  </button>
+                </div>
               )}
               {success && (
-                <Card className="border-emerald-200 bg-emerald-50">
-                  <CardContent className="flex items-center justify-between p-4">
-                    <div className="flex items-center gap-3">
-                      <CheckCircle2 size={20} className="text-emerald-600" />
-                      <p className="text-sm text-emerald-700">{success}</p>
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => setSuccess("")}>
-                      <X size={16} />
-                    </Button>
-                  </CardContent>
-                </Card>
+                <div className="flex items-center justify-between px-4 py-3 bg-stone-900 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <p className="text-sm text-white">{success}</p>
+                  </div>
+                  <button onClick={() => setSuccess("")} className="p-1 hover:bg-stone-800 rounded transition-colors">
+                    <X className="w-4 h-4 text-white" />
+                  </button>
+                </div>
               )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Main Tabs */}
+        {/* Tab Navigation */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
           transition={{ delay: 0.1 }}
+          className="mb-8"
         >
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 h-auto p-1 bg-white shadow-sm">
-              <TabsTrigger value="profile" className="gap-2">
-                <User size={16} />
-                <span className="hidden sm:inline">Profile</span>
-              </TabsTrigger>
-              <TabsTrigger value="security" className="gap-2">
-                <Shield size={16} />
-                <span className="hidden sm:inline">Security</span>
-              </TabsTrigger>
-              <TabsTrigger value="notifications" className="gap-2">
-                <Bell size={16} />
-                <span className="hidden sm:inline">Notifications</span>
-              </TabsTrigger>
-              <TabsTrigger value="privacy" className="gap-2">
-                <Eye size={16} />
-                <span className="hidden sm:inline">Privacy</span>
-              </TabsTrigger>
-              <TabsTrigger value="appearance" className="gap-2">
-                <Palette size={16} />
-                <span className="hidden sm:inline">Appearance</span>
-              </TabsTrigger>
-            </TabsList>
+          <div className="bg-white border border-stone-200 rounded-xl p-1.5 shadow-sm">
+            <div className="flex flex-wrap gap-1">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${
+                      isActive
+                        ? 'bg-stone-900 text-white'
+                        : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </motion.div>
 
-            {/* Profile Tab */}
-            <TabsContent value="profile" className="space-y-6 mt-6">
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <User size={20} />
-                      Personal Information
-                    </CardTitle>
-                    <CardDescription>Update your profile details and public information</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="fullName">Full Name</Label>
-                        <Input
-                          id="fullName"
-                          value={settings.profile?.fullName || ''}
-                          onChange={(e) => updateProfileField('fullName', e.target.value)}
-                          placeholder="John Doe"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email Address</Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          value={settings.profile?.email || ''}
-                          onChange={(e) => updateProfileField('email', e.target.value)}
-                          placeholder="you@example.com"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">Phone Number</Label>
-                        <Input
-                          id="phone"
-                          type="tel"
-                          value={settings.profile?.phone || ''}
-                          onChange={(e) => updateProfileField('phone', e.target.value)}
-                          placeholder="+1 (555) 123-4567"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="location">Location</Label>
-                        <Input
-                          id="location"
-                          value={settings.profile?.location || ''}
-                          onChange={(e) => updateProfileField('location', e.target.value)}
-                          placeholder="New York, USA"
-                        />
-                      </div>
+        {/* Tab Content */}
+        <AnimatePresence mode="wait">
+          {activeTab === "profile" && (
+            <motion.div
+              key="profile"
+              variants={fadeInUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="space-y-6"
+            >
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                    <User className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-stone-900">Personal Information</h3>
+                    <p className="text-xs text-stone-500">Update your profile details</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-5">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="fullName" className="text-stone-700">Full Name</Label>
+                      <Input
+                        id="fullName"
+                        value={settings.profile?.fullName || ''}
+                        onChange={(e) => updateProfileField('fullName', e.target.value)}
+                        placeholder="John Doe"
+                        className="border-stone-200 focus:border-stone-400 focus:ring-stone-200"
+                      />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email" className="text-stone-700">Email Address</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={settings.profile?.email || ''}
+                        onChange={(e) => updateProfileField('email', e.target.value)}
+                        placeholder="you@example.com"
+                        className="border-stone-200 focus:border-stone-400 focus:ring-stone-200"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone" className="text-stone-700">Phone Number</Label>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        value={settings.profile?.phone || ''}
+                        onChange={(e) => updateProfileField('phone', e.target.value)}
+                        placeholder="+1 (555) 123-4567"
+                        className="border-stone-200 focus:border-stone-400 focus:ring-stone-200"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="location" className="text-stone-700">Location</Label>
+                      <Input
+                        id="location"
+                        value={settings.profile?.location || ''}
+                        onChange={(e) => updateProfileField('location', e.target.value)}
+                        placeholder="New York, USA"
+                        className="border-stone-200 focus:border-stone-400 focus:ring-stone-200"
+                      />
+                    </div>
+                  </div>
 
-                    <Separator />
-
-                    <div className="grid gap-4 md:grid-cols-2">
+                  <div className="border-t border-stone-100 pt-5">
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="company">Company</Label>
+                        <Label htmlFor="company" className="text-stone-700">Company</Label>
                         <Input
                           id="company"
                           value={settings.profile?.company || ''}
                           onChange={(e) => updateProfileField('company', e.target.value)}
                           placeholder="Acme Corp"
+                          className="border-stone-200 focus:border-stone-400 focus:ring-stone-200"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="jobTitle">Job Title</Label>
+                        <Label htmlFor="jobTitle" className="text-stone-700">Job Title</Label>
                         <Input
                           id="jobTitle"
                           value={settings.profile?.jobTitle || ''}
                           onChange={(e) => updateProfileField('jobTitle', e.target.value)}
                           placeholder="Senior Designer"
+                          className="border-stone-200 focus:border-stone-400 focus:ring-stone-200"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="pronouns">Pronouns</Label>
-                        <Input
-                          id="pronouns"
-                          value={settings.profile?.pronouns || ''}
-                          onChange={(e) => updateProfileField('pronouns', e.target.value)}
-                          placeholder="they/them"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="timezone">Timezone</Label>
+                        <Label htmlFor="timezone" className="text-stone-700">Timezone</Label>
                         <select
                           id="timezone"
                           value={settings.profile?.timezone || ''}
                           onChange={(e) => updateProfileField('timezone', e.target.value)}
-                          className="flex h-10 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+                          className="flex h-10 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-200 transition-colors"
                         >
                           <option value="">Select timezone</option>
                           {TIMEZONE_OPTIONS.map((tz) => (
@@ -676,242 +685,181 @@ const Settings = () => {
                           ))}
                         </select>
                       </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="website" className="text-stone-700">Website</Label>
+                        <Input
+                          id="website"
+                          type="url"
+                          value={settings.profile?.website || ''}
+                          onChange={(e) => updateProfileField('website', e.target.value)}
+                          placeholder="https://yoursite.com"
+                          className="border-stone-200 focus:border-stone-400 focus:ring-stone-200"
+                        />
+                      </div>
                     </div>
+                  </div>
 
-                    <Separator />
-
+                  <div className="border-t border-stone-100 pt-5">
                     <div className="space-y-2">
-                      <Label htmlFor="website">Website</Label>
-                      <Input
-                        id="website"
-                        type="url"
-                        value={settings.profile?.website || ''}
-                        onChange={(e) => updateProfileField('website', e.target.value)}
-                        placeholder="https://yourwebsite.com"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="bio">Bio</Label>
+                      <Label htmlFor="bio" className="text-stone-700">Bio</Label>
                       <textarea
                         id="bio"
                         value={settings.profile?.bio || ''}
                         onChange={(e) => updateProfileField('bio', e.target.value)}
                         placeholder="Tell us about yourself..."
-                        rows={4}
-                        className="flex w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none resize-none"
+                        rows={3}
+                        className="flex w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-200 resize-none transition-colors"
                       />
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </TabsContent>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
-            {/* Security Tab */}
-            <TabsContent value="security" className="space-y-6 mt-6">
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3 }}
-                className="space-y-6"
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Lock size={20} />
-                      Security Settings
-                    </CardTitle>
-                    <CardDescription>Manage your account security and authentication</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck size={18} className="text-slate-700" />
-                          <Label className="text-base font-semibold">Two-Step Verification</Label>
-                        </div>
-                        <p className="text-sm text-slate-600">Add an extra layer of security to your account</p>
-                      </div>
-                      <Switch
-                        checked={settings.security?.twoStep || false}
-                        onCheckedChange={(checked) => {
-                          toggleSecurity('twoStep', checked);
-                          toast.success(checked ? '2FA enabled' : '2FA disabled');
-                        }}
-                      />
-                    </div>
+          {activeTab === "security" && (
+            <motion.div
+              key="security"
+              variants={fadeInUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="space-y-6"
+            >
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                    <Lock className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-stone-900">Security Settings</h3>
+                    <p className="text-xs text-stone-500">Manage account security</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-4">
+                  <SettingToggle
+                    icon={ShieldCheck}
+                    title="Two-Step Verification"
+                    description="Add extra security to your account"
+                    checked={settings.security?.twoStep || false}
+                    onChange={(checked) => {
+                      toggleSecurity('twoStep', checked);
+                      toast.success(checked ? '2FA enabled' : '2FA disabled');
+                    }}
+                  />
+                  <SettingToggle
+                    icon={Bell}
+                    title="Login Alerts"
+                    description="Get notified of new sign-ins"
+                    checked={settings.security?.loginAlerts || false}
+                    onChange={(checked) => toggleSecurity('loginAlerts', checked)}
+                  />
+                  <SettingToggle
+                    icon={MonitorSmartphone}
+                    title="Device Verification"
+                    description="Require verification for new devices"
+                    checked={settings.security?.deviceVerification || false}
+                    onChange={(checked) => toggleSecurity('deviceVerification', checked)}
+                  />
+                  <SettingToggle
+                    icon={Smartphone}
+                    title="Biometric Unlock"
+                    description="Use Touch ID or Face ID"
+                    checked={settings.security?.biometricUnlock || false}
+                    onChange={(checked) => toggleSecurity('biometricUnlock', checked)}
+                  />
+                </div>
+              </div>
 
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <Bell size={18} className="text-slate-700" />
-                          <Label className="text-base font-semibold">Login Alerts</Label>
-                        </div>
-                        <p className="text-sm text-slate-600">Get notified of new sign-ins to your account</p>
-                      </div>
-                      <Switch
-                        checked={settings.security?.loginAlerts || false}
-                        onCheckedChange={(checked) => toggleSecurity('loginAlerts', checked)}
-                      />
-                    </div>
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-stone-100">
+                  <h3 className="font-medium text-stone-900">Password & Recovery</h3>
+                </div>
+                <div className="p-3 space-y-1">
+                  <ActionButton label="Change Password" />
+                  <ActionButton label="Update Recovery Email" />
+                  <ActionButton label="View Active Sessions" />
+                </div>
+              </div>
+            </motion.div>
+          )}
 
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <MonitorSmartphone size={18} className="text-slate-700" />
-                          <Label className="text-base font-semibold">Device Verification</Label>
-                        </div>
-                        <p className="text-sm text-slate-600">Require verification for new devices</p>
-                      </div>
-                      <Switch
-                        checked={settings.security?.deviceVerification || false}
-                        onCheckedChange={(checked) => toggleSecurity('deviceVerification', checked)}
-                      />
-                    </div>
+          {activeTab === "notifications" && (
+            <motion.div
+              key="notifications"
+              variants={fadeInUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                    <Bell className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-stone-900">Notification Preferences</h3>
+                    <p className="text-xs text-stone-500">Choose what updates you receive</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-4">
+                  <SettingToggle
+                    title="Order Updates"
+                    description="Notifications about orders and deliveries"
+                    checked={settings.notifications?.orderUpdates || false}
+                    onChange={() => toggleNotification('orderUpdates')}
+                  />
+                  <SettingToggle
+                    title="Partner Announcements"
+                    description="Updates from marketplace partners"
+                    checked={settings.notifications?.partnerAnnouncements || false}
+                    onChange={() => toggleNotification('partnerAnnouncements')}
+                  />
+                  <SettingToggle
+                    title="Research Briefs"
+                    description="Industry insights and case studies"
+                    checked={settings.notifications?.researchBriefs || false}
+                    onChange={() => toggleNotification('researchBriefs')}
+                  />
+                  <SettingToggle
+                    title="Product Tips"
+                    description="Helpful tips and feature announcements"
+                    checked={settings.notifications?.productTips || false}
+                    onChange={() => toggleNotification('productTips')}
+                  />
+                  <SettingToggle
+                    title="Weekly Digest"
+                    description="Summary of your weekly activity"
+                    checked={settings.notifications?.weeklyDigest || false}
+                    onChange={() => toggleNotification('weeklyDigest')}
+                  />
+                  <SettingToggle
+                    title="SMS Alerts"
+                    description="Receive critical alerts via text"
+                    checked={settings.notifications?.smsAlerts || false}
+                    onChange={() => toggleNotification('smsAlerts')}
+                  />
 
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <Smartphone size={18} className="text-slate-700" />
-                          <Label className="text-base font-semibold">Biometric Unlock</Label>
-                        </div>
-                        <p className="text-sm text-slate-600">Use Touch ID or Face ID where supported</p>
-                      </div>
-                      <Switch
-                        checked={settings.security?.biometricUnlock || false}
-                        onCheckedChange={(checked) => toggleSecurity('biometricUnlock', checked)}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Password & Recovery</CardTitle>
-                    <CardDescription>Manage your password and account recovery options</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <Button variant="outline" className="w-full justify-between">
-                      Change Password
-                      <ChevronRight size={16} />
-                    </Button>
-                    <Button variant="outline" className="w-full justify-between">
-                      Update Recovery Email
-                      <ChevronRight size={16} />
-                    </Button>
-                    <Button variant="outline" className="w-full justify-between">
-                      View Active Sessions
-                      <ChevronRight size={16} />
-                    </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </TabsContent>
-
-            {/* Notifications Tab */}
-            <TabsContent value="notifications" className="space-y-6 mt-6">
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Bell size={20} />
-                      Notification Preferences
-                    </CardTitle>
-                    <CardDescription>Choose what updates you want to receive</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Order Updates</Label>
-                        <p className="text-sm text-slate-600">Notifications about your orders and deliveries</p>
-                      </div>
-                      <Switch
-                        checked={settings.notifications?.orderUpdates || false}
-                        onCheckedChange={() => toggleNotification('orderUpdates')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Partner Announcements</Label>
-                        <p className="text-sm text-slate-600">Updates from marketplace partners and vendors</p>
-                      </div>
-                      <Switch
-                        checked={settings.notifications?.partnerAnnouncements || false}
-                        onCheckedChange={() => toggleNotification('partnerAnnouncements')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Research Briefs</Label>
-                        <p className="text-sm text-slate-600">Industry insights and case studies</p>
-                      </div>
-                      <Switch
-                        checked={settings.notifications?.researchBriefs || false}
-                        onCheckedChange={() => toggleNotification('researchBriefs')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Product Tips</Label>
-                        <p className="text-sm text-slate-600">Helpful tips and feature announcements</p>
-                      </div>
-                      <Switch
-                        checked={settings.notifications?.productTips || false}
-                        onCheckedChange={() => toggleNotification('productTips')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Weekly Digest</Label>
-                        <p className="text-sm text-slate-600">Summary of your weekly activity</p>
-                      </div>
-                      <Switch
-                        checked={settings.notifications?.weeklyDigest || false}
-                        onCheckedChange={() => toggleNotification('weeklyDigest')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">SMS Alerts</Label>
-                        <p className="text-sm text-slate-600">Receive critical alerts via text message</p>
-                      </div>
-                      <Switch
-                        checked={settings.notifications?.smsAlerts || false}
-                        onCheckedChange={() => toggleNotification('smsAlerts')}
-                      />
-                    </div>
-
-                    <Separator className="my-6" />
-
-                    <div className="grid gap-4 md:grid-cols-2">
+                  <div className="border-t border-stone-100 pt-5">
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label>Digest Frequency</Label>
+                        <Label className="text-stone-700">Digest Frequency</Label>
                         <select
                           value={settings.notifications?.digestFrequency || 'weekly'}
                           onChange={(e) => updateNotificationPreference('digestFrequency', e.target.value)}
-                          className="flex h-10 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+                          className="flex h-10 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-200 transition-colors"
                         >
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
                           <option value="monthly">Monthly</option>
                         </select>
                       </div>
-
                       <div className="space-y-2">
-                        <Label>Preferred Channel</Label>
+                        <Label className="text-stone-700">Preferred Channel</Label>
                         <select
                           value={settings.notifications?.preferredChannel || 'email'}
                           onChange={(e) => updateNotificationPreference('preferredChannel', e.target.value)}
-                          className="flex h-10 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+                          className="flex h-10 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-200 transition-colors"
                         >
                           <option value="email">Email</option>
                           <option value="sms">SMS</option>
@@ -919,245 +867,216 @@ const Settings = () => {
                         </select>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </TabsContent>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
-            {/* Privacy Tab */}
-            <TabsContent value="privacy" className="space-y-6 mt-6">
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3 }}
-                className="space-y-6"
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Eye size={20} />
-                      Privacy Controls
-                    </CardTitle>
-                    <CardDescription>Manage your data and privacy preferences</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Share Profile</Label>
-                        <p className="text-sm text-slate-600">Allow partners to view your profile</p>
-                      </div>
-                      <Switch
-                        checked={settings.privacy?.shareProfile || false}
-                        onCheckedChange={() => togglePrivacy('shareProfile')}
-                      />
+          {activeTab === "privacy" && (
+            <motion.div
+              key="privacy"
+              variants={fadeInUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="space-y-6"
+            >
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                    <Eye className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-stone-900">Privacy Controls</h3>
+                    <p className="text-xs text-stone-500">Manage your data and privacy</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-4">
+                  <SettingToggle
+                    title="Share Profile"
+                    description="Allow partners to view your profile"
+                    checked={settings.privacy?.shareProfile || false}
+                    onChange={() => togglePrivacy('shareProfile')}
+                  />
+                  <SettingToggle
+                    title="Share Analytics"
+                    description="Help improve the platform with anonymous data"
+                    checked={settings.privacy?.shareAnalytics || false}
+                    onChange={() => togglePrivacy('shareAnalytics')}
+                  />
+                  <SettingToggle
+                    title="Retain Data"
+                    description="Keep your purchase history for 24 months"
+                    checked={settings.privacy?.retainData || false}
+                    onChange={() => togglePrivacy('retainData')}
+                  />
+                  <SettingToggle
+                    title="Search Visibility"
+                    description="Appear in partner search results"
+                    checked={settings.privacy?.searchVisibility || false}
+                    onChange={() => togglePrivacy('searchVisibility')}
+                  />
+                  <SettingToggle
+                    title="Profile Indexing"
+                    description="Allow search engines to index your profile"
+                    checked={settings.privacy?.profileIndexing || false}
+                    onChange={() => togglePrivacy('profileIndexing')}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-stone-100">
+                  <h3 className="font-medium text-stone-900">Data Management</h3>
+                </div>
+                <div className="p-3 space-y-1">
+                  <ActionButton icon={Database} label="Download My Data" />
+                  <ActionButton icon={Trash2} label="Delete Account" danger />
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === "appearance" && (
+            <motion.div
+              key="appearance"
+              variants={fadeInUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                    <Palette className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-stone-900">Appearance Settings</h3>
+                    <p className="text-xs text-stone-500">Customize how the app looks</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-6">
+                  <div>
+                    <Label className="text-stone-700 mb-3 block">Theme</Label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        { id: 'light', label: 'Light', icon: Sun },
+                        { id: 'dark', label: 'Dark', icon: Moon },
+                        { id: 'system', label: 'System', icon: Monitor },
+                      ].map((theme) => {
+                        const Icon = theme.icon;
+                        const isActive = settings.appearance?.theme === theme.id;
+                        return (
+                          <button
+                            key={theme.id}
+                            onClick={() => updateAppearance('theme', theme.id)}
+                            className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all duration-300 ${
+                              isActive
+                                ? 'border-stone-900 bg-stone-50'
+                                : 'border-stone-200 hover:border-stone-300'
+                            }`}
+                          >
+                            <Icon className={`w-5 h-5 ${isActive ? 'text-stone-900' : 'text-stone-500'}`} />
+                            <span className={`text-sm font-medium ${isActive ? 'text-stone-900' : 'text-stone-600'}`}>
+                              {theme.label}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
+                  </div>
 
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Share Analytics</Label>
-                        <p className="text-sm text-slate-600">Help improve the platform with anonymous data</p>
-                      </div>
-                      <Switch
-                        checked={settings.privacy?.shareAnalytics || false}
-                        onCheckedChange={() => togglePrivacy('shareAnalytics')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Retain Data</Label>
-                        <p className="text-sm text-slate-600">Keep your purchase history for 24 months</p>
-                      </div>
-                      <Switch
-                        checked={settings.privacy?.retainData || false}
-                        onCheckedChange={() => togglePrivacy('retainData')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Search Visibility</Label>
-                        <p className="text-sm text-slate-600">Appear in partner search results</p>
-                      </div>
-                      <Switch
-                        checked={settings.privacy?.searchVisibility || false}
-                        onCheckedChange={() => togglePrivacy('searchVisibility')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Profile Indexing</Label>
-                        <p className="text-sm text-slate-600">Allow search engines to index your profile</p>
-                      </div>
-                      <Switch
-                        checked={settings.privacy?.profileIndexing || false}
-                        onCheckedChange={() => togglePrivacy('profileIndexing')}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-red-200">
-                  <CardHeader>
-                    <CardTitle className="text-red-600 flex items-center gap-2">
-                      <Trash2 size={20} />
-                      Danger Zone
-                    </CardTitle>
-                    <CardDescription>Irreversible and destructive actions</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <Button variant="outline" className="w-full justify-between text-slate-700">
-                      <span className="flex items-center gap-2">
-                        <Database size={16} />
-                        Download My Data
-                      </span>
-                      <ChevronRight size={16} />
-                    </Button>
-                    <Button variant="destructive" className="w-full justify-between">
-                      <span className="flex items-center gap-2">
-                        <Trash2 size={16} />
-                        Delete Account
-                      </span>
-                      <ChevronRight size={16} />
-                    </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </TabsContent>
-
-            {/* Appearance Tab */}
-            <TabsContent value="appearance" className="space-y-6 mt-6">
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Palette size={20} />
-                      Appearance Settings
-                    </CardTitle>
-                    <CardDescription>Customize how the app looks and feels</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="space-y-3">
-                      <Label>Theme</Label>
-                      <div className="grid grid-cols-3 gap-3">
-                        <button
-                          onClick={() => updateAppearance('theme', 'light')}
-                          className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition ${
-                            settings.appearance?.theme === 'light'
-                              ? 'border-slate-900 bg-slate-50'
-                              : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <Sun size={24} />
-                          <span className="text-sm font-semibold">Light</span>
-                        </button>
-                        <button
-                          onClick={() => updateAppearance('theme', 'dark')}
-                          className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition ${
-                            settings.appearance?.theme === 'dark'
-                              ? 'border-slate-900 bg-slate-50'
-                              : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <Moon size={24} />
-                          <span className="text-sm font-semibold">Dark</span>
-                        </button>
-                        <button
-                          onClick={() => updateAppearance('theme', 'system')}
-                          className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition ${
-                            settings.appearance?.theme === 'system'
-                              ? 'border-slate-900 bg-slate-50'
-                              : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <Monitor size={24} />
-                          <span className="text-sm font-semibold">System</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <Label className="text-base font-semibold">Compact Mode</Label>
-                        <p className="text-sm text-slate-600">Reduce spacing for a denser layout</p>
-                      </div>
-                      <Switch
-                        checked={settings.appearance?.compactMode || false}
-                        onCheckedChange={(checked) => updateAppearance('compactMode', checked)}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-slate-50/50">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <Zap size={18} className="text-slate-700" />
-                          <Label className="text-base font-semibold">Animations</Label>
-                        </div>
-                        <p className="text-sm text-slate-600">Enable smooth transitions and animations</p>
-                      </div>
-                      <Switch
-                        checked={settings.appearance?.animationsEnabled !== false}
-                        onCheckedChange={(checked) => updateAppearance('animationsEnabled', checked)}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </TabsContent>
-          </Tabs>
-        </motion.div>
+                  <div className="border-t border-stone-100 pt-5 space-y-4">
+                    <SettingToggle
+                      title="Compact Mode"
+                      description="Reduce spacing for a denser layout"
+                      checked={settings.appearance?.compactMode || false}
+                      onChange={(checked) => updateAppearance('compactMode', checked)}
+                    />
+                    <SettingToggle
+                      title="Animations"
+                      description="Enable smooth transitions and animations"
+                      checked={settings.appearance?.animationsEnabled !== false}
+                      onChange={(checked) => updateAppearance('animationsEnabled', checked)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Quick Links */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="grid gap-4 md:grid-cols-3"
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ delay: 0.3 }}
+          className="mt-8 grid gap-3 sm:grid-cols-3"
         >
           <Link to="/account">
-            <Card className="hover:shadow-lg transition cursor-pointer">
-              <CardContent className="flex items-center justify-between p-6">
-                <div className="flex items-center gap-3">
-                  <User size={20} className="text-slate-700" />
-                  <span className="font-semibold">Account Overview</span>
-                </div>
-                <ChevronRight size={20} className="text-slate-400" />
-              </CardContent>
-            </Card>
+            <div className="group flex items-center justify-between p-4 bg-white border border-stone-200 rounded-xl hover:border-stone-300 hover:shadow-sm transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <User className="w-5 h-5 text-stone-500" />
+                <span className="font-medium text-stone-900">Account Overview</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-stone-400 group-hover:text-stone-600 transition-colors" />
+            </div>
           </Link>
           <Link to="/faqs">
-            <Card className="hover:shadow-lg transition cursor-pointer">
-              <CardContent className="flex items-center justify-between p-6">
-                <div className="flex items-center gap-3">
-                  <Mail size={20} className="text-slate-700" />
-                  <span className="font-semibold">Help Center</span>
-                </div>
-                <ChevronRight size={20} className="text-slate-400" />
-              </CardContent>
-            </Card>
+            <div className="group flex items-center justify-between p-4 bg-white border border-stone-200 rounded-xl hover:border-stone-300 hover:shadow-sm transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <Mail className="w-5 h-5 text-stone-500" />
+                <span className="font-medium text-stone-900">Help Center</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-stone-400 group-hover:text-stone-600 transition-colors" />
+            </div>
           </Link>
           <Link to="/">
-            <Card className="hover:shadow-lg transition cursor-pointer">
-              <CardContent className="flex items-center justify-between p-6">
-                <div className="flex items-center gap-3">
-                  <Globe size={20} className="text-slate-700" />
-                  <span className="font-semibold">Back to Home</span>
-                </div>
-                <ChevronRight size={20} className="text-slate-400" />
-              </CardContent>
-            </Card>
+            <div className="group flex items-center justify-between p-4 bg-white border border-stone-200 rounded-xl hover:border-stone-300 hover:shadow-sm transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <Globe className="w-5 h-5 text-stone-500" />
+                <span className="font-medium text-stone-900">Back to Home</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-stone-400 group-hover:text-stone-600 transition-colors" />
+            </div>
           </Link>
         </motion.div>
       </div>
     </div>
   );
 };
+
+function SettingToggle({ icon: Icon, title, description, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between p-4 rounded-lg bg-stone-50 border border-stone-100 hover:border-stone-200 transition-colors">
+      <div className="flex items-center gap-3">
+        {Icon && (
+          <div className="w-8 h-8 rounded-lg bg-white border border-stone-200 flex items-center justify-center">
+            <Icon className="w-4 h-4 text-stone-600" />
+          </div>
+        )}
+        <div>
+          <p className="font-medium text-stone-900 text-sm">{title}</p>
+          <p className="text-xs text-stone-500">{description}</p>
+        </div>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+function ActionButton({ icon: Icon, label, danger }) {
+  return (
+    <button className={`w-full flex items-center justify-between p-3 rounded-lg hover:bg-stone-50 transition-colors ${danger ? 'text-stone-600 hover:bg-stone-100' : 'text-stone-700'}`}>
+      <span className="flex items-center gap-3">
+        {Icon && <Icon className="w-4 h-4" />}
+        <span className="text-sm font-medium">{label}</span>
+      </span>
+      <ChevronRight className="w-4 h-4 text-stone-400" />
+    </button>
+  );
+}
 
 export default Settings;

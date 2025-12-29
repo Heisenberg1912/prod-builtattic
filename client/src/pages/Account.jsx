@@ -1,40 +1,42 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { Link, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  CalendarRange,
-  Crown,
-  Gift,
-  Headphones,
   Heart,
   MapPin,
   MessageSquare,
   PackageCheck,
-  Repeat,
   Settings2,
   ShieldCheck,
   ShoppingBag,
-  Sparkles,
-  Star,
-  Ticket,
   TrendingUp,
   UserCog,
   Wallet,
   ChevronRight,
   ArrowRight,
-  Zap,
-  CheckCircle,
-  Activity,
-  Award,
-  CreditCard,
+  ExternalLink,
+  Clock,
+  User,
+  Headphones,
+  Gift,
 } from "lucide-react";
 
 import { fetchOrders } from "../services/orders.js";
 import { useCart } from "../context/CartContext";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
+
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -10 }
+};
+
+const staggerContainer = {
+  animate: {
+    transition: {
+      staggerChildren: 0.06
+    }
+  }
+};
 
 const readProfileSnapshot = () => {
   if (typeof window === "undefined") return null;
@@ -78,26 +80,8 @@ const initialsFrom = (nameOrEmail) => {
   return initials.toUpperCase() || "BT";
 };
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" },
-  },
-};
-
 const Account = () => {
+  const navigate = useNavigate();
   const { cartItems } = useCart();
   const [profile, setProfile] = useState(() => readProfileSnapshot() || {});
   const [orders, setOrders] = useState([]);
@@ -176,204 +160,194 @@ const Account = () => {
   const cartCount = Array.isArray(cartItems) ? cartItems.length : 0;
   const fullName = profile?.name || "Guest";
   const email = profile?.email || "guest@builtattic.com";
-  const membership = profile?.membership || "Prime Access";
   const initials = initialsFrom(fullName || email);
 
   const stats = [
     {
-      label: "Orders Placed",
+      label: "Orders",
       value: orderStats.total,
       icon: PackageCheck,
-      subLabel: orderStats.total ? "Across all categories" : "No orders yet",
-      color: "from-blue-500 to-blue-600",
+      subLabel: orderStats.total ? "Total placed" : "No orders yet",
     },
     {
-      label: "Lifetime Spend",
+      label: "Spent",
       value: orderStats.spend ? formatCurrency(orderStats.spend) : "-",
       icon: TrendingUp,
-      subLabel: "Total value of orders",
-      color: "from-emerald-500 to-emerald-600",
+      subLabel: "Lifetime value",
     },
     {
-      label: "Wishlist Items",
+      label: "Wishlist",
       value: wishlistCount,
-      icon: Star,
-      subLabel: wishlistCount ? "Saved for later" : "Add favorites",
-      color: "from-amber-500 to-amber-600",
+      icon: Heart,
+      subLabel: wishlistCount ? "Saved items" : "None saved",
     },
     {
-      label: "Cart Items",
+      label: "Cart",
       value: cartCount,
       icon: ShoppingBag,
-      subLabel: cartCount ? "Ready to checkout" : "Cart is empty",
-      color: "from-purple-500 to-purple-600",
+      subLabel: cartCount ? "Ready to buy" : "Empty",
     },
   ];
 
   const quickActions = [
     {
-      title: "Browse Marketplace",
-      description: "Explore studios, warehouses, and services",
+      title: "Marketplace",
+      description: "Explore products & services",
       icon: ShoppingBag,
       to: "/studio",
-      color: "bg-gradient-to-br from-blue-500 to-blue-600",
     },
     {
-      title: "Account Settings",
-      description: "Manage your preferences and security",
+      title: "Settings",
+      description: "Account preferences",
       icon: Settings2,
       to: "/settings",
-      color: "bg-gradient-to-br from-slate-700 to-slate-900",
     },
     {
       title: "Wishlist",
-      description: `${wishlistCount} items saved`,
+      description: `${wishlistCount} saved`,
       icon: Heart,
       to: "/wishlist",
-      color: "bg-gradient-to-br from-rose-500 to-rose-600",
       badge: wishlistCount || null,
     },
     {
-      title: "Help Center",
-      description: "Get support and browse FAQs",
+      title: "Support",
+      description: "Get help",
       icon: Headphones,
       to: "/faqs",
-      color: "bg-gradient-to-br from-emerald-500 to-emerald-600",
     },
   ];
 
   const accountFeatures = [
     {
-      title: "Login & Security",
-      description: "Manage passwords, 2FA, and devices",
+      title: "Security",
+      description: "Password, 2FA, devices",
       icon: ShieldCheck,
       to: "/settings",
     },
     {
       title: "Addresses",
-      description: "Save delivery locations",
+      description: "Delivery locations",
       icon: MapPin,
       to: "/settings",
     },
     {
-      title: "Payment Methods",
-      description: "Cards, UPI, and billing",
+      title: "Payment",
+      description: "Cards & billing",
       icon: Wallet,
       to: "/settings",
     },
     {
       title: "Gift Cards",
-      description: "Redeem codes and credits",
+      description: "Redeem credits",
       icon: Gift,
       to: "/account",
     },
     {
-      title: "Communications",
-      description: "Email and notification settings",
+      title: "Notifications",
+      description: "Email & alerts",
       icon: MessageSquare,
       to: "/settings",
     },
     {
-      title: "Collaborators",
-      description: "Invite team members",
+      title: "Team",
+      description: "Collaborators",
       icon: UserCog,
       to: "/associates",
     },
   ];
 
-  const premiumFeatures = [
-    {
-      title: "Priority Support",
-      description: "24/7 dedicated assistance",
-      icon: Crown,
-    },
-    {
-      title: "Exclusive Deals",
-      description: "Early access to launches",
-      icon: Ticket,
-    },
-    {
-      title: "Professional Services",
-      description: "Connect with vetted experts",
-      icon: PackageCheck,
-    },
-  ];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 py-10 px-4">
-      <div className="mx-auto max-w-7xl space-y-8">
-        {/* Hero Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl bg-gradient-to-r from-slate-900 to-slate-700 p-8 md:p-12 shadow-2xl text-white overflow-hidden relative"
+    <div className="min-h-screen bg-stone-50/50">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+        {/* Header */}
+        <motion.header
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.5 }}
+          className="mb-10"
         >
-          <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
-
-          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="flex items-center gap-6">
-              <Avatar className="h-24 w-24 ring-4 ring-white/20 shadow-xl">
-                <AvatarFallback className="bg-gradient-to-br from-white to-slate-100 text-slate-900 text-2xl font-bold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
+          <div className="flex items-start sm:items-center justify-between gap-4 flex-col sm:flex-row">
+            <div className="flex items-center gap-4">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.1 }}
+                className="w-16 h-16 rounded-full bg-stone-900 flex items-center justify-center text-white text-xl font-semibold"
+              >
+                {initials}
+              </motion.div>
               <div>
-                <p className="text-sm font-semibold text-white/70 uppercase tracking-wider">Account Dashboard</p>
-                <h1 className="text-4xl md:text-5xl font-bold tracking-tight mt-1">{fullName}</h1>
-                <p className="text-white/80 mt-2">{email}</p>
-                <div className="flex items-center gap-3 mt-4">
-                  <Badge className="bg-white/20 hover:bg-white/30 border-white/30 text-white backdrop-blur-sm">
-                    <Sparkles size={14} className="mr-1" />
-                    {membership}
-                  </Badge>
-                  <Badge className="bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/30 text-emerald-100 backdrop-blur-sm">
-                    <CheckCircle size={14} className="mr-1" />
-                    Active
-                  </Badge>
-                </div>
+                <motion.p
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="text-sm font-medium text-stone-400 uppercase tracking-wider mb-0.5"
+                >
+                  Account
+                </motion.p>
+                <motion.h1
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-2xl lg:text-3xl font-semibold text-stone-900 tracking-tight"
+                >
+                  {fullName}
+                </motion.h1>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.25 }}
+                  className="text-stone-500 text-sm"
+                >
+                  {email}
+                </motion.p>
               </div>
             </div>
-            <div className="flex flex-col gap-3">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 }}
+            >
               <Link to="/settings">
-                <Button size="lg" className="bg-white text-slate-900 hover:bg-slate-100 shadow-lg w-full md:w-auto">
-                  <Settings2 size={18} />
+                <button className="flex items-center gap-2 px-4 py-2.5 bg-stone-900 text-white text-sm font-medium rounded-lg hover:bg-stone-800 transition-all duration-300">
+                  <Settings2 className="w-4 h-4" />
                   Manage Account
-                  <ArrowRight size={18} />
-                </Button>
+                </button>
               </Link>
-            </div>
+            </motion.div>
           </div>
-        </motion.div>
+        </motion.header>
 
         {/* Stats Grid */}
         <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4"
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
         >
           {stats.map((stat, index) => {
             const Icon = stat.icon;
             return (
-              <motion.div key={stat.label} variants={itemVariants}>
-                <Card className="hover:shadow-xl transition-all duration-300 cursor-pointer group border-slate-200 overflow-hidden">
-                  <div className={`h-1 bg-gradient-to-r ${stat.color}`} />
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className={`p-3 rounded-xl bg-gradient-to-br ${stat.color} text-white shadow-lg group-hover:scale-110 transition-transform`}>
-                        <Icon size={24} />
-                      </div>
-                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        {stat.label}
-                      </span>
+              <motion.div
+                key={stat.label}
+                variants={fadeInUp}
+                transition={{ delay: 0.1 + index * 0.05 }}
+              >
+                <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center">
+                      <Icon className="w-5 h-5 text-stone-600" />
                     </div>
-                    <p className="text-3xl font-bold text-slate-900 mb-1">
-                      {typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}
-                    </p>
-                    <p className="text-sm text-slate-600">{stat.subLabel}</p>
-                  </CardContent>
-                </Card>
+                  </div>
+                  <p className="text-2xl font-semibold text-stone-900 mb-1">
+                    {typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-stone-500">{stat.label}</p>
+                    <p className="text-xs text-stone-400">{stat.subLabel}</p>
+                  </div>
+                </div>
               </motion.div>
             );
           })}
@@ -381,198 +355,169 @@ const Account = () => {
 
         {/* Quick Actions */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ delay: 0.3 }}
+          className="mb-8"
         >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap size={24} className="text-amber-500" />
-                Quick Actions
-              </CardTitle>
-              <CardDescription>One-click access to your most-used features</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {quickActions.map((action) => {
-                  const Icon = action.icon;
-                  return (
-                    <Link key={action.title} to={action.to}>
-                      <div className={`${action.color} text-white rounded-2xl p-6 hover:scale-105 transition-transform shadow-lg cursor-pointer relative overflow-hidden group`}>
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
-                        <div className="relative z-10">
-                          <div className="flex items-start justify-between mb-3">
-                            <Icon size={28} className="opacity-90" />
-                            {action.badge && (
-                              <Badge className="bg-white/20 border-white/30 text-white">
-                                {action.badge}
-                              </Badge>
-                            )}
-                          </div>
-                          <h3 className="font-bold text-lg mb-1">{action.title}</h3>
-                          <p className="text-sm text-white/80">{action.description}</p>
-                          <div className="mt-4 flex items-center gap-2 text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span>Open</span>
-                            <ArrowRight size={16} />
-                          </div>
-                        </div>
+          <h2 className="text-sm font-medium text-stone-500 uppercase tracking-wider mb-4">Quick Actions</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {quickActions.map((action, index) => {
+              const Icon = action.icon;
+              return (
+                <Link key={action.title} to={action.to}>
+                  <motion.div
+                    whileHover={{ y: -2 }}
+                    transition={{ duration: 0.2 }}
+                    className="group bg-white border border-stone-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-stone-300 transition-all duration-300 cursor-pointer h-full"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="w-10 h-10 rounded-lg bg-stone-900 flex items-center justify-center group-hover:bg-stone-800 transition-colors">
+                        <Icon className="w-5 h-5 text-white" />
                       </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+                      {action.badge && (
+                        <span className="px-2 py-1 text-xs font-medium bg-stone-100 text-stone-600 rounded-full">
+                          {action.badge}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-medium text-stone-900 mb-1">{action.title}</h3>
+                    <p className="text-sm text-stone-500">{action.description}</p>
+                  </motion.div>
+                </Link>
+              );
+            })}
+          </div>
         </motion.div>
 
-        {/* Recent Activity */}
+        {/* Recent Orders */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ delay: 0.4 }}
+          className="mb-8"
         >
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity size={24} className="text-blue-500" />
-                    Recent Orders
-                  </CardTitle>
-                  <CardDescription>Your latest marketplace activity</CardDescription>
+          <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                  <PackageCheck className="w-4 h-4 text-stone-600" />
                 </div>
-                {orders.length > 0 && (
-                  <Link to="/orders">
-                    <Button variant="outline" size="sm">
-                      View All
-                      <ChevronRight size={16} />
-                    </Button>
-                  </Link>
-                )}
+                <h3 className="font-medium text-stone-900">Recent Orders</h3>
               </div>
-            </CardHeader>
-            <CardContent>
+              {orders.length > 0 && (
+                <Link to="/orders">
+                  <button className="text-sm text-stone-500 hover:text-stone-900 flex items-center gap-1 transition-colors">
+                    View All
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </Link>
+              )}
+            </div>
+            <div className="p-5">
               {loadingOrders ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="h-8 w-8 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin" />
                 </div>
               ) : recentOrders.length ? (
-                <div className="grid gap-4 lg:grid-cols-3">
-                  {recentOrders.map((order) => (
-                    <div key={order.id} className="rounded-xl border border-slate-200 p-5 hover:shadow-lg transition-shadow bg-white">
-                      <div className="flex items-start justify-between mb-3">
-                        <Badge variant="outline" className="text-xs">
-                          {order.placedOn}
-                        </Badge>
-                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                <div className="space-y-3">
+                  {recentOrders.map((order, index) => (
+                    <motion.div
+                      key={order.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.45 + index * 0.05 }}
+                      className="group p-4 rounded-lg border border-stone-100 hover:border-stone-200 hover:bg-stone-50/50 transition-all duration-300"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-stone-400" />
+                          <span className="text-xs text-stone-500">{order.placedOn}</span>
+                        </div>
+                        <span className="px-2 py-0.5 text-xs font-medium bg-stone-100 text-stone-600 rounded-full capitalize">
                           {order.status}
-                        </Badge>
+                        </span>
                       </div>
-                      <h3 className="font-semibold text-slate-900 line-clamp-2 mb-3">{order.title}</h3>
+                      <h4 className="font-medium text-stone-900 text-sm line-clamp-1 mb-2">{order.title}</h4>
                       <div className="flex items-center justify-between">
-                        <p className="text-2xl font-bold text-slate-900">{order.amount}</p>
+                        <p className="text-lg font-semibold text-stone-900">{order.amount}</p>
                         <Link to="/orders">
-                          <Button variant="ghost" size="sm">
+                          <button className="text-xs text-stone-500 hover:text-stone-900 flex items-center gap-1 transition-colors">
                             Track
-                            <ChevronRight size={16} />
-                          </Button>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
                         </Link>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-                  <PackageCheck size={48} className="mx-auto text-slate-400 mb-4" />
-                  <p className="text-slate-600 mb-4">No orders yet</p>
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto mb-4">
+                    <PackageCheck className="w-5 h-5 text-stone-400" />
+                  </div>
+                  <p className="text-sm text-stone-500 mb-3">No orders yet</p>
                   <Link to="/studio">
-                    <Button>
+                    <button className="text-sm text-stone-900 font-medium flex items-center gap-1 mx-auto hover:gap-2 transition-all">
                       Start Shopping
-                      <ArrowRight size={16} />
-                    </Button>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
                   </Link>
                 </div>
               )}
               {ordersError && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                <div className="mt-4 px-4 py-3 bg-stone-50 border border-stone-200 rounded-lg text-sm text-stone-600">
                   {ordersError}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </motion.div>
 
         {/* Account Management */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="grid gap-6 md:grid-cols-2"
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ delay: 0.5 }}
         >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings2 size={24} className="text-slate-700" />
-                Account Management
-              </CardTitle>
-              <CardDescription>Configure your account settings</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {accountFeatures.map((feature) => {
-                const Icon = feature.icon;
-                return (
-                  <Link key={feature.title} to={feature.to}>
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer group">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-slate-100 group-hover:bg-slate-200 transition-colors">
-                          <Icon size={20} className="text-slate-700" />
+          <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-stone-100 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                <User className="w-4 h-4 text-stone-600" />
+              </div>
+              <h3 className="font-medium text-stone-900">Account Settings</h3>
+            </div>
+            <div className="p-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {accountFeatures.map((feature, index) => {
+                  const Icon = feature.icon;
+                  return (
+                    <Link key={feature.title} to={feature.to}>
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.55 + index * 0.03 }}
+                        whileHover={{ x: 2 }}
+                        className="group flex items-center gap-3 p-3 rounded-lg hover:bg-stone-50 transition-all duration-300 cursor-pointer"
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-stone-100 flex items-center justify-center group-hover:bg-stone-200 transition-colors">
+                          <Icon className="w-4 h-4 text-stone-600" />
                         </div>
-                        <div>
-                          <p className="font-semibold text-slate-900">{feature.title}</p>
-                          <p className="text-sm text-slate-600">{feature.description}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-stone-900 text-sm">{feature.title}</p>
+                          <p className="text-xs text-stone-500 truncate">{feature.description}</p>
                         </div>
-                      </div>
-                      <ChevronRight size={20} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
-                    </div>
-                  </Link>
-                );
-              })}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Crown size={24} className="text-amber-600" />
-                Premium Benefits
-              </CardTitle>
-              <CardDescription className="text-amber-900/70">
-                Exclusive perks for {membership} members
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {premiumFeatures.map((feature) => {
-                const Icon = feature.icon;
-                return (
-                  <div key={feature.title} className="flex items-start gap-3 p-4 rounded-lg bg-white/50 backdrop-blur-sm">
-                    <div className="p-2 rounded-lg bg-amber-200/50">
-                      <Icon size={20} className="text-amber-700" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-amber-900">{feature.title}</p>
-                      <p className="text-sm text-amber-800/70">{feature.description}</p>
-                    </div>
-                  </div>
-                );
-              })}
-              <Button className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white mt-4">
-                <Award size={18} />
-                Upgrade Membership
-                <ArrowRight size={18} />
-              </Button>
-            </CardContent>
-          </Card>
+                        <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-500 transition-colors flex-shrink-0" />
+                      </motion.div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </motion.div>
       </div>
     </div>

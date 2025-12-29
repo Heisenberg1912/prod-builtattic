@@ -1,35 +1,76 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   TrendingUp,
+  TrendingDown,
   Eye,
   Heart,
   MessageSquare,
-  Plus,
   Briefcase,
   FileText,
   CheckCircle,
   AlertCircle,
   ArrowRight,
+  ArrowUpRight,
+  Clock,
+  ChevronRight,
+  DollarSign,
+  Activity,
+  BarChart3,
+  Star,
+  Zap,
+  Send,
+  BookmarkPlus,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import StatsCard from "../../components/associate/StatsCard";
-import StatusBadge from "../../components/associate/StatusBadge";
-import { fetchDashboardStats, fetchRecentInquiries, fetchProfileCompletion } from "../../services/dashboard";
+import {
+  fetchDashboardStats,
+  fetchRecentInquiries,
+  fetchProfileCompletion,
+  fetchEarningsOverview,
+  fetchChartAnalytics,
+  fetchActivityFeed,
+  fetchTopPerformers,
+} from "../../services/dashboard";
+
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -10 }
+};
+
+const staggerContainer = {
+  animate: {
+    transition: {
+      staggerChildren: 0.08
+    }
+  }
+};
+
+const scaleIn = {
+  initial: { opacity: 0, scale: 0.95 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.95 }
+};
 
 export default function AssociateDashboard() {
   const navigate = useNavigate();
   const [designStats, setDesignStats] = useState(null);
   const [serviceStats, setServiceStats] = useState(null);
   const [inquiryStats, setInquiryStats] = useState(null);
-  const [analytics, setAnalytics] = useState(null);
   const [recentInquiries, setRecentInquiries] = useState([]);
   const [profileCompletion, setProfileCompletion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [usingFallback, setUsingFallback] = useState(false);
+
+  // New feature states
+  const [earnings, setEarnings] = useState(null);
+  const [chartData, setChartData] = useState([]);
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [topPerformers, setTopPerformers] = useState({ topDesigns: [], topServices: [] });
 
   useEffect(() => {
     loadDashboardData();
@@ -38,19 +79,25 @@ export default function AssociateDashboard() {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      // Fetch all dashboard data from API (with localStorage fallback)
-      const [stats, inquiries, completion] = await Promise.all([
+      const [stats, inquiries, completion, earningsData, chartAnalytics, activities, performers] = await Promise.all([
         fetchDashboardStats(),
         fetchRecentInquiries(3),
         fetchProfileCompletion(),
+        fetchEarningsOverview(),
+        fetchChartAnalytics(7),
+        fetchActivityFeed(5),
+        fetchTopPerformers(3),
       ]);
 
       setDesignStats(stats.designStats);
       setServiceStats(stats.serviceStats);
       setInquiryStats(stats.inquiryStats);
-      setAnalytics(stats.analytics);
       setRecentInquiries(inquiries.items);
       setProfileCompletion(completion);
+      setEarnings(earningsData);
+      setChartData(chartAnalytics.data || []);
+      setActivityFeed(activities.items || []);
+      setTopPerformers(performers);
       setUsingFallback(stats.fallback || inquiries.fallback);
     } catch (error) {
       console.error("Failed to load dashboard data:", error);
@@ -61,419 +108,825 @@ export default function AssociateDashboard() {
 
   const totalViews = (designStats?.totalViews || 0) + (serviceStats?.totalViews || 0);
   const totalPublished = (designStats?.published || 0) + (serviceStats?.published || 0);
+  const userName = JSON.parse(localStorage.getItem('user') || '{}').name || 'Associate';
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="w-8 h-8 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin" />
+          <p className="text-sm text-stone-500 font-medium">Loading dashboard...</p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+    <div className="min-h-screen bg-stone-50/50">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+        {/* Minimal Header */}
+        <motion.header
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.5 }}
+          className="mb-10"
         >
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
-              <LayoutDashboard className="w-6 h-6 text-white" />
-            </div>
+          <div className="flex items-start justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">
-                Welcome back, {JSON.parse(localStorage.getItem('user') || '{}').name || 'Associate'}!
-              </h1>
-              <p className="text-slate-600">Here's what's happening with your portfolio today</p>
+              <motion.p
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 }}
+                className="text-sm font-medium text-stone-400 uppercase tracking-wider mb-1"
+              >
+                Dashboard
+              </motion.p>
+              <motion.h1
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                className="text-2xl lg:text-3xl font-semibold text-stone-900 tracking-tight"
+              >
+                Welcome back, {userName}
+              </motion.h1>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="text-stone-500 mt-1"
+              >
+                Here's your portfolio overview
+              </motion.p>
             </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 }}
+              className="hidden sm:flex items-center gap-2"
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/associates/design-studio/create')}
+                className="border-stone-200 text-stone-700 hover:bg-stone-100 hover:border-stone-300 transition-all duration-300"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                New Design
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => navigate('/associates/skill-studio/create')}
+                className="bg-stone-900 text-white hover:bg-stone-800 transition-all duration-300"
+              >
+                <Briefcase className="w-4 h-4 mr-2" />
+                New Service
+              </Button>
+            </motion.div>
           </div>
-        </motion.div>
+        </motion.header>
 
-        {/* Offline Data Warning */}
-        {usingFallback && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="mb-6"
-          >
-            <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
-              <CardContent className="p-5">
-                <div className="flex items-center gap-3">
-                  <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-amber-900 mb-1">Using Offline Data</h3>
-                    <p className="text-sm text-amber-800">
-                      Dashboard is showing data from your device. Some statistics may not be up-to-date. Check your connection to see live analytics.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-
-        {/* Publishing Guide Banner */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="mb-6"
-        >
-          <Card className="border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100/50">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-slate-900 mb-2">📍 Where Your Work Gets Published</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-500" />
-                      <span className="text-slate-700">
-                        <strong>Design Plans</strong> → <a href="/studio" className="text-blue-600 hover:underline">Studio Marketplace</a>
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-purple-500" />
-                      <span className="text-slate-700">
-                        <strong>Services</strong> → <a href="/associates" className="text-purple-600 hover:underline">Associates Marketplace</a>
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        {/* Offline Warning */}
+        <AnimatePresence>
+          {usingFallback && (
+            <motion.div
+              variants={scaleIn}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mb-6"
+            >
+              <div className="flex items-center gap-3 px-4 py-3 bg-stone-100 border border-stone-200 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-stone-500 flex-shrink-0" />
+                <p className="text-sm text-stone-600">
+                  Showing offline data. Connect to see live analytics.
+                </p>
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Profile Completion Banner */}
-        {profileCompletion < 100 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className="mb-6 border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className="w-5 h-5 text-blue-600" />
-                      <h3 className="font-semibold text-slate-900">Complete Your Profile</h3>
+        {/* Profile Completion */}
+        <AnimatePresence>
+          {profileCompletion < 100 && (
+            <motion.div
+              variants={fadeInUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ delay: 0.1 }}
+              className="mb-8"
+            >
+              <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center">
+                      <LayoutDashboard className="w-5 h-5 text-stone-600" />
                     </div>
-                    <p className="text-sm text-slate-600 mb-4">
-                      You're {profileCompletion}% done! Complete your profile to attract more clients.
-                    </p>
-                    <div className="w-full bg-slate-200 rounded-full h-2.5 mb-4">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${profileCompletion}%` }}
-                        transition={{ duration: 1, delay: 0.3 }}
-                        className="bg-gradient-to-r from-blue-600 to-cyan-600 h-2.5 rounded-full"
-                      />
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      {designStats?.total === 0 && (
-                        <div className="flex items-center gap-2 text-slate-700">
-                          <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-                          Add at least one Design Plan
-                        </div>
-                      )}
-                      {serviceStats?.total === 0 && (
-                        <div className="flex items-center gap-2 text-slate-700">
-                          <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-                          Add at least one Service
-                        </div>
-                      )}
-                      {totalPublished === 0 && (
-                        <div className="flex items-center gap-2 text-slate-700">
-                          <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-                          Publish your first plan or service
-                        </div>
-                      )}
+                    <div>
+                      <h3 className="font-medium text-stone-900">Complete your profile</h3>
+                      <p className="text-sm text-stone-500">{profileCompletion}% completed</p>
                     </div>
                   </div>
                   <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => navigate('/settings')}
-                    variant="outline"
-                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                    className="text-stone-600 hover:text-stone-900 hover:bg-stone-100"
                   >
-                    Complete Now
+                    Complete
+                    <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
+                <div className="w-full bg-stone-100 rounded-full h-1.5 overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${profileCompletion}%` }}
+                    transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
+                    className="h-full bg-stone-900 rounded-full"
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatsCard
+        {/* Stats Grid */}
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
+        >
+          <StatCard
             title="Total Views"
             value={totalViews.toLocaleString()}
             icon={Eye}
-            trend={12}
-            trendLabel="vs last month"
-            color="blue"
+            trend="+12%"
             delay={0.1}
           />
-          <StatsCard
-            title="Published Items"
+          <StatCard
+            title="Published"
             value={totalPublished}
             icon={CheckCircle}
-            trend={8}
-            trendLabel="this month"
-            color="green"
-            delay={0.2}
+            trend="+8%"
+            delay={0.15}
           />
-          <StatsCard
+          <StatCard
             title="Saves"
             value={(designStats?.totalSaves || 0) + (serviceStats?.totalSaves || 0)}
             icon={Heart}
-            trend={-3}
-            trendLabel="vs last month"
-            color="purple"
-            delay={0.3}
+            trend="-3%"
+            negative
+            delay={0.2}
           />
-          <StatsCard
+          <StatCard
             title="Inquiries"
             value={inquiryStats?.total || 0}
             icon={MessageSquare}
-            trend={15}
-            trendLabel="new this week"
-            color="orange"
-            delay={0.4}
+            trend="+15%"
+            badge={inquiryStats?.unread || 0}
+            delay={0.25}
           />
+        </motion.div>
+
+        {/* Earnings Overview & Analytics Chart Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Earnings Overview */}
+          <motion.div
+            variants={fadeInUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.3 }}
+          >
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden h-full">
+              <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <h3 className="font-medium text-stone-900">Earnings Overview</h3>
+                </div>
+              </div>
+              <div className="p-5">
+                <div className="mb-6">
+                  <p className="text-sm text-stone-500 mb-1">Total Earnings</p>
+                  <p className="text-3xl font-semibold text-stone-900">
+                    ${(earnings?.totalEarnings || 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="p-3 bg-stone-50 rounded-lg">
+                    <p className="text-xs text-stone-500 mb-1">This Month</p>
+                    <p className="text-lg font-semibold text-stone-900">
+                      ${(earnings?.thisMonth || 0).toLocaleString()}
+                    </p>
+                    {earnings?.lastMonth > 0 && (
+                      <div className="flex items-center gap-1 mt-1">
+                        {earnings.thisMonth >= earnings.lastMonth ? (
+                          <TrendingUp className="w-3 h-3 text-emerald-500" />
+                        ) : (
+                          <TrendingDown className="w-3 h-3 text-red-500" />
+                        )}
+                        <span className={`text-xs ${earnings.thisMonth >= earnings.lastMonth ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {Math.abs(Math.round(((earnings.thisMonth - earnings.lastMonth) / earnings.lastMonth) * 100))}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 bg-amber-50 rounded-lg">
+                    <p className="text-xs text-stone-500 mb-1">Pending</p>
+                    <p className="text-lg font-semibold text-amber-700">
+                      ${(earnings?.pendingPayments || 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-stone-400 mt-1">Processing</p>
+                  </div>
+                </div>
+                {earnings?.payoutHistory?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-stone-500 uppercase tracking-wider mb-3">Recent Payouts</p>
+                    <div className="space-y-2">
+                      {earnings.payoutHistory.slice(0, 2).map((payout) => (
+                        <div key={payout.id} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <CreditCard className="w-4 h-4 text-stone-400" />
+                            <span className="text-sm text-stone-600">${payout.amount}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-stone-400">
+                              {new Date(payout.date).toLocaleDateString()}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              payout.status === 'completed'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {payout.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Analytics Chart */}
+          <motion.div
+            variants={fadeInUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.35 }}
+          >
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden h-full">
+              <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                    <BarChart3 className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <h3 className="font-medium text-stone-900">Views & Inquiries</h3>
+                </div>
+                <span className="text-xs text-stone-400">Last 7 days</span>
+              </div>
+              <div className="p-5">
+                {chartData.length > 0 ? (
+                  <>
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-stone-800" />
+                        <span className="text-xs text-stone-500">Views</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-blue-500" />
+                        <span className="text-xs text-stone-500">Inquiries</span>
+                      </div>
+                    </div>
+                    <div className="h-40 flex items-end gap-2">
+                      {chartData.map((day, index) => {
+                        const maxViews = Math.max(...chartData.map(d => d.views), 1);
+                        const viewHeight = (day.views / maxViews) * 100;
+                        const inquiryHeight = (day.inquiries / maxViews) * 100;
+                        return (
+                          <div key={index} className="flex-1 flex flex-col items-center gap-1">
+                            <div className="w-full flex items-end justify-center gap-0.5 h-32">
+                              <motion.div
+                                initial={{ height: 0 }}
+                                animate={{ height: `${viewHeight}%` }}
+                                transition={{ delay: 0.4 + index * 0.05, duration: 0.5 }}
+                                className="w-2/5 bg-stone-800 rounded-t"
+                                title={`${day.views} views`}
+                              />
+                              <motion.div
+                                initial={{ height: 0 }}
+                                animate={{ height: `${inquiryHeight}%` }}
+                                transition={{ delay: 0.45 + index * 0.05, duration: 0.5 }}
+                                className="w-2/5 bg-blue-500 rounded-t"
+                                title={`${day.inquiries} inquiries`}
+                              />
+                            </div>
+                            <span className="text-xs text-stone-400">
+                              {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between mt-4 pt-4 border-t border-stone-100">
+                      <div>
+                        <p className="text-xs text-stone-500">Total Views</p>
+                        <p className="text-lg font-semibold text-stone-900">
+                          {chartData.reduce((sum, d) => sum + d.views, 0)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-stone-500">Total Inquiries</p>
+                        <p className="text-lg font-semibold text-stone-900">
+                          {chartData.reduce((sum, d) => sum + d.inquiries, 0)}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-40 flex items-center justify-center">
+                    <p className="text-sm text-stone-400">No data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Publishing Guide */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ delay: 0.3 }}
           className="mb-8"
         >
-          <h2 className="text-xl font-semibold text-slate-900 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <QuickActionCard
-              icon={FileText}
-              title="Add Design Plan"
-              description="Publishes to Studio Marketplace"
-              onClick={() => navigate('/associates/design-studio/create')}
-              color="from-blue-500 to-cyan-500"
-            />
-            <QuickActionCard
-              icon={Briefcase}
-              title="Add Service"
-              description="Publishes to Associates Marketplace"
-              onClick={() => navigate('/associates/skill-studio/create')}
-              color="from-purple-500 to-pink-500"
-            />
-            <QuickActionCard
-              icon={MessageSquare}
-              title="View Inquiries"
-              description={`${inquiryStats?.unread || 0} unread messages`}
-              onClick={() => navigate('/associates/inquiries')}
-              color="from-orange-500 to-amber-500"
-              badge={inquiryStats?.unread || 0}
-            />
-            <QuickActionCard
-              icon={TrendingUp}
-              title="View Analytics"
-              description="Check performance"
-              onClick={() => navigate('/associates/analytics')}
-              color="from-emerald-500 to-teal-500"
-            />
+          <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm">
+            <h3 className="text-sm font-medium text-stone-500 uppercase tracking-wider mb-4">Publishing Destinations</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <motion.a
+                href="/studio"
+                whileHover={{ x: 4 }}
+                className="flex items-center justify-between p-4 bg-stone-50 rounded-lg border border-stone-100 hover:border-stone-200 transition-all duration-300 group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-white border border-stone-200 flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-stone-900 text-sm">Design Plans</p>
+                    <p className="text-xs text-stone-500">Studio Marketplace</p>
+                  </div>
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-stone-400 group-hover:text-stone-600 transition-colors" />
+              </motion.a>
+              <motion.a
+                href="/associates"
+                whileHover={{ x: 4 }}
+                className="flex items-center justify-between p-4 bg-stone-50 rounded-lg border border-stone-100 hover:border-stone-200 transition-all duration-300 group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-white border border-stone-200 flex items-center justify-center">
+                    <Briefcase className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-stone-900 text-sm">Services</p>
+                    <p className="text-xs text-stone-500">Associates Marketplace</p>
+                  </div>
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-stone-400 group-hover:text-stone-600 transition-colors" />
+              </motion.a>
+            </div>
           </div>
         </motion.div>
 
-        {/* Overview Grid */}
+        {/* Quick Actions - Mobile */}
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ delay: 0.35 }}
+          className="sm:hidden mb-8"
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              variant="outline"
+              onClick={() => navigate('/associates/design-studio/create')}
+              className="h-auto py-4 flex flex-col gap-2 border-stone-200 hover:bg-stone-50"
+            >
+              <FileText className="w-5 h-5 text-stone-600" />
+              <span className="text-xs font-medium">New Design</span>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate('/associates/skill-studio/create')}
+              className="h-auto py-4 flex flex-col gap-2 border-stone-200 hover:bg-stone-50"
+            >
+              <Briefcase className="w-5 h-5 text-stone-600" />
+              <span className="text-xs font-medium">New Service</span>
+            </Button>
+          </div>
+        </motion.div>
+
+        {/* Overview Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Design Plans Overview */}
+          {/* Design Plans */}
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.6 }}
+            variants={fadeInUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.4 }}
           >
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-lg">Design Plans</CardTitle>
-                  <p className="text-xs text-slate-500 mt-1">Published to <a href="/studio" className="text-blue-600 hover:underline font-medium">Studio Marketplace</a></p>
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-stone-900">Design Plans</h3>
+                    <p className="text-xs text-stone-500">Studio Marketplace</p>
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => navigate('/associates/design-studio')}
-                  className="text-blue-600 hover:text-blue-700"
+                  className="text-stone-500 hover:text-stone-900 hover:bg-stone-100"
                 >
-                  View All <ArrowRight className="w-4 h-4 ml-1" />
+                  View All
+                  <ArrowRight className="w-3 h-3 ml-1" />
                 </Button>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Total Plans</span>
-                  <span className="font-semibold text-slate-900">{designStats?.total || 0}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Published</span>
-                  <StatusBadge status="published" size="sm" />
-                  <span className="font-semibold text-slate-900">{designStats?.published || 0}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Drafts</span>
-                  <StatusBadge status="draft" size="sm" />
-                  <span className="font-semibold text-slate-900">{designStats?.draft || 0}</span>
-                </div>
-                <div className="pt-4 border-t border-slate-200">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Total Views</span>
-                    <span className="font-semibold text-slate-700">{designStats?.totalViews || 0}</span>
+              </div>
+              <div className="p-5">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-stone-500">Total Plans</span>
+                    <span className="text-sm font-semibold text-stone-900">{designStats?.total || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-stone-500">Published</span>
+                      <span className="px-2 py-0.5 text-xs font-medium bg-stone-100 text-stone-600 rounded-full">Live</span>
+                    </div>
+                    <span className="text-sm font-semibold text-stone-900">{designStats?.published || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-stone-500">Drafts</span>
+                      <span className="px-2 py-0.5 text-xs font-medium bg-stone-50 text-stone-500 rounded-full">Draft</span>
+                    </div>
+                    <span className="text-sm font-semibold text-stone-900">{designStats?.draft || 0}</span>
+                  </div>
+                  <div className="pt-4 border-t border-stone-100">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-stone-500">Total Views</span>
+                      <span className="font-semibold text-stone-700">{designStats?.totalViews || 0}</span>
+                    </div>
                   </div>
                 </div>
-                <Button
-                  onClick={() => window.location.href = '/studio'}
-                  variant="outline"
-                  size="sm"
-                  className="w-full mt-2"
-                >
-                  View on Studio Marketplace →
-                </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </motion.div>
 
-          {/* Services Overview */}
+          {/* Services */}
           <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.7 }}
+            variants={fadeInUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.45 }}
           >
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-lg">Services</CardTitle>
-                  <p className="text-xs text-slate-500 mt-1">Published to <a href="/associates" className="text-purple-600 hover:underline font-medium">Associates Marketplace</a></p>
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                    <Briefcase className="w-4 h-4 text-stone-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-stone-900">Services</h3>
+                    <p className="text-xs text-stone-500">Associates Marketplace</p>
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => navigate('/associates/skill-studio')}
-                  className="text-purple-600 hover:text-purple-700"
+                  className="text-stone-500 hover:text-stone-900 hover:bg-stone-100"
                 >
-                  View All <ArrowRight className="w-4 h-4 ml-1" />
+                  View All
+                  <ArrowRight className="w-3 h-3 ml-1" />
                 </Button>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Total Services</span>
-                  <span className="font-semibold text-slate-900">{serviceStats?.total || 0}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Published</span>
-                  <StatusBadge status="published" size="sm" />
-                  <span className="font-semibold text-slate-900">{serviceStats?.published || 0}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Drafts</span>
-                  <StatusBadge status="draft" size="sm" />
-                  <span className="font-semibold text-slate-900">{serviceStats?.draft || 0}</span>
-                </div>
-                <div className="pt-4 border-t border-slate-200">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Total Views</span>
-                    <span className="font-semibold text-slate-700">{serviceStats?.totalViews || 0}</span>
+              </div>
+              <div className="p-5">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-stone-500">Total Services</span>
+                    <span className="text-sm font-semibold text-stone-900">{serviceStats?.total || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-stone-500">Published</span>
+                      <span className="px-2 py-0.5 text-xs font-medium bg-stone-100 text-stone-600 rounded-full">Live</span>
+                    </div>
+                    <span className="text-sm font-semibold text-stone-900">{serviceStats?.published || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-stone-500">Drafts</span>
+                      <span className="px-2 py-0.5 text-xs font-medium bg-stone-50 text-stone-500 rounded-full">Draft</span>
+                    </div>
+                    <span className="text-sm font-semibold text-stone-900">{serviceStats?.draft || 0}</span>
+                  </div>
+                  <div className="pt-4 border-t border-stone-100">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-stone-500">Total Views</span>
+                      <span className="font-semibold text-stone-700">{serviceStats?.totalViews || 0}</span>
+                    </div>
                   </div>
                 </div>
-                <Button
-                  onClick={() => window.location.href = '/associates'}
-                  variant="outline"
-                  size="sm"
-                  className="w-full mt-2"
-                >
-                  View on Associates Marketplace →
-                </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Activity Feed & Top Performers Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Activity Feed */}
+          <motion.div
+            variants={fadeInUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.5 }}
+          >
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden h-full">
+              <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                    <Activity className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <h3 className="font-medium text-stone-900">Recent Activity</h3>
+                </div>
+              </div>
+              <div className="p-5">
+                {activityFeed.length > 0 ? (
+                  <div className="space-y-4">
+                    {activityFeed.map((activity, index) => {
+                      const getActivityIcon = (type) => {
+                        switch (type) {
+                          case 'inquiry': return { icon: MessageSquare, color: 'text-blue-500', bg: 'bg-blue-100' };
+                          case 'view': return { icon: Eye, color: 'text-stone-500', bg: 'bg-stone-100' };
+                          case 'publish': return { icon: Send, color: 'text-emerald-500', bg: 'bg-emerald-100' };
+                          case 'save': return { icon: BookmarkPlus, color: 'text-pink-500', bg: 'bg-pink-100' };
+                          case 'payment': return { icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-100' };
+                          default: return { icon: Zap, color: 'text-amber-500', bg: 'bg-amber-100' };
+                        }
+                      };
+                      const { icon: ActivityIcon, color, bg } = getActivityIcon(activity.type);
+                      const timeAgo = (timestamp) => {
+                        const seconds = Math.floor((Date.now() - new Date(timestamp)) / 1000);
+                        if (seconds < 60) return 'Just now';
+                        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+                        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+                        return `${Math.floor(seconds / 86400)}d ago`;
+                      };
+                      return (
+                        <motion.div
+                          key={activity.id}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.55 + index * 0.05 }}
+                          className="flex items-start gap-3"
+                        >
+                          <div className={`w-8 h-8 rounded-full ${bg} flex items-center justify-center flex-shrink-0`}>
+                            <ActivityIcon className={`w-4 h-4 ${color}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-stone-700 line-clamp-2">{activity.message}</p>
+                            <p className="text-xs text-stone-400 mt-1">{timeAgo(activity.timestamp)}</p>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto mb-3">
+                      <Activity className="w-5 h-5 text-stone-400" />
+                    </div>
+                    <p className="text-sm text-stone-500">No recent activity</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Top Performers */}
+          <motion.div
+            variants={fadeInUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.55 }}
+          >
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden h-full">
+              <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <Star className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <h3 className="font-medium text-stone-900">Top Performers</h3>
+                </div>
+              </div>
+              <div className="p-5">
+                {(topPerformers.topDesigns?.length > 0 || topPerformers.topServices?.length > 0) ? (
+                  <div className="space-y-4">
+                    {topPerformers.topDesigns?.slice(0, 2).map((design, index) => (
+                      <motion.div
+                        key={design.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 + index * 0.05 }}
+                        onClick={() => navigate(`/associates/design-studio/${design.id}`)}
+                        className="flex items-center gap-3 p-3 rounded-lg border border-stone-100 hover:border-stone-200 hover:bg-stone-50/50 transition-all cursor-pointer group"
+                      >
+                        <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center flex-shrink-0">
+                          {index === 0 ? (
+                            <span className="text-lg">🥇</span>
+                          ) : (
+                            <span className="text-lg">🥈</span>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-stone-900 truncate">{design.title || design.name}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-xs text-stone-500 flex items-center gap-1">
+                              <Eye className="w-3 h-3" /> {design.views || 0}
+                            </span>
+                            <span className="text-xs text-stone-500 flex items-center gap-1">
+                              <Heart className="w-3 h-3" /> {design.saves || 0}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 text-xs bg-stone-100 text-stone-600 rounded-full">Design</span>
+                      </motion.div>
+                    ))}
+                    {topPerformers.topServices?.slice(0, 2).map((service, index) => (
+                      <motion.div
+                        key={service.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.65 + index * 0.05 }}
+                        onClick={() => navigate(`/associates/skill-studio/${service.id}`)}
+                        className="flex items-center gap-3 p-3 rounded-lg border border-stone-100 hover:border-stone-200 hover:bg-stone-50/50 transition-all cursor-pointer group"
+                      >
+                        <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center flex-shrink-0">
+                          <Briefcase className="w-5 h-5 text-stone-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-stone-900 truncate">{service.title || service.name}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-xs text-stone-500 flex items-center gap-1">
+                              <Eye className="w-3 h-3" /> {service.views || 0}
+                            </span>
+                            <span className="text-xs text-stone-500 flex items-center gap-1">
+                              <Heart className="w-3 h-3" /> {service.saves || 0}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full">Service</span>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto mb-3">
+                      <Star className="w-5 h-5 text-stone-400" />
+                    </div>
+                    <p className="text-sm text-stone-500">No data yet</p>
+                    <p className="text-xs text-stone-400 mt-1">Publish content to see top performers</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </motion.div>
         </div>
 
         {/* Recent Inquiries */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.8 }}
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ delay: 0.6 }}
         >
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Recent Inquiries</CardTitle>
+          <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-stone-600" />
+                </div>
+                <h3 className="font-medium text-stone-900">Recent Inquiries</h3>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate('/associates/inquiries')}
-                className="text-orange-600 hover:text-orange-700"
+                className="text-stone-500 hover:text-stone-900 hover:bg-stone-100"
               >
-                View All <ArrowRight className="w-4 h-4 ml-1" />
+                View All
+                <ArrowRight className="w-3 h-3 ml-1" />
               </Button>
-            </CardHeader>
-            <CardContent>
+            </div>
+            <div className="p-5">
               {recentInquiries.length === 0 ? (
-                <div className="text-center py-8 text-slate-500">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                  <p>No inquiries yet</p>
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto mb-4">
+                    <MessageSquare className="w-5 h-5 text-stone-400" />
+                  </div>
+                  <p className="text-sm text-stone-500 mb-1">No inquiries yet</p>
+                  <p className="text-xs text-stone-400">They'll appear here when clients reach out</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {recentInquiries.map((inquiry) => (
-                    <div
+                  {recentInquiries.map((inquiry, index) => (
+                    <motion.div
                       key={inquiry.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.55 + index * 0.05 }}
                       onClick={() => navigate(`/associates/inquiries/${inquiry.id}`)}
-                      className="p-4 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer"
+                      className="group p-4 rounded-lg border border-stone-100 hover:border-stone-200 hover:bg-stone-50/50 transition-all duration-300 cursor-pointer"
                     >
                       <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h4 className="font-semibold text-slate-900">{inquiry.senderName}</h4>
-                          <p className="text-sm text-slate-600">{inquiry.subject}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center text-xs font-medium text-stone-600">
+                            {inquiry.senderName?.charAt(0) || '?'}
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-stone-900 text-sm">{inquiry.senderName}</h4>
+                            <p className="text-xs text-stone-500">{inquiry.subject}</p>
+                          </div>
                         </div>
-                        {!inquiry.read && (
-                          <div className="w-2 h-2 rounded-full bg-blue-600" />
-                        )}
+                        <div className="flex items-center gap-2">
+                          {!inquiry.read && (
+                            <span className="w-2 h-2 rounded-full bg-stone-900" />
+                          )}
+                          <ChevronRight className="w-4 h-4 text-stone-300 group-hover:text-stone-500 transition-colors" />
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-500 line-clamp-1">{inquiry.message}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-xs text-slate-400">
+                      <p className="text-sm text-stone-500 line-clamp-1 ml-11">{inquiry.message}</p>
+                      <div className="flex items-center gap-2 mt-2 ml-11">
+                        <Clock className="w-3 h-3 text-stone-400" />
+                        <span className="text-xs text-stone-400">
                           {new Date(inquiry.createdAt).toLocaleDateString()}
                         </span>
-                        <span className="text-xs text-blue-600">View Details →</span>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </motion.div>
       </div>
     </div>
   );
 }
 
-function QuickActionCard({ icon: Icon, title, description, onClick, color, badge }) {
+function StatCard({ title, value, icon: Icon, trend, negative, badge, delay = 0 }) {
   return (
-    <motion.div whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
-      <Card
-        onClick={onClick}
-        className="cursor-pointer border-slate-200 hover:border-slate-300 hover:shadow-md transition-all"
-      >
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between mb-3">
-            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-lg`}>
-              <Icon className="w-6 h-6 text-white" />
-            </div>
-            {badge > 0 && (
-              <div className="bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
-                {badge}
-              </div>
-            )}
+    <motion.div
+      variants={fadeInUp}
+      transition={{ delay, duration: 0.4 }}
+    >
+      <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow duration-300">
+        <div className="flex items-start justify-between mb-3">
+          <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-stone-600" />
           </div>
-          <h3 className="font-semibold text-slate-900 mb-1">{title}</h3>
-          <p className="text-sm text-slate-600">{description}</p>
-        </CardContent>
-      </Card>
+          {badge > 0 && (
+            <span className="px-2 py-1 text-xs font-medium bg-stone-900 text-white rounded-full">
+              {badge}
+            </span>
+          )}
+        </div>
+        <p className="text-2xl font-semibold text-stone-900 mb-1">{value}</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-stone-500">{title}</p>
+          {trend && (
+            <span className={`text-xs font-medium ${negative ? 'text-stone-400' : 'text-stone-600'}`}>
+              {trend}
+            </span>
+          )}
+        </div>
+      </div>
     </motion.div>
   );
 }

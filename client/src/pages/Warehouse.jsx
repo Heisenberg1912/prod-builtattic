@@ -51,7 +51,7 @@ const Warehouse = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [hoveredCard, setHoveredCard] = useState(null);
   const [comparedItems, setComparedItems] = useState(new Set());
 
@@ -192,7 +192,7 @@ const Warehouse = () => {
 
       {/* Clean Header */}
       <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-stone-200/60 shadow-sm">
-        <div className="w-full px-4 py-4">
+        <div className="max-w-screen-2xl mx-auto px-3 md:px-4 lg:px-6 py-4">
           <div className="flex items-center gap-4">
             <div className="relative flex-1">
               <HiOutlineSearch className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
@@ -245,7 +245,7 @@ const Warehouse = () => {
       </div>
 
       {/* Main Content */}
-      <main className="w-full px-4 py-8">
+      <main className="flex-1 max-w-screen-2xl mx-auto px-3 md:px-4 lg:px-6 py-6 md:py-8 w-full">
         <div className="flex gap-6">
           {/* Filter Sidebar */}
           <AnimatePresence>
