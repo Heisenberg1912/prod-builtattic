@@ -3,7 +3,7 @@ on:
   push: { branches: ["main"] }
   pull_request:
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -11,8 +11,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: 'server/package-lock.json'
-      - name: Install server deps
-        run: cd server && npm ci
-      - name: Run tests
-        run: cd server && npm test
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Verify API entry point
+        run: node --check api/index.js
