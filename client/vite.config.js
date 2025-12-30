@@ -11,6 +11,10 @@ const __dirname = path.dirname(__filename);
 export default defineConfig({
   envDir: path.resolve(__dirname, '..'),
   plugins: [react(), tailwindcss()],
+  build: {
+    outDir: path.resolve(__dirname, '../dist'),
+    emptyOutDir: true,
+  },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
