@@ -1,13 +1,19 @@
 {
   "name": "builtattic-dashboard-monorepo",
   "private": true,
+  "type": "module",
   "engines": {
     "node": "20.x"
   },
   "scripts": {
-    "postinstall": "node scripts/install-subprojects.js",
+    "postinstall": "node scripts/install-subprojects.cjs",
     "client": "npm --prefix client run dev",
     "dev": "npm --prefix client run dev",
     "build": "npm --prefix client run build"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
   }
 }
