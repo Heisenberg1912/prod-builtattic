@@ -1,9 +1,8 @@
 {
   "version": 2,
-  "framework": "vite",
-  "installCommand": "npm install",
-  "buildCommand": "npm run build",
+  "buildCommand": "cd client && npm run build",
   "outputDirectory": "client/dist",
+  "installCommand": "npm install && cd client && npm install",
   "functions": {
     "api/index.js": {
       "maxDuration": 30
