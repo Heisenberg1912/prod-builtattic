@@ -7,17 +7,20 @@ import mattersRouter from '../server/src/routes/matters.js';
 
 const app = express();
 
-// CORS configuration
-const allowedOrigins = (process.env.CORS_ORIGIN || process.env.CLIENT_ORIGIN || '')
-  .split(',')
-  .map(origin => origin.trim())
-  .filter(Boolean);
+// CORS configuration - allow frontend domain
+const allowedOrigins = [
+  'https://prod-builtattic.vercel.app',
+  'https://prod-builtattic-git-main-heisenberg1912.vercel.app',
+  process.env.CLIENT_URL,
+  process.env.CLIENT_ORIGIN,
+  'http://localhost:5175',
+].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    if (allowedOrigins.some(allowed => origin.startsWith(allowed.replace(/\/$/, '')))) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
