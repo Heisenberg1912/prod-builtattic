@@ -29,6 +29,8 @@ import {
   getStudioFallback,
   getStudioImageUrl,
 } from "../utils/imageFallbacks.js";
+import PolygonVerifiedBadge from "../components/PolygonVerifiedBadge.jsx";
+import PolygonStatsBanner from "../components/PolygonStatsBanner.jsx";
 
 // ---- Inject Montserrat once (no other file changes required)
 const ensureMontserrat = () => {
@@ -1360,7 +1362,7 @@ const Studio = () => {
               </section>
             )}
 
-            {/* LocalStorage designs indicator */}
+           {/* LocalStorage designs indicator
             {!loading && displayStudios.some(s => s._source === 'localStorage') && (
               <div className={`${listingsContainerClass} rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-4 text-emerald-900 shadow-sm`}>
                 <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
@@ -1370,24 +1372,18 @@ const Studio = () => {
                   {displayStudios.filter(s => s._source === 'localStorage').length} design{displayStudios.filter(s => s._source === 'localStorage').length !== 1 ? 's' : ''} from your portfolio {displayStudios.filter(s => s._source === 'localStorage').length === 1 ? 'is' : 'are'} now live on the marketplace
                 </p>
               </div>
-            )}
+            )} */}
 
-            {!loading && web3Meta && !marketplaceState.fallback && (
-              <div className={`${listingsContainerClass} rounded-2xl border border-indigo-200 bg-indigo-900/95 px-6 py-5 text-indigo-100 shadow-sm`}>
-                <p className="text-[11px] uppercase tracking-[0.35em] text-indigo-300">
-                  On-chain studio proofs
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-4">
-                  <h2 className="text-xl font-semibold">
-                    {web3Meta.total ?? 0} studio drops verified on {web3Meta.chain ?? "Polygon"}
-                  </h2>
-                  {Array.isArray(web3Meta.anchors) && web3Meta.anchors.length > 0 ? (
-                    <p className="text-xs text-indigo-200">
-                      Latest anchors: {web3Meta.anchors.slice(0, 3).join(" | ")}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+            {/* Web3 / Blockchain Info Banner - Always visible */}
+            {!loading && (
+              <PolygonStatsBanner
+                tiles={displayStudios}
+                studioType="design"
+                title="Design Tiles Anchored On-Chain"
+                description="Each design tile is cryptographically hashed and anchored to the Polygon blockchain. This ensures immutable provenance tracking, authenticity verification, and decentralized ownership records."
+                statLabel="Tiles On-Chain"
+                className={listingsContainerClass}
+              />
             )}
 
             {/* Responsive, dynamic grid */}
@@ -1526,6 +1522,16 @@ const Studio = () => {
                         loading="lazy"
                         onError={(event) => applyFallback(event, heroFallback)}
                       />
+
+                      {/* Web3 verification badge - top right */}
+                      <div className="absolute top-3 right-3 z-10">
+                        <PolygonVerifiedBadge
+                          tile={studio}
+                          studioType="design"
+                          size="md"
+                          showText={true}
+                        />
+                      </div>
 
                       {/* Default gradient overlay */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />

@@ -30,7 +30,8 @@
       "Bash(ls:*)",
       "Bash(if [ -f \"d:\\prod2\\CRITICAL_FIXES_APPLIED.md\" ])",
       "Bash(then echo \"File exists\")",
-      "Bash(else echo \"File does not exist\")"
+      "Bash(else echo \"File does not exist\")",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []

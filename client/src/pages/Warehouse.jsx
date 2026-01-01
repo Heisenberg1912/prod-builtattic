@@ -19,6 +19,7 @@ import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { fetchMaterials } from "../services/marketplace.js";
 import { getMaterialImage, getMaterialFallback, applyFallback } from "../utils/imageFallbacks.js";
+import PolygonStatsBanner from "../components/PolygonStatsBanner.jsx";
 
 const MATERIAL_FAMILIES = [
   "Concrete",
@@ -346,6 +347,18 @@ const Warehouse = () => {
               >
                 {error}
               </motion.div>
+            )}
+
+            {/* Web3 / Blockchain Info Banner */}
+            {!loading && (
+              <PolygonStatsBanner
+                tiles={filteredMaterials}
+                studioType="material"
+                title="Material Tiles Tracked On-Chain"
+                description="Every material listing is hashed and anchored to the Polygon blockchain. This enables transparent supply chain tracking, vendor verification, and immutable certification records."
+                statLabel="Materials On-Chain"
+                className="mb-6"
+              />
             )}
 
             {loading ? (

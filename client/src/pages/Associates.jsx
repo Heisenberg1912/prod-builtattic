@@ -17,6 +17,7 @@ import AssociatePreviewGrid from "../components/associates/AssociatePreviewGrid"
 import { fetchMarketplaceAssociates } from "../services/marketplace.js";
 import { getAssociateAvatar, getAssociateFallback } from "../utils/imageFallbacks.js";
 import { getAllPublishedServices, convertServiceToAssociateFormat } from "../services/associateServices.js";
+import PolygonStatsBanner from "../components/PolygonStatsBanner.jsx";
 
 const SPECIALIZATIONS = [
   "Architecture",
@@ -287,7 +288,7 @@ const Associates = () => {
               </motion.div>
             )}
 
-            {/* Published Services Indicator */}
+            {/* Published Services Indicator
             {!loading && filteredAssociates.some(a => a._source === 'localStorage') && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
@@ -301,6 +302,18 @@ const Associates = () => {
                   {filteredAssociates.filter(a => a._source === 'localStorage').length} service{filteredAssociates.filter(a => a._source === 'localStorage').length !== 1 ? 's' : ''} from your portfolio {filteredAssociates.filter(a => a._source === 'localStorage').length === 1 ? 'is' : 'are'} now live on the marketplace
                 </p>
               </motion.div>
+            )} */}
+
+            {/* Web3 / Blockchain Info Banner */}
+            {!loading && (
+              <PolygonStatsBanner
+                tiles={filteredAssociates}
+                studioType="skill"
+                title="Skill Credentials Anchored On-Chain"
+                description="Each skill and service offering is cryptographically hashed and anchored to the Polygon blockchain. This ensures credential verification, trust scoring, and decentralized reputation tracking for all associates."
+                statLabel="Skills On-Chain"
+                className="mb-6"
+              />
             )}
 
             {loading ? (

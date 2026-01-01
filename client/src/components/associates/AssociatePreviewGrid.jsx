@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { HiOutlineHeart, HiHeart } from "react-icons/hi";
+import PolygonVerifiedBadge from "../PolygonVerifiedBadge.jsx";
 
 const AssociatePreviewGrid = ({
   associates = [],
@@ -55,8 +56,14 @@ const AssociatePreviewGrid = ({
             {/* Default gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-            {/* Favorite button - always visible */}
-            <div className="absolute top-2 right-2 z-10">
+            {/* Web3 badge and Favorite button - always visible */}
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+              <PolygonVerifiedBadge
+                tile={associate}
+                studioType="skill"
+                size="sm"
+                showText={false}
+              />
               <button
                 onClick={(e) => {
                   e.stopPropagation();

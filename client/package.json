@@ -22,6 +22,7 @@
     "@tailwindcss/vite": "^4.1.12",
     "@tanstack/react-query": "^5.90.12",
     "axios": "^1.11.0",
+    "ethers": "^6.16.0",
     "framer-motion": "^12.23.12",
     "fuse.js": "^7.1.0",
     "lucide-react": "^0.542.0",

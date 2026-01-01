@@ -22,6 +22,8 @@ import { Input } from "../../../components/ui/input";
 import { Card, CardContent } from "../../../components/ui/card";
 import StatusBadge from "../../../components/associate/StatusBadge";
 import EmptyState from "../../../components/shared/EmptyState";
+import PolygonVerifiedBadge from "../../../components/PolygonVerifiedBadge";
+import PolygonStatsBanner from "../../../components/PolygonStatsBanner";
 import { getAllServices, deleteService, duplicateService, togglePublishStatus } from "../../../services/associateServices";
 import toast from "react-hot-toast";
 
@@ -280,6 +282,16 @@ export default function SkillStudioList() {
           </AnimatePresence>
         </motion.div>
 
+        {/* Web3 / Blockchain Info Banner */}
+        <PolygonStatsBanner
+          tiles={services}
+          studioType="skill"
+          title="Skill Tiles Tokenized On-Chain"
+          description="Each service offering is cryptographically hashed and anchored to the Polygon blockchain. This ensures credential verification, trust scoring, and decentralized reputation tracking."
+          statLabel="Services On-Chain"
+          className="mb-6"
+        />
+
         {/* Results Count */}
         <div className="mb-4 text-sm text-slate-600">
           Showing {filteredServices.length} of {services.length} services
@@ -367,8 +379,14 @@ function ServiceCard({ service, index, onEdit, onDelete, onDuplicate, onToggleSt
                 <Plus className="w-12 h-12 text-purple-300" />
               </div>
             )}
-            <div className="absolute top-3 left-3">
+            <div className="absolute top-3 left-3 flex items-center gap-2">
               <StatusBadge status={service.status} />
+              <PolygonVerifiedBadge
+                tile={service}
+                studioType="skill"
+                size="md"
+                showText={true}
+              />
             </div>
             {service.rating && (
               <div className="absolute top-3 right-3 bg-white px-2 py-1 rounded-full shadow-lg flex items-center gap-1">
@@ -539,6 +557,12 @@ function ServiceListItem({ service, index, onEdit, onDelete, onView }) {
                       {service.title}
                     </h3>
                     <StatusBadge status={service.status} size="sm" />
+                    <PolygonVerifiedBadge
+                      tile={service}
+                      studioType="skill"
+                      size="md"
+                      showText={true}
+                    />
                     {service.rating && (
                       <div className="flex items-center gap-1 text-sm">
                         <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
