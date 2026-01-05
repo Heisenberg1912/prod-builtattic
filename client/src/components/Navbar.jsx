@@ -174,8 +174,6 @@ const Navbar = () => {
               <a
                 key={link.href}
                 href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="text-sm font-medium tracking-wide transition-colors hover:text-white text-gray-300"
               >
                 {link.label}
@@ -299,8 +297,6 @@ const Navbar = () => {
                 <a
                   key={link.href}
                   href={link.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="flex items-center justify-start px-4 py-2 text-gray-300 hover:text-white hover:bg-white/10 uppercase tracking-[0.18em] text-xs"
                   onClick={() => setIsMenuOpen(false)}
                 >
