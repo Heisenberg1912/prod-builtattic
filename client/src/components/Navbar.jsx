@@ -142,25 +142,25 @@ const Navbar = () => {
 
   return (
     <>
-      <nav className="bg-black/95 sticky top-0 z-50 shadow-sm border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-16">
+      <nav className="bg-black sticky top-0 z-50">
+        <div className="w-full px-6 flex items-center justify-between h-14">
           {/* Logo */}
-          <NavLink to="/" className="flex items-center text-xl font-bold text-gray-100">
-            <span className="flex items-center text-inherit leading-none">
-              <img src={main_logo} alt="Builtattic Logo" className="h-10 w-auto object-contain" />
-              <span className="-ml-2 text-[1.50rem] font-semibold tracking-[0.01em]">uiltattic.</span>
+          <NavLink to="/" className="flex items-center text-white">
+            <span className="flex items-center leading-none">
+              <img src={main_logo} alt="Builtattic Logo" className="h-8 w-auto object-contain" />
+              <span className="-ml-1.5 text-lg font-medium tracking-tight">uiltattic.</span>
             </span>
           </NavLink>
 
-          {/* Desktop Menu */}
-          <div className="hidden md:flex items-center gap-6">
+          {/* Desktop Menu - Centered */}
+          <div className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
                 className={({ isActive }) =>
-                  `text-sm font-medium tracking-wide transition-colors hover:text-white ${
-                    isActive ? "text-white" : "text-gray-300"
+                  `text-sm font-normal transition-colors hover:text-white ${
+                    isActive ? "text-white" : "text-gray-400"
                   }`
                 }
               >
@@ -168,33 +168,33 @@ const Navbar = () => {
               </NavLink>
             ))}
 
-            <Separator orientation="vertical" className="h-6 bg-white/15" />
+            <Separator orientation="vertical" className="h-5 bg-gray-600" />
 
             {externalLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
-                className="text-sm font-medium tracking-wide transition-colors hover:text-white text-gray-300"
+                className="text-sm font-normal transition-colors hover:text-white text-gray-400"
               >
                 {link.label}
               </a>
             ))}
 
-            <Separator orientation="vertical" className="h-6 bg-white/15" />
+            <Separator orientation="vertical" className="h-5 bg-gray-600" />
 
             {/* Cart Button */}
             <Button
               variant="ghost"
               size="icon"
-              className="relative text-white hover:text-white hover:bg-white/10"
+              className="relative text-gray-400 hover:text-white hover:bg-transparent h-8 w-8"
               onClick={() => navigate("/cart")}
               title="Go to cart"
             >
-              <img src={cartIcon} alt="Cart" className="h-6 w-6 object-contain" />
+              <img src={cartIcon} alt="Cart" className="h-5 w-5 object-contain opacity-80 hover:opacity-100" />
               {cartBadge > 0 && (
                 <Badge
                   variant="default"
-                  className="absolute -top-1 -right-1 h-5 min-w-[1.25rem] px-1.5 bg-white text-black hover:bg-white text-[0.65rem] font-semibold"
+                  className="absolute -top-1 -right-1 h-4 min-w-[1rem] px-1 bg-white text-black hover:bg-white text-[0.6rem] font-semibold"
                 >
                   {cartBadge}
                 </Badge>
@@ -207,24 +207,24 @@ const Navbar = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-white hover:text-white hover:bg-white/10"
+                  className="text-gray-400 hover:text-white hover:bg-transparent h-8 w-8"
                   title="Account menu"
                 >
                   <img
                     src={userAvatar}
                     alt="Account menu"
-                    className="h-8 w-8 object-contain"
+                    className="h-6 w-6 object-contain opacity-80 hover:opacity-100"
                   />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="w-56 bg-black/95 border-white/20 text-white backdrop-blur-md"
+                className="w-56 bg-black border-gray-800 text-white"
               >
                 {dropdownItems.map((item) => (
                   <DropdownMenuItem
                     key={item.label}
-                    className="cursor-pointer focus:bg-white/10 focus:text-white"
+                    className="cursor-pointer text-gray-300 focus:bg-gray-700 focus:text-white"
                     onClick={() => navigate(item.to)}
                   >
                     {item.label}
@@ -232,9 +232,9 @@ const Navbar = () => {
                 ))}
                 {isAuthed && (
                   <>
-                    <DropdownMenuSeparator className="bg-white/10" />
+                    <DropdownMenuSeparator className="bg-gray-600" />
                     <DropdownMenuItem
-                      className="cursor-pointer focus:bg-white/10 focus:text-white"
+                      className="cursor-pointer text-gray-300 focus:bg-gray-700 focus:text-white"
                       onClick={handleLogoutClick}
                     >
                       Sign out
@@ -250,11 +250,11 @@ const Navbar = () => {
             <Button
               variant="ghost"
               size="icon"
-              className="relative text-white hover:text-white hover:bg-white/10 h-9 w-9"
+              className="relative text-gray-400 hover:text-white hover:bg-transparent h-8 w-8"
               onClick={() => navigate("/cart")}
               title="Go to cart"
             >
-              <img src={cartIcon} alt="Cart" className="h-5 w-5 object-contain" />
+              <img src={cartIcon} alt="Cart" className="h-5 w-5 object-contain opacity-80" />
               {cartBadge > 0 && (
                 <Badge
                   variant="default"
@@ -267,7 +267,7 @@ const Navbar = () => {
             <Button
               variant="ghost"
               size="sm"
-              className="text-white hover:text-white hover:bg-white/10 uppercase tracking-[0.32em] text-xs font-semibold"
+              className="text-gray-400 hover:text-white hover:bg-transparent uppercase tracking-widest text-xs font-medium"
               onClick={() => setIsMenuOpen((value) => !value)}
             >
               {isMenuOpen ? "Close" : "Menu"}
@@ -277,13 +277,13 @@ const Navbar = () => {
 
         {/* Mobile Menu Dropdown */}
         {isMenuOpen && (
-          <div className="md:hidden px-4 pb-4 border-t border-white/10 bg-black/98">
+          <div className="md:hidden px-4 pb-4 border-t border-gray-800 bg-black">
             <div className="flex flex-col space-y-1 py-3">
               {navLinks.map((link) => (
                 <Button
                   key={link.to}
                   variant="ghost"
-                  className="justify-start text-gray-300 hover:text-white hover:bg-white/10 uppercase tracking-[0.18em] text-xs"
+                  className="justify-start text-gray-400 hover:text-white hover:bg-transparent text-sm font-normal"
                   onClick={() => {
                     navigate(link.to);
                     setIsMenuOpen(false);
@@ -292,23 +292,23 @@ const Navbar = () => {
                   {link.label}
                 </Button>
               ))}
-              <Separator className="my-2 bg-white/10" />
+              <Separator className="my-2 bg-gray-600" />
               {externalLinks.map((link) => (
                 <a
                   key={link.href}
                   href={link.href}
-                  className="flex items-center justify-start px-4 py-2 text-gray-300 hover:text-white hover:bg-white/10 uppercase tracking-[0.18em] text-xs"
+                  className="flex items-center justify-start px-4 py-2 text-gray-400 hover:text-white text-sm font-normal"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   {link.label}
                 </a>
               ))}
-              <Separator className="my-2 bg-white/10" />
+              <Separator className="my-2 bg-gray-600" />
               {dropdownItems.map((item) => (
                 <Button
                   key={item.to}
                   variant="ghost"
-                  className="justify-start text-gray-300 hover:text-white hover:bg-white/10 uppercase tracking-[0.18em] text-xs"
+                  className="justify-start text-gray-400 hover:text-white hover:bg-transparent text-sm font-normal"
                   onClick={() => {
                     navigate(item.to);
                     setIsMenuOpen(false);
@@ -319,10 +319,10 @@ const Navbar = () => {
               ))}
               {isAuthed && (
                 <>
-                  <Separator className="my-2 bg-white/10" />
+                  <Separator className="my-2 bg-gray-600" />
                   <Button
                     variant="ghost"
-                    className="justify-start text-gray-300 hover:text-white hover:bg-white/10 uppercase tracking-[0.18em] text-xs"
+                    className="justify-start text-gray-400 hover:text-white hover:bg-transparent text-sm font-normal"
                     onClick={handleLogoutClick}
                   >
                     Sign out
