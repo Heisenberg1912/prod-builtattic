@@ -14,6 +14,7 @@ This repository contains the **main web application** powering dashboards, studi
 * **Unified Dashboard** – Central hub for all user activity
 * **Design Studio** – Publish architectural designs and plans
 * **Skill Studio** – Professional profiles, services, and portfolios
+* **Material Studio** - Raw building materials hashed and anchored to the Polygon blockchain
 * **Public Marketplaces** – Browse designs and hire professionals
 
 ### User Types
