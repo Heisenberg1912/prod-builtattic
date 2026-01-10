@@ -129,7 +129,7 @@ const Navbar = () => {
 
   const externalLinks = [
     { href: "https://vitruvi-ai.vercel.app/", label: "Vitruvi AI" },
-    { href: "https://matterz.vercel.app/", label: "Matterz" },
+    { href: "https://matterz.vercel.app/", label: "Matters" },
   ];
 
   const dropdownItems = [
